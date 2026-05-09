@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown+ 编辑器 - 原型</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
+        .editor-textarea {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            line-height: 1.6;
+            tab-size: 4;
+        }
+
+        .preview-content {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .preview-content h1 { font-size: 2em; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.3em; margin: 0.67em 0; }
+        .preview-content h2 { font-size: 1.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; margin: 0.75em 0; }
+        .preview-content h3 { font-size: 1.25em; margin: 0.83em 0; }
+        .preview-content p { margin: 1em 0; line-height: 1.8; }
+        .preview-content code { background: #f3f4f6; padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.9em; }
+        .preview-content pre { background: #f6f8fa; padding: 1em; border-radius: 6px; overflow-x: auto; }
+        .preview-content blockquote { border-left: 4px solid #e5e7eb; padding-left: 1em; margin: 1em 0; color: #6b7280; }
+        .preview-content ul, .preview-content ol { margin: 1em 0; padding-left: 2em; }
+        .preview-content li { margin: 0.5em 0; }
+        .preview-content table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+        .preview-content th, .preview-content td { border: 1px solid #e5e7eb; padding: 0.5em; }
+        .preview-content th { background: #f9fafb; }
+        .preview-content img { max-width: 100%; height: auto; border-radius: 4px; }
+        .preview-content input[type="checkbox"] { margin-right: 6px; }
+
+        .drop-zone { border: 2px dashed #d1d5db; transition: all 0.3s; }
+        .drop-zone.drag-over { border-color: #3b82f6; background: #eff6ff; }
+
+        .file-item { transition: all 0.2s; }
+        .file-item:hover { background: #f3f4f6; }
+        .file-item.active { background: #dbeafe; border-left: 3px solid #3b82f6; }
+
+        .image-card { transition: all 0.2s; }
+        .image-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+
+        .modal { opacity: 0; visibility: hidden; transition: all 0.3s; }
+        .modal.active { opacity: 1; visibility: visible; }
+        .modal-content { transform: scale(0.9); transition: all 0.3s; }
+        .modal.active .modal-content { transform: scale(1); }
+
+        .mode-btn.active { background: #3b82f6; color: white; }
+
+        /* ============ WYSIWYG Editor ============ */
+        .wysiwyg-editor {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            outline: none;
+            min-height: 100%;
+            padding: 24px;
+            line-height: 1.8;
+            color: #1f2937;
+            font-size: 16px;
+        }
+        .wysiwyg-editor:empty::before {
+            content: '在此输入内容，支持 Markdown 语法...';
+            color: #9ca3af;
+        }
+        .wysiwyg-editor h1 { font-size: 2em; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.3em; margin: 0.5em 0; font-weight: 700; }
+        .wysiwyg-editor h2 { font-size: 1.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; margin: 0.5em 0; font-weight: 600; }
+        .wysiwyg-editor h3 { font-size: 1.25em; margin: 0.5em 0; font-weight: 600; }
+        .wysiwyg-editor h4 { font-size: 1.1em; margin: 0.5em 0; font-weight: 600; }
+        .wysiwyg-editor p { margin: 0.5em 0; }
+        .wysiwyg-editor ul, .wysiwyg-editor ol { margin: 0.5em 0; padding-left: 1.5em; }
+        .wysiwyg-editor li { margin: 0.25em 0; }
+        .wysiwyg-editor blockquote {
+            border-left: 4px solid #3b82f6;
+            padding: 8px 16px;
+            margin: 0.5em 0;
+            background: #f0f7ff;
+            border-radius: 0 4px 4px 0;
+            color: #374151;
+        }
+        .wysiwyg-editor pre {
+            background: #f6f8fa;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            overflow-x: auto;
+            margin: 0.5em 0;
+        }
+        .wysiwyg-editor code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.9em;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        .wysiwyg-editor pre code { background: none; padding: 0; }
+        .wysiwyg-editor img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: box-shadow 0.2s;
+        }
+        .wysiwyg-editor img:hover { box-shadow: 0 0 0 2px #3b82f6; }
+        .wysiwyg-editor img.selected { box-shadow: 0 0 0 3px #3b82f6; }
+        .wysiwyg-editor a { color: #2563eb; text-decoration: underline; }
+        .wysiwyg-editor hr { border: none; border-top: 2px solid #e5e7eb; margin: 1.5em 0; }
+        .wysiwyg-editor table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
+        .wysiwyg-editor th, .wysiwyg-editor td { border: 1px solid #e5e7eb; padding: 8px 12px; min-width: 60px; }
+        .wysiwyg-editor th { background: #f9fafb; font-weight: 600; }
+
+        /* WYSIWYG 行内标记提示 */
+        .wysiwyg-editor .md-marker {
+            color: #9ca3af;
+            font-size: 0.85em;
+            user-select: none;
+        }
+
+        /* 图片悬浮工具栏 */
+        .img-toolbar {
+            position: absolute;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 4px;
+            display: none;
+            z-index: 100;
+        }
+        .img-toolbar.visible { display: flex; }
+        .img-toolbar button {
+            padding: 4px 8px;
+            font-size: 12px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        /* 浮动工具栏 - 选中文字时出现 */
+        .float-toolbar {
+            position: absolute;
+            background: #1f2937;
+            border-radius: 8px;
+            padding: 4px;
+            display: none;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .float-toolbar.visible { display: flex; }
+        .float-toolbar button {
+            color: white;
+            padding: 4px 8px;
+            font-size: 13px;
+            border-radius: 4px;
+        }
+        .float-toolbar button:hover { background: rgba(255,255,255,0.15); }
+
+        /* Markdown 块标记 — WYSIWYG 模式下隐藏但可切换显示 */
+        .wysiwyg-editor.show-markdown .md-block-tag {
+            display: block;
+        }
+        .md-block-tag {
+            display: none;
+            color: #9ca3af;
+            font-size: 12px;
+            font-family: monospace;
+            margin-bottom: 2px;
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col overflow-hidden">
+    <!-- 顶部菜单栏 -->
+    <header class="bg-white border-b border-gray-200 h-12 flex items-center px-4 shrink-0">
+        <div class="flex items-center space-x-6">
+            <div class="flex items-center space-x-2">
+                <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">M+</div>
+                <span class="font-semibold text-gray-800">Markdown+</span>
+            </div>
+            <nav class="flex items-center space-x-1">
+                <button onclick="showMenu('file')" class="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md">文件</button>
+                <button onclick="showMenu('edit')" class="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md">编辑</button>
+                <button onclick="showMenu('view')" class="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md">视图</button>
+                <button onclick="showMenu('insert')" class="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md">插入</button>
+                <button onclick="showMenu('help')" class="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md">帮助</button>
+            </nav>
+        </div>
+        <div class="flex items-center space-x-3 ml-auto">
+            <button onclick="toggleTheme()" class="p-2 text-gray-600 hover:bg-gray-100 rounded-md" title="切换主题">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                </svg>
+            </button>
+            <button onclick="showExportModal()" class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700">导出</button>
+        </div>
+    </header>
+
+    <!-- 工具栏 -->
+    <div class="bg-gray-50 border-b border-gray-200 h-10 flex items-center px-4 space-x-2 shrink-0">
+        <!-- 模式切换 -->
+        <div class="flex items-center bg-gray-200 rounded-md p-0.5 mr-2">
+            <button onclick="switchMode('wysiwyg')" id="mode-wysiwyg" class="mode-btn active px-3 py-1 text-xs rounded-md transition font-medium">所见即所得</button>
+            <button onclick="switchMode('split')" id="mode-split" class="mode-btn px-3 py-1 text-xs rounded-md transition font-medium">分屏预览</button>
+            <button onclick="switchMode('source')" id="mode-source" class="mode-btn px-3 py-1 text-xs rounded-md transition font-medium">源码编辑</button>
+        </div>
+        <div class="w-px h-6 bg-gray-300 mx-1"></div>
+
+        <button onclick="execFormat('bold')" class="p-1.5 hover:bg-gray-200 rounded" title="粗体 Ctrl+B">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6V4zm0 8h9a4 4 0 014 4 4 4 0 01-4 4H6v-8z"></path></svg>
+        </button>
+        <button onclick="execFormat('italic')" class="p-1.5 hover:bg-gray-200 rounded" title="斜体 Ctrl+I">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg>
+        </button>
+        <button onclick="execFormat('strikethrough')" class="p-1.5 hover:bg-gray-200 rounded" title="删除线">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 4H9a3 3 0 00 0 6h6a3 3 0 010 6H8"/><line x1="4" y1="12" x2="20" y2="12"/></svg>
+        </button>
+        <div class="w-px h-6 bg-gray-300 mx-1"></div>
+        <div class="relative">
+            <button onclick="toggleHeadingMenu()" class="p-1.5 hover:bg-gray-200 rounded flex items-center space-x-1" title="标题">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 12h16M4 4v16M20 4v16"/></svg>
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div id="heading-menu" class="hidden absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-36 z-50">
+                <button onclick="setHeading('p')" class="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-sm">正文</button>
+                <button onclick="setHeading('h1')" class="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-sm font-bold text-lg">标题 1</button>
+                <button onclick="setHeading('h2')" class="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-sm font-semibold">标题 2</button>
+                <button onclick="setHeading('h3')" class="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-sm">标题 3</button>
+                <button onclick="setHeading('h4')" class="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-xs">标题 4</button>
+            </div>
+        </div>
+        <div class="w-px h-6 bg-gray-300 mx-1"></div>
+        <button onclick="execFormat('insertUnorderedList')" class="p-1.5 hover:bg-gray-200 rounded" title="无序列表">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        </button>
+        <button onclick="execFormat('insertOrderedList')" class="p-1.5 hover:bg-gray-200 rounded" title="有序列表">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 6h11M10 12h11M10 18h11M4 6V4l-1 1M3 10h2M4 10v4"/></svg>
+        </button>
+        <button onclick="execFormat('insertTaskList')" class="p-1.5 hover:bg-gray-200 rounded" title="任务列表">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </button>
+        <button onclick="insertBlockquote()" class="p-1.5 hover:bg-gray-200 rounded" title="引用">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3z"/></svg>
+        </button>
+        <button onclick="insertCodeBlock()" class="p-1.5 hover:bg-gray-200 rounded" title="代码块">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </button>
+        <button onclick="insertHR()" class="p-1.5 hover:bg-gray-200 rounded" title="分割线">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12h18"/></svg>
+        </button>
+        <div class="w-px h-6 bg-gray-300 mx-1"></div>
+        <button onclick="insertLink()" class="p-1.5 hover:bg-gray-200 rounded" title="链接 Ctrl+K">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        </button>
+        <button onclick="showImageModal()" class="p-1.5 hover:bg-gray-200 rounded" title="插入图片">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </button>
+        <button onclick="insertTable()" class="p-1.5 hover:bg-gray-200 rounded" title="表格">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+        </button>
+        <div class="flex-1"></div>
+        <label class="flex items-center space-x-1.5 text-xs text-gray-500 cursor-pointer select-none">
+            <input type="checkbox" id="show-md-tags" onchange="toggleMdTags()" class="rounded">
+            <span>显示标记</span>
+        </label>
+    </div>
+
+    <!-- 主体区域 -->
+    <div class="flex-1 flex overflow-hidden" id="main-area">
+        <!-- 左侧边栏 -->
+        <aside class="w-56 bg-white border-r border-gray-200 flex flex-col shrink-0">
+            <div class="p-3 border-b border-gray-200 flex items-center justify-between">
+                <span class="text-sm font-medium text-gray-700">文件浏览器</span>
+                <button class="p-1 hover:bg-gray-100 rounded">
+                    <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-2">
+                <div class="file-item active px-3 py-2 rounded-md cursor-pointer flex items-center space-x-2">
+                    <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span class="text-sm text-gray-700">示例文档.mdx</span>
+                </div>
+                <div class="file-item px-3 py-2 rounded-md cursor-pointer flex items-center space-x-2">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span class="text-sm text-gray-600">项目说明.mdx</span>
+                </div>
+                <div class="file-item px-3 py-2 rounded-md cursor-pointer flex items-center space-x-2">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span class="text-sm text-gray-600">会议纪要.mdx</span>
+                </div>
+            </div>
+            <div class="border-t border-gray-200">
+                <div class="p-3 border-b border-gray-200 flex items-center justify-between">
+                    <span class="text-sm font-medium text-gray-700">资源管理器</span>
+                    <button onclick="showImageManager()" class="text-xs text-blue-600 hover:text-blue-700">管理</button>
+                </div>
+                <div class="p-2 grid grid-cols-3 gap-2 max-h-40 overflow-y-auto">
+                    <div class="image-card aspect-square bg-gray-100 rounded-md overflow-hidden cursor-pointer flex items-center justify-center text-gray-400">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </div>
+                    <div class="image-card aspect-square bg-gray-100 rounded-md overflow-hidden cursor-pointer flex items-center justify-center text-gray-400">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </div>
+                    <div class="drop-zone aspect-square rounded-md flex items-center justify-center cursor-pointer" onclick="showImageModal()">
+                        <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 编辑主区域 -->
+        <main class="flex-1 flex relative">
+            <!-- WYSIWYG 编辑器 -->
+            <div id="wysiwyg-panel" class="flex-1 flex flex-col bg-white">
+                <div class="flex-1 overflow-y-auto relative" id="wysiwyg-scroll">
+                    <div id="wysiwyg-editor" class="wysiwyg-editor" contenteditable="true" spellcheck="false"></div>
+                </div>
+            </div>
+
+            <!-- 源码编辑器 -->
+            <div id="source-panel" class="flex-1 flex flex-col bg-white" style="display:none">
+                <textarea id="editor" class="editor-textarea w-full h-full p-6 resize-none border-none outline-none text-gray-800 text-base bg-white" placeholder="在此输入 Markdown 源码..." spellcheck="false"></textarea>
+            </div>
+
+            <!-- 预览区域 (分屏模式) -->
+            <div id="preview-panel" class="flex-1 flex flex-col bg-white border-l border-gray-200" style="display:none">
+                <div class="px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm text-gray-600">预览</div>
+                <div class="flex-1 overflow-y-auto p-6">
+                    <div id="preview" class="preview-content max-w-none"></div>
+                </div>
+            </div>
+
+            <!-- 浮动工具栏 -->
+            <div id="float-toolbar" class="float-toolbar">
+                <button onclick="execFormat('bold')" title="粗体"><b>B</b></button>
+                <button onclick="execFormat('italic')" title="斜体"><i>I</i></button>
+                <button onclick="execFormat('strikethrough')" title="删除线"><s>S</s></button>
+                <button onclick="insertLink()" title="链接">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                </button>
+                <button onclick="wrapCode()" title="行内代码">&lt;/&gt;</button>
+            </div>
+
+            <!-- 图片工具栏 -->
+            <div id="img-toolbar" class="img-toolbar">
+                <button class="text-gray-700 hover:bg-gray-100" onclick="imgResize('small')">小</button>
+                <button class="text-gray-700 hover:bg-gray-100" onclick="imgResize('medium')">中</button>
+                <button class="text-gray-700 hover:bg-gray-100" onclick="imgResize('large')">大</button>
+                <button class="text-red-500 hover:bg-red-50" onclick="imgDelete()">删除</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- 状态栏 -->
+    <footer class="bg-gray-100 border-t border-gray-200 h-8 flex items-center px-4 text-xs text-gray-600 shrink-0">
+        <div class="flex items-center space-x-4">
+            <span id="doc-title">示例文档.mdx</span>
+            <span class="text-gray-400">|</span>
+            <span id="word-count">字数: 0</span>
+            <span class="text-gray-400">|</span>
+            <span id="file-size">文件大小: 0 KB</span>
+            <span class="text-gray-400">|</span>
+            <span id="cursor-pos">行 1, 列 1</span>
+        </div>
+        <div class="flex items-center space-x-4 ml-auto">
+            <span id="mode-label" class="text-blue-600">所见即所得</span>
+            <span class="text-gray-400">|</span>
+            <span id="save-status" class="text-green-600">已保存</span>
+            <span class="text-gray-400">|</span>
+            <span>Markdown+ v0.1</span>
+        </div>
+    </footer>
+
+    <!-- 插入图片模态框 -->
+    <div id="image-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="modal-content bg-white rounded-lg shadow-xl w-96 p-6">
+            <h3 class="text-lg font-semibold mb-4">插入图片</h3>
+            <div class="space-y-4">
+                <div class="drop-zone border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer" id="drop-zone">
+                    <svg class="w-12 h-12 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <p class="text-sm text-gray-600">拖拽图片到此处</p>
+                    <p class="text-xs text-gray-400 mt-1">或点击选择文件</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">图片链接</label>
+                    <input type="text" id="image-url" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="https://example.com/image.png">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">替代文本</label>
+                    <input type="text" id="image-alt" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="图片描述">
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2 mt-6">
+                <button onclick="closeModal('image-modal')" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md text-sm">取消</button>
+                <button onclick="insertImageFromModal()" class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">插入</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 插入链接模态框 -->
+    <div id="link-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="modal-content bg-white rounded-lg shadow-xl w-96 p-6">
+            <h3 class="text-lg font-semibold mb-4">插入链接</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">链接文本</label>
+                    <input type="text" id="link-text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="显示的文字">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">链接地址</label>
+                    <input type="text" id="link-url" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="https://">
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2 mt-6">
+                <button onclick="closeModal('link-modal')" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md text-sm">取消</button>
+                <button onclick="insertLinkConfirm()" class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">插入</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导出模态框 -->
+    <div id="export-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="modal-content bg-white rounded-lg shadow-xl w-80 p-6">
+            <h3 class="text-lg font-semibold mb-4">导出文档</h3>
+            <div class="space-y-2">
+                <button onclick="exportFile('mdx')" class="w-full text-left px-4 py-3 hover:bg-gray-100 rounded-lg flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><span class="text-blue-600 font-bold text-xs">MDX</span></div>
+                    <div><p class="font-medium text-gray-800">Markdown+ 格式</p><p class="text-xs text-gray-500">包含图片的完整文档</p></div>
+                </button>
+                <button onclick="exportFile('md')" class="w-full text-left px-4 py-3 hover:bg-gray-100 rounded-lg flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><span class="text-gray-600 font-bold text-xs">MD</span></div>
+                    <div><p class="font-medium text-gray-800">Markdown 格式</p><p class="text-xs text-gray-500">纯文本，图片单独存放</p></div>
+                </button>
+                <button onclick="exportFile('pdf')" class="w-full text-left px-4 py-3 hover:bg-gray-100 rounded-lg flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center"><span class="text-red-600 font-bold text-xs">PDF</span></div>
+                    <div><p class="font-medium text-gray-800">PDF 文档</p><p class="text-xs text-gray-500">便携式文档格式</p></div>
+                </button>
+                <button onclick="exportFile('html')" class="w-full text-left px-4 py-3 hover:bg-gray-100 rounded-lg flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center"><span class="text-orange-600 font-bold text-xs">HTML</span></div>
+                    <div><p class="font-medium text-gray-800">HTML 文件</p><p class="text-xs text-gray-500">网页格式</p></div>
+                </button>
+            </div>
+            <div class="flex justify-end mt-6">
+                <button onclick="closeModal('export-modal')" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md text-sm">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图片管理器模态框 -->
+    <div id="image-manager-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="modal-content bg-white rounded-lg shadow-xl w-[600px] max-h-[80vh] flex flex-col">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 class="text-lg font-semibold">资源管理器</h3>
+                <button onclick="closeModal('image-manager-modal')" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 flex-1 overflow-y-auto">
+                <div class="grid grid-cols-4 gap-4">
+                    <div class="image-card bg-gray-50 rounded-lg p-3 cursor-pointer hover:bg-gray-100">
+                        <div class="aspect-square bg-gray-200 rounded-md mb-2 flex items-center justify-center">
+                            <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <p class="text-xs text-gray-600 truncate">image1.png</p>
+                        <p class="text-xs text-gray-400">24.5 KB</p>
+                    </div>
+                    <div class="image-card bg-gray-50 rounded-lg p-3 cursor-pointer hover:bg-gray-100">
+                        <div class="aspect-square bg-gray-200 rounded-md mb-2 flex items-center justify-center">
+                            <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <p class="text-xs text-gray-600 truncate">image2.jpg</p>
+                        <p class="text-xs text-gray-400">156.3 KB</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-200 flex justify-between items-center">
+                <span class="text-sm text-gray-500">共 2 个资源文件</span>
+                <div class="space-x-2">
+                    <button class="px-4 py-2 text-red-600 hover:bg-red-50 rounded-md text-sm">删除选中</button>
+                    <button class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">添加图片</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ======================== 状态管理 ========================
+    let currentMode = 'wysiwyg';
+    let markdownSource = '';
+    let savedSelection = null;
+
+    const sampleMarkdown = `# Markdown+ 编辑器介绍
+
+欢迎使用 **Markdown+** 编辑器！这是一款支持自定义 .mdx 文件格式的 Markdown 编辑器。
+
+## 主要特性
+
+### 自包含文件格式
+
+.mdx 文件采用 ZIP 压缩格式，内部包含：
+
+- Markdown 内容
+- 图片资源
+- 元数据配置
+
+### 图片管理
+
+支持多种方式插入图片：
+
+- 拖拽上传
+- 复制粘贴
+- 文件选择
+
+![示例图片](assets/images/image1.png)
+
+### 实时预览
+
+编辑时实时预览渲染效果，支持多种主题。
+
+## 代码示例
+
+\`\`\`javascript
+function hello() {
+    console.log("Hello, Markdown+!");
+}
+\`\`\`
+
+## 表格示例
+
+| 功能 | 状态 | 版本 |
+|------|------|------|
+| 文件操作 | 已完成 | v0.1 |
+| 图片管理 | 已完成 | v0.1 |
+| 实时预览 | 已完成 | v0.1 |
+| 协作功能 | 开发中 | v0.2 |
+
+## 待办事项
+
+- [x] 创建需求文档
+- [x] 设计文件格式
+- [ ] 实现编辑器核心功能
+- [ ] 添加导出功能
+
+> **提示**: 这是一个原型演示，展示了 Markdown+ 编辑器的基本界面和功能。
+
+---
+
+感谢使用 Markdown+ 编辑器！`;
+
+    // ======================== 初始化 ========================
+    const wysEditor = document.getElementById('wysiwyg-editor');
+    const srcEditor = document.getElementById('editor');
+    const previewEl = document.getElementById('preview');
+
+    markdownSource = sampleMarkdown;
+    srcEditor.value = sampleMarkdown;
+    wysEditor.innerHTML = marked.parse(sampleMarkdown);
+
+    // ======================== 模式切换 ========================
+    function switchMode(mode) {
+        syncContentFromCurrent();
+        currentMode = mode;
+
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('mode-' + mode).classList.add('active');
+
+        const wysPanel = document.getElementById('wysiwyg-panel');
+        const srcPanel = document.getElementById('source-panel');
+        const prePanel = document.getElementById('preview-panel');
+        const modeLabel = document.getElementById('mode-label');
+
+        wysPanel.style.display = 'none';
+        srcPanel.style.display = 'none';
+        prePanel.style.display = 'none';
+
+        if (mode === 'wysiwyg') {
+            wysPanel.style.display = 'flex';
+            wysEditor.innerHTML = marked.parse(markdownSource);
+            modeLabel.textContent = '所见即所得';
+        } else if (mode === 'split') {
+            srcPanel.style.display = 'flex';
+            prePanel.style.display = 'flex';
+            srcEditor.value = markdownSource;
+            updateSplitPreview();
+            modeLabel.textContent = '分屏预览';
+        } else {
+            srcPanel.style.display = 'flex';
+            srcEditor.value = markdownSource;
+            modeLabel.textContent = '源码编辑';
+        }
+    }
+
+    function syncContentFromCurrent() {
+        if (currentMode === 'wysiwyg') {
+            markdownSource = htmlToMarkdown(wysEditor.innerHTML);
+        } else {
+            markdownSource = srcEditor.value;
+        }
+    }
+
+    function updateSplitPreview() {
+        previewEl.innerHTML = marked.parse(srcEditor.value);
+        hljs.highlightAll();
+    }
+
+    // ======================== HTML → Markdown 简易转换 ========================
+    function htmlToMarkdown(html) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        return nodeToMarkdown(tmp).trim();
+    }
+
+    function nodeToMarkdown(node) {
+        let result = '';
+        for (const child of node.childNodes) {
+            if (child.nodeType === Node.TEXT_NODE) {
+                result += child.textContent;
+                continue;
+            }
+            if (child.nodeType !== Node.ELEMENT_NODE) continue;
+
+            const tag = child.tagName.toLowerCase();
+
+            switch (tag) {
+                case 'h1': result += '\n# ' + innerText(child) + '\n\n'; break;
+                case 'h2': result += '\n## ' + innerText(child) + '\n\n'; break;
+                case 'h3': result += '\n### ' + innerText(child) + '\n\n'; break;
+                case 'h4': result += '\n#### ' + innerText(child) + '\n\n'; break;
+                case 'p': result += nodeToMarkdown(child) + '\n\n'; break;
+                case 'strong': case 'b': result += '**' + nodeToMarkdown(child) + '**'; break;
+                case 'em': case 'i': result += '*' + nodeToMarkdown(child) + '*'; break;
+                case 's': case 'del': result += '~~' + nodeToMarkdown(child) + '~~'; break;
+                case 'code':
+                    if (child.parentElement && child.parentElement.tagName.toLowerCase() === 'pre') {
+                        result += child.textContent;
+                    } else {
+                        result += '`' + child.textContent + '`';
+                    }
+                    break;
+                case 'pre':
+                    const code = child.querySelector('code');
+                    const lang = code && code.className ? code.className.replace('language-', '').replace('hljs', '').trim() : '';
+                    result += '\n```' + lang + '\n' + (code ? code.textContent : child.textContent) + '\n```\n\n';
+                    break;
+                case 'blockquote': result += '\n> ' + nodeToMarkdown(child).replace(/\n\n/g, '\n> ').replace(/\n> \n> $/, '\n') + '\n\n'; break;
+                case 'ul':
+                    for (const li of child.children) {
+                        if (li.tagName.toLowerCase() === 'li') {
+                            const taskInput = li.querySelector('input[type="checkbox"]');
+                            if (taskInput) {
+                                result += `- [${taskInput.checked ? 'x' : ' '}] ${nodeToMarkdown(li).replace(/^.\s\[[ x]\]\s*/, '')}\n`;
+                            } else {
+                                result += '- ' + nodeToMarkdown(li).trim() + '\n';
+                            }
+                        }
+                    }
+                    result += '\n';
+                    break;
+                case 'ol':
+                    let idx = 1;
+                    for (const li of child.children) {
+                        if (li.tagName.toLowerCase() === 'li') {
+                            result += idx + '. ' + nodeToMarkdown(li).trim() + '\n';
+                            idx++;
+                        }
+                    }
+                    result += '\n';
+                    break;
+                case 'li': result += nodeToMarkdown(child); break;
+                case 'a': result += '[' + nodeToMarkdown(child) + '](' + (child.getAttribute('href') || '') + ')'; break;
+                case 'img': result += '![' + (child.getAttribute('alt') || '') + '](' + (child.getAttribute('src') || '') + ')\n\n'; break;
+                case 'hr': result += '\n---\n\n'; break;
+                case 'br': result += '\n'; break;
+                case 'input': break;
+                case 'table':
+                    const rows = child.querySelectorAll('tr');
+                    rows.forEach((row, ri) => {
+                        const cells = row.querySelectorAll('th, td');
+                        result += '| ' + Array.from(cells).map(c => innerText(c)).join(' | ') + ' |\n';
+                        if (ri === 0) {
+                            result += '| ' + Array.from(cells).map(() => '---').join(' | ') + ' |\n';
+                        }
+                    });
+                    result += '\n';
+                    break;
+                case 'div': case 'section': case 'article': case 'main': case 'span':
+                    result += nodeToMarkdown(child);
+                    break;
+                default:
+                    result += nodeToMarkdown(child);
+            }
+        }
+        return result;
+    }
+
+    function innerText(el) {
+        let t = '';
+        for (const c of el.childNodes) {
+            if (c.nodeType === Node.TEXT_NODE) t += c.textContent;
+            else if (c.nodeType === Node.ELEMENT_NODE) t += innerText(c);
+        }
+        return t;
+    }
+
+    // ======================== WYSIWYG 格式化 ========================
+    function execFormat(cmd) {
+        wysEditor.focus();
+        if (cmd === 'insertTaskList') {
+            insertTaskList();
+            return;
+        }
+        if (cmd === 'bold' || cmd === 'italic' || cmd === 'strikethrough') {
+            document.execCommand(cmd, false, null);
+        } else {
+            document.execCommand(cmd, false, null);
+        }
+        markDirty();
+    }
+
+    function setHeading(tag) {
+        wysEditor.focus();
+        if (tag === 'p') {
+            document.execCommand('formatBlock', false, '<p>');
+        } else {
+            document.execCommand('formatBlock', false, '<' + tag + '>');
+        }
+        toggleHeadingMenu(true);
+        markDirty();
+    }
+
+    function toggleHeadingMenu(forceClose) {
+        const menu = document.getElementById('heading-menu');
+        if (forceClose || !menu.classList.contains('hidden')) {
+            menu.classList.add('hidden');
+        } else {
+            menu.classList.remove('hidden');
+        }
+    }
+
+    function insertBlockquote() {
+        wysEditor.focus();
+        document.execCommand('formatBlock', false, '<blockquote>');
+        markDirty();
+    }
+
+    function insertCodeBlock() {
+        wysEditor.focus();
+        const sel = window.getSelection();
+        const text = sel.toString() || '// 代码';
+        document.execCommand('insertHTML', false, '<pre><code>' + escapeHtml(text) + '</code></pre><p><br></p>');
+        markDirty();
+    }
+
+    function insertHR() {
+        wysEditor.focus();
+        document.execCommand('insertHTML', false, '<hr><p><br></p>');
+        markDirty();
+    }
+
+    function insertTaskList() {
+        wysEditor.focus();
+        document.execCommand('insertHTML', false, `
+            <ul>
+                <li><input type="checkbox"> 任务项</li>
+            </ul><p><br></p>
+        `);
+        markDirty();
+    }
+
+    function insertLink() {
+        if (currentMode === 'wysiwyg') {
+            savedSelection = saveSelection();
+            const sel = window.getSelection();
+            document.getElementById('link-text').value = sel.toString() || '';
+            document.getElementById('link-url').value = '';
+            showModal('link-modal');
+        } else {
+            insertTextAtCursor('[', '](url)');
+        }
+    }
+
+    function insertLinkConfirm() {
+        const text = document.getElementById('link-text').value || '链接';
+        const url = document.getElementById('link-url').value || '#';
+        closeModal('link-modal');
+
+        if (currentMode === 'wysiwyg') {
+            wysEditor.focus();
+            if (savedSelection) restoreSelection(savedSelection);
+            document.execCommand('insertHTML', false, `<a href="${escapeHtml(url)}">${escapeHtml(text)}</a>`);
+            markDirty();
+        }
+    }
+
+    function insertTable() {
+        wysEditor.focus();
+        document.execCommand('insertHTML', false, `
+            <table>
+                <tr><th>列 1</th><th>列 2</th><th>列 3</th></tr>
+                <tr><td>内容</td><td>内容</td><td>内容</td></tr>
+                <tr><td>内容</td><td>内容</td><td>内容</td></tr>
+            </table><p><br></p>
+        `);
+        markDirty();
+    }
+
+    function wrapCode() {
+        wysEditor.focus();
+        const sel = window.getSelection();
+        if (sel.rangeCount) {
+            const text = sel.toString();
+            if (text) {
+                document.execCommand('insertHTML', false, '<code>' + escapeHtml(text) + '</code>');
+            }
+        }
+    }
+
+    // ======================== 选区保存/恢复 ========================
+    function saveSelection() {
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0) return sel.getRangeAt(0).cloneRange();
+        return null;
+    }
+
+    function restoreSelection(range) {
+        if (range) {
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+    }
+
+    // ======================== 浮动工具栏 ========================
+    wysEditor.addEventListener('mouseup', (e) => {
+        setTimeout(() => {
+            const sel = window.getSelection();
+            const text = sel.toString().trim();
+            const toolbar = document.getElementById('float-toolbar');
+
+            if (text.length > 0 && wysEditor.contains(sel.anchorNode)) {
+                const range = sel.getRangeAt(0);
+                const rect = range.getBoundingClientRect();
+                const mainRect = document.getElementById('main-area').getBoundingClientRect();
+                toolbar.style.top = (rect.top - mainRect.top - 40) + 'px';
+                toolbar.style.left = (rect.left - mainRect.left + rect.width / 2 - 80) + 'px';
+                toolbar.classList.add('visible');
+            } else {
+                toolbar.classList.remove('visible');
+            }
+        }, 10);
+    });
+
+    // ======================== 图片点击 ========================
+    wysEditor.addEventListener('click', (e) => {
+        if (e.target.tagName === 'IMG') {
+            const imgToolbar = document.getElementById('img-toolbar');
+            const rect = e.target.getBoundingClientRect();
+            const mainRect = document.getElementById('main-area').getBoundingClientRect();
+            imgToolbar.style.top = (rect.bottom - mainRect.top + 4) + 'px';
+            imgToolbar.style.left = (rect.left - mainRect.left) + 'px';
+            imgToolbar.classList.add('visible');
+            document.querySelectorAll('.wysiwyg-editor img.selected').forEach(i => i.classList.remove('selected'));
+            e.target.classList.add('selected');
+            imgToolbar._target = e.target;
+        } else {
+            document.getElementById('img-toolbar').classList.remove('visible');
+            document.querySelectorAll('.wysiwyg-editor img.selected').forEach(i => i.classList.remove('selected'));
+        }
+    });
+
+    function imgResize(size) {
+        const img = document.getElementById('img-toolbar')._target;
+        if (!img) return;
+        const sizes = { small: '30%', medium: '60%', large: '100%' };
+        img.style.width = sizes[size];
+        img.style.height = 'auto';
+        document.getElementById('img-toolbar').classList.remove('visible');
+    }
+
+    function imgDelete() {
+        const img = document.getElementById('img-toolbar')._target;
+        if (img) img.remove();
+        document.getElementById('img-toolbar').classList.remove('visible');
+    }
+
+    // ======================== 图片模态框插入 ========================
+    function showImageModal() {
+        savedSelection = saveSelection();
+        document.getElementById('image-url').value = '';
+        document.getElementById('image-alt').value = '';
+        showModal('image-modal');
+    }
+
+    function insertImageFromModal() {
+        const url = document.getElementById('image-url').value || 'https://via.placeholder.com/400x200';
+        const alt = document.getElementById('image-alt').value || '图片';
+        closeModal('image-modal');
+
+        if (currentMode === 'wysiwyg') {
+            wysEditor.focus();
+            if (savedSelection) restoreSelection(savedSelection);
+            document.execCommand('insertHTML', false, `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}"><br>`);
+        } else {
+            insertTextAtCursor(`![${alt}](${url})`, '');
+        }
+        markDirty();
+    }
+
+    // ======================== 源码编辑器工具 ========================
+    function insertText(before, after) {
+        const start = srcEditor.selectionStart;
+        const end = srcEditor.selectionEnd;
+        const text = srcEditor.value;
+        const selected = text.substring(start, end);
+        srcEditor.value = text.substring(0, start) + before + selected + after + text.substring(end);
+        srcEditor.selectionStart = start + before.length;
+        srcEditor.selectionEnd = start + before.length + selected.length;
+        srcEditor.focus();
+        if (currentMode === 'split') updateSplitPreview();
+    }
+
+    function insertTextAtCursor(before, after) {
+        const start = srcEditor.selectionStart;
+        const end = srcEditor.selectionEnd;
+        const text = srcEditor.value;
+        const selected = text.substring(start, end);
+        srcEditor.value = text.substring(0, start) + before + selected + after + text.substring(end);
+        srcEditor.focus();
+    }
+
+    // ======================== 事件绑定 ========================
+    // WYSIWYG 内容变化
+    wysEditor.addEventListener('input', markDirty);
+    wysEditor.addEventListener('keydown', handleWysKeydown);
+
+    // 源码编辑器
+    srcEditor.addEventListener('input', () => {
+        if (currentMode === 'split') updateSplitPreview();
+        markDirty();
+    });
+    srcEditor.addEventListener('keyup', updateCursorPos);
+    srcEditor.addEventListener('click', updateCursorPos);
+
+    function handleWysKeydown(e) {
+        // Tab 缩进
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;');
+        }
+        // 快捷键
+        if (e.ctrlKey || e.metaKey) {
+            switch (e.key) {
+                case 'b': e.preventDefault(); execFormat('bold'); break;
+                case 'i': e.preventDefault(); execFormat('italic'); break;
+                case 'k': e.preventDefault(); insertLink(); break;
+                case 's': e.preventDefault(); updateSaveStatus('已保存'); break;
+            }
+        }
+    }
+
+    // checkbox 点击
+    wysEditor.addEventListener('click', (e) => {
+        if (e.target.tagName === 'INPUT' && e.target.type === 'checkbox') {
+            // 让浏览器默认行为处理 checked 切换
+            setTimeout(markDirty, 50);
+        }
+    });
+
+    function markDirty() {
+        updateSaveStatus('未保存');
+        updateStats();
+    }
+
+    function updateStats() {
+        let text = '';
+        if (currentMode === 'wysiwyg') {
+            text = wysEditor.innerText || '';
+        } else {
+            text = srcEditor.value;
+        }
+        document.getElementById('word-count').textContent = `字数: ${text.replace(/\s/g, '').length}`;
+        document.getElementById('file-size').textContent = `文件大小: ${(new Blob([text]).size / 1024).toFixed(1)} KB`;
+    }
+
+    function updateCursorPos() {
+        const pos = srcEditor.selectionStart;
+        const text = srcEditor.value.substring(0, pos);
+        const lines = text.split('\n');
+        document.getElementById('cursor-pos').textContent = `行 ${lines.length}, 列 ${lines[lines.length - 1].length + 1}`;
+    }
+
+    function updateSaveStatus(status) {
+        const el = document.getElementById('save-status');
+        el.textContent = status;
+        el.className = status === '已保存' ? 'text-green-600' : 'text-orange-500';
+    }
+
+    // ======================== 主题切换 ========================
+    let darkTheme = false;
+    function toggleTheme() {
+        darkTheme = !darkTheme;
+        if (darkTheme) {
+            document.body.style.background = '#111827';
+            wysEditor.style.background = '#1f2937';
+            wysEditor.style.color = '#e5e7eb';
+            srcEditor.style.background = '#1f2937';
+            srcEditor.style.color = '#e5e7eb';
+        } else {
+            document.body.style.background = '';
+            wysEditor.style.background = '';
+            wysEditor.style.color = '';
+            srcEditor.style.background = '';
+            srcEditor.style.color = '';
+        }
+    }
+
+    function toggleMdTags() {
+        wysEditor.classList.toggle('show-markdown', document.getElementById('show-md-tags').checked);
+    }
+
+    // ======================== 模态框 ========================
+    function showModal(id) { document.getElementById(id).classList.add('active'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+    function showImageManager() { showModal('image-manager-modal'); }
+    function showExportModal() { showModal('export-modal'); }
+    function exportFile(format) { alert(`导出为 ${format.toUpperCase()} 格式（演示功能）`); closeModal('export-modal'); }
+
+    function showMenu(menu) {
+        const menus = {
+            'file': ['新建', '打开', '保存', '另存为', '导出'],
+            'edit': ['撤销', '重做', '剪切', '复制', '粘贴', '全选'],
+            'view': ['侧边栏', '预览', '大纲', '全屏'],
+            'insert': ['图片', '链接', '表格', '代码块', '分隔线'],
+            'help': ['帮助文档', '快捷键', '关于']
+        };
+        alert(`${menu} 菜单: ${menus[menu].join(', ')}`);
+    }
+
+    // ======================== 拖拽上传 ========================
+    const dropZone = document.getElementById('drop-zone');
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('drag-over'); });
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); alert('图片已上传（演示）'); });
+
+    // 编辑器拖拽图片
+    wysEditor.addEventListener('dragover', (e) => e.preventDefault());
+    wysEditor.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const files = e.dataTransfer.files;
+        if (files.length && files[0].type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                document.execCommand('insertHTML', false, `<img src="${ev.target.result}" alt="${files[0].name}"><br>`);
+                markDirty();
+            };
+            reader.readAsDataURL(files[0]);
+        }
+    });
+
+    // 粘贴图片
+    wysEditor.addEventListener('paste', (e) => {
+        const items = e.clipboardData.items;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    document.execCommand('insertHTML', false, `<img src="${ev.target.result}" alt="粘贴的图片"><br>`);
+                    markDirty();
+                };
+                reader.readAsDataURL(file);
+                return;
+            }
+        }
+    });
+
+    // ======================== 全局快捷键 ========================
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            if (e.key === 's') { e.preventDefault(); updateSaveStatus('已保存'); }
+        }
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active'));
+            document.getElementById('heading-menu').classList.add('hidden');
+        }
+    });
+
+    // 点击外部关闭
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#heading-menu') && !e.target.closest('[onclick*="toggleHeadingMenu"]')) {
+            document.getElementById('heading-menu').classList.add('hidden');
+        }
+    });
+
+    // 自动保存
+    setInterval(() => {
+        if (document.getElementById('save-status').textContent === '未保存') {
+            updateSaveStatus('已保存');
+        }
+    }, 30000);
+
+    // 初始化统计
+    updateStats();
+    </script>
+</body>
+</html>

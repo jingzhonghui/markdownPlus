@@ -7,49 +7,49 @@
 ## 阶段 1：项目基础搭建
 
 ### 1.1 项目初始化
-- [ ] 使用 electron-vite 脚手架创建 Electron + Vue 3 + TypeScript 项目
-- [ ] 初始化 Git 仓库，配置 .gitignore
-- [ ] 安装核心依赖：vue、electron、typescript、tailwindcss
-- [ ] 验证项目可正常启动（主进程 + 渲染进程）
+- [x] 使用 electron-vite 脚手架创建 Electron + Vue 3 + TypeScript 项目
+- [x] 初始化 Git 仓库，配置 .gitignore
+- [x] 安装核心依赖：vue、electron、typescript、tailwindcss
+- [x] 验证项目可正常启动（主进程 + 渲染进程）
 
 ### 1.2 开发工具链配置
-- [ ] 配置 electron-vite（主进程/预加载/渲染进程分离构建）
-- [ ] 配置 Tailwind CSS
-- [ ] 配置 ESLint + @typescript-eslint
-- [ ] 配置 Prettier
+- [x] 配置 electron-vite（主进程/预加载/渲染进程分离构建）
+- [x] 配置 Tailwind CSS
+- [x] 配置 ESLint + @typescript-eslint
+- [x] 配置 Prettier
 - [ ] 配置 husky + lint-staged（提交前检查）
-- [ ] 验证 dev / build 命令正常
+- [x] 验证 dev / build 命令正常
 
 ### 1.3 主界面布局
-- [ ] 创建 App.vue 根组件
-- [ ] 实现 AppHeader 组件（Logo + 菜单栏 + 导出按钮）
-- [ ] 实现 ToolBar 组件（模式切换 + 格式化按钮组）
-- [ ] 实现 SideBar 组件（文件浏览器 + 资源管理器）
-- [ ] 实现 StatusBar 组件（字数/文件大小/光标位置/保存状态）
-- [ ] 实现主区域三栏弹性布局（侧边栏 + 编辑器 + 预览）
+- [x] 创建 App.vue 根组件
+- [x] 实现 AppHeader 组件（Logo + 菜单栏 + 导出按钮）
+- [x] 实现 ToolBar 组件（模式切换 + 格式化按钮组）
+- [x] 实现 SideBar 组件（文件浏览器 + 资源管理器）
+- [x] 实现 StatusBar 组件（字数/文件大小/光标位置/保存状态）
+- [x] 实现主区域三栏弹性布局（侧边栏 + 编辑器 + 预览）
 - [ ] 响应式适配：侧边栏可折叠
 
 ### 1.4 侧边栏功能
-- [ ] 实现文件浏览器面板（文件列表 + 新建按钮）
-- [ ] 实现资源管理器面板（图片缩略图网格 + 添加按钮）
-- [ ] 侧边栏面板切换（文件 / 资源）
-- [ ] 文件项选中高亮状态
+- [x] 实现文件浏览器面板（文件列表 + 新建按钮）
+- [x] 实现资源管理器面板（图片缩略图网格 + 添加按钮）
+- [x] 侧边栏面板切换（文件 / 资源）
+- [x] 文件项选中高亮状态
 
 ### 1.5 主题系统
-- [ ] 定义 CSS 变量体系（颜色、字号、间距）
-- [ ] 实现浅色主题
-- [ ] 实现深色主题
-- [ ] 实现主题切换按钮（Header 右侧）
-- [ ] 主题偏好持久化（localStorage）
-- [ ] 跟随系统主题选项
+- [x] 定义 CSS 变量体系（颜色、字号、间距）
+- [x] 实现浅色主题
+- [x] 实现深色主题
+- [x] 实现主题切换按钮（Header 右侧）
+- [x] 主题偏好持久化（localStorage）
+- [x] 跟随系统主题选项
 
 ### 1.6 IPC 通信层
-- [ ] 配置 contextBridge 暴露安全 API
-- [ ] 封装 ipcRenderer 调用（invoke / send / on）
-- [ ] 定义 IPC 通道常量（文件操作、mdx 操作等）
-- [ ] 主进程注册 ipcMain handlers
-- [ ] 编写通信层类型定义（请求/响应类型）
-- [ ] 验证双向通信正常
+- [x] 配置 contextBridge 暴露安全 API
+- [x] 封装 ipcRenderer 调用（invoke / send / on）
+- [x] 定义 IPC 通道常量（文件操作、mdx 操作等）
+- [x] 主进程注册 ipcMain handlers
+- [x] 编写通信层类型定义（请求/响应类型）
+- [ ] 验证双向通信正常（需实现具体 handlers）
 
 ---
 

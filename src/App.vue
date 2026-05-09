@@ -43,7 +43,10 @@ onMounted(() => {
     <!-- 主体区域 -->
     <div class="main-content">
       <!-- 左侧边栏 -->
-      <SideBar :collapsed="sidebarCollapsed" @toggle="toggleSidebar" />
+      <SideBar
+        :collapsed="sidebarCollapsed"
+        @toggle="toggleSidebar"
+      />
       
       <!-- 编辑区域 -->
       <EditorPanel />

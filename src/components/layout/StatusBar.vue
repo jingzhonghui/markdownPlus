@@ -82,19 +82,56 @@ const modeTooltip = computed(() => {
         @click="toggleEditorMode"
       >
         <!-- 所见即所得图标 -->
-        <svg v-if="modeIcon === 'wysiwyg'" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+        <svg
+          v-if="modeIcon === 'wysiwyg'"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+          />
+          <path
+            stroke-width="2"
+            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+          />
         </svg>
         <!-- 分屏预览图标 -->
-        <svg v-else-if="modeIcon === 'split'" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2" />
-          <path stroke-width="2" d="M12 3v18" />
+        <svg
+          v-else-if="modeIcon === 'split'"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <rect
+            x="3"
+            y="3"
+            width="18"
+            height="18"
+            rx="2"
+            stroke-width="2"
+          />
+          <path
+            stroke-width="2"
+            d="M12 3v18"
+          />
         </svg>
         <!-- 源码编辑图标 -->
-        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <polyline points="16 18 22 12 16 6" stroke-width="2" />
-          <polyline points="8 6 2 12 8 18" stroke-width="2" />
+        <svg
+          v-else
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <polyline
+            points="16 18 22 12 16 6"
+            stroke-width="2"
+          />
+          <polyline
+            points="8 6 2 12 8 18"
+            stroke-width="2"
+          />
         </svg>
         <span class="mode-label">{{ modeTooltip.split(' ')[0] }}</span>
       </button>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 
@@ -10,33 +10,82 @@ const title = computed(() => {
   return fileStore.displayTitle + ' - Markdown+'
 })
 
-/**
- * 处理菜单点击
- */
-function handleMenuClick(menu: string): void {
-  console.log('Menu clicked:', menu)
-  // TODO: 实现菜单功能
-}
+// 菜单显示状态
+const showFileMenu = ref(false)
 
 /**
  * 新建文件
  */
 async function newFile(): Promise<void> {
+  if (fileStore.isModified) {
+    const confirm = window.confirm('当前文件未保存，是否继续新建文件？')
+    if (!confirm) return
+  }
   await fileStore.newFile()
+  showFileMenu.value = false
 }
 
 /**
  * 打开文件
  */
 async function openFile(): Promise<void> {
-  await fileStore.openFile()
+  if (fileStore.isModified) {
+    const confirm = window.confirm('当前文件未保存，是否继续打开文件？')
+    if (!confirm) return
+  }
+  const success = await fileStore.openFile()
+  if (success) {
+    console.log('文件打开成功')
+  }
+  showFileMenu.value = false
 }
 
 /**
  * 保存文件
  */
 async function saveFile(): Promise<void> {
-  await fileStore.saveFile()
+  const success = await fileStore.saveFile()
+  if (success) {
+    console.log('文件保存成功')
+  }
+  showFileMenu.value = false
+}
+
+/**
+ * 另存为
+ */
+async function saveAsFile(): Promise<void> {
+  const success = await fileStore.saveAsFile()
+  if (success) {
+    console.log('文件另存成功')
+  }
+  showFileMenu.value = false
+}
+
+/**
+ * 导入 Markdown
+ */
+async function importMarkdown(): Promise<void> {
+  if (fileStore.isModified) {
+    const confirm = window.confirm('当前文件未保存，是否继续导入？')
+    if (!confirm) return
+  }
+  const success = await fileStore.importMarkdown()
+  if (success) {
+    console.log('导入成功')
+  }
+  showFileMenu.value = false
+}
+
+/**
+ * 导出 Markdown
+ */
+async function exportMarkdown(): Promise<void> {
+  const success = await fileStore.exportMarkdown()
+  if (success) {
+    console.log('导出成功')
+  }
+  showFileMenu.value = false
 }
 
 /**
@@ -47,12 +96,44 @@ function toggleTheme(): void {
 }
 
 /**
- * 显示导出对话框
+ * 切换文件菜单
  */
-function showExport(): void {
-  console.log('Show export dialog')
-  // TODO: 实现导出功能
+function toggleFileMenu(): void {
+  showFileMenu.value = !showFileMenu.value
 }
+
+/**
+ * 关闭菜单
+ */
+function closeMenu(): void {
+  showFileMenu.value = false
+}
+
+// 快捷键监听
+function handleKeydown(e: KeyboardEvent) {
+  // Ctrl+N 新建
+  if (e.ctrlKey && e.key === 'n') {
+    e.preventDefault()
+    newFile()
+  }
+  // Ctrl+O 打开
+  if (e.ctrlKey && e.key === 'o') {
+    e.preventDefault()
+    openFile()
+  }
+  // Ctrl+S 保存
+  if (e.ctrlKey && e.key === 's') {
+    e.preventDefault()
+    if (e.shiftKey) {
+      saveAsFile()
+    } else {
+      saveFile()
+    }
+  }
+}
+
+// 添加全局键盘监听
+window.addEventListener('keydown', handleKeydown)
 </script>
 
 <template>
@@ -65,47 +146,144 @@ function showExport(): void {
         </div>
         <span class="logo-text">Markdown+</span>
       </div>
-      
+
       <!-- 菜单栏 -->
       <nav class="menu-bar">
+        <!-- 文件菜单 -->
         <div
-          class="menu-item"
+          class="menu-dropdown"
+          @mouseleave="closeMenu"
+        >
+          <button
+            class="menu-btn"
+            :class="{ active: showFileMenu }"
+            @click="toggleFileMenu"
+          >
+            文件
+            <svg
+              class="menu-arrow"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                stroke-width="2"
+                d="M6 9l6 6 6-6"
+              />
+            </svg>
+          </button>
+          <div
+            v-show="showFileMenu"
+            class="dropdown-menu"
+          >
+            <div
+              class="menu-item"
+              @click="newFile"
+            >
+              <span class="item-label">新建</span>
+              <span class="item-shortcut">Ctrl+N</span>
+            </div>
+            <div
+              class="menu-item"
+              @click="openFile"
+            >
+              <span class="item-label">打开</span>
+              <span class="item-shortcut">Ctrl+O</span>
+            </div>
+            <div class="menu-divider" />
+            <div
+              class="menu-item"
+              @click="saveFile"
+            >
+              <span class="item-label">保存</span>
+              <span class="item-shortcut">Ctrl+S</span>
+            </div>
+            <div
+              class="menu-item"
+              @click="saveAsFile"
+            >
+              <span class="item-label">另存为...</span>
+              <span class="item-shortcut">Ctrl+Shift+S</span>
+            </div>
+            <div class="menu-divider" />
+            <div
+              class="menu-item"
+              @click="importMarkdown"
+            >
+              <span class="item-label">导入 Markdown</span>
+            </div>
+            <div
+              class="menu-item"
+              @click="exportMarkdown"
+            >
+              <span class="item-label">导出 Markdown</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="menu-divider" />
+
+        <!-- 直接操作按钮 -->
+        <button
+          class="icon-btn"
+          title="新建 (Ctrl+N)"
           @click="newFile"
         >
-          新建
-        </div>
-        <div
-          class="menu-item"
+          <svg
+            class="icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
+            <path
+              stroke-width="2"
+              d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
+          </svg>
+        </button>
+
+        <button
+          class="icon-btn"
+          title="打开 (Ctrl+O)"
           @click="openFile"
         >
-          打开
-        </div>
-        <div
-          class="menu-item"
+          <svg
+            class="icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
+            <path
+              stroke-width="2"
+              d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
+            />
+          </svg>
+        </button>
+
+        <button
+          class="icon-btn"
+          title="保存 (Ctrl+S)"
           @click="saveFile"
         >
-          保存
-        </div>
-        <div class="menu-divider" />
-        <div
-          class="menu-item"
-          @click="handleMenuClick('undo')"
-        >
-          撤销
-        </div>
-        <div
-          class="menu-item"
-          @click="handleMenuClick('redo')"
-        >
-          重做
-        </div>
+          <svg
+            class="icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
+            <path
+              stroke-width="2"
+              d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
+            />
+          </svg>
+        </button>
       </nav>
     </div>
-    
+
     <div class="header-right">
       <!-- 主题切换按钮 -->
-      <button 
-        class="icon-btn" 
+      <button
+        class="icon-btn"
         :title="themeStore.isDark ? '切换到浅色主题' : '切换到深色主题'"
         @click="toggleTheme"
       >
@@ -139,14 +317,6 @@ function showExport(): void {
             d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
           />
         </svg>
-      </button>
-      
-      <!-- 导出按钮 -->
-      <button
-        class="export-btn"
-        @click="showExport"
-      >
-        导出
       </button>
     </div>
   </header>
@@ -201,8 +371,53 @@ function showExport(): void {
   gap: 4px;
 }
 
+.menu-dropdown {
+  position: relative;
+}
+
+.menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--color-text);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.menu-btn:hover,
+.menu-btn.active {
+  background-color: var(--color-bg-secondary);
+}
+
+.menu-arrow {
+  width: 14px;
+  height: 14px;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 220px;
+  margin-top: 4px;
+  padding: 6px;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
 .menu-item {
-  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
   font-size: 13px;
   color: var(--color-text);
   border-radius: var(--radius-sm);
@@ -214,17 +429,20 @@ function showExport(): void {
   background-color: var(--color-bg-secondary);
 }
 
-.menu-divider {
-  width: 1px;
-  height: 16px;
-  background-color: var(--color-border);
-  margin: 0 4px;
+.item-label {
+  flex: 1;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
+.item-shortcut {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-left: 16px;
+}
+
+.menu-divider {
+  height: 1px;
+  margin: 6px 0;
+  background-color: var(--color-border);
 }
 
 .icon-btn {
@@ -251,19 +469,9 @@ function showExport(): void {
   height: 18px;
 }
 
-.export-btn {
-  padding: 6px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  color: white;
-  background-color: var(--color-primary);
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.export-btn:hover {
-  background-color: var(--color-primary-hover);
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
 </style>

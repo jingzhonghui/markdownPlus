@@ -1,6 +1,8 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { registerFileHandlers } from './ipc/file-handlers'
+import { registerMdxHandlers, cleanupAll } from './ipc/mdx-handlers'
 
 /**
  * 创建主窗口
@@ -49,6 +51,12 @@ app.whenReady().then(() => {
   // IPC 测试通道
   ipcMain.handle('ping', () => 'pong')
 
+  // 注册文件操作 handlers
+  registerFileHandlers()
+
+  // 注册 MDX 操作 handlers
+  registerMdxHandlers()
+
   createWindow()
 
   app.on('activate', function () {
@@ -57,7 +65,15 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  // 清理临时资源
+  cleanupAll()
+
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  // 应用退出前清理临时资源
+  cleanupAll()
 })

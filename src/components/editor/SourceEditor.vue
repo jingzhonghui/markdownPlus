@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { useFileStore } from '../../stores/file'
 
 const fileStore = useFileStore()
 const textareaRef = ref<HTMLTextAreaElement>()
+
+// 监听文件内容变化（打开新文件时）
+watch(() => fileStore.fileContent, (newContent) => {
+  nextTick(() => {
+    if (textareaRef.value && textareaRef.value.value !== newContent) {
+      textareaRef.value.value = newContent
+    }
+  })
+}, { immediate: true })
 
 /**
  * 处理输入事件
@@ -62,13 +71,6 @@ function handleClick(): void {
 function handleKeyup(): void {
   updateCursorPosition()
 }
-
-onMounted(() => {
-  if (textareaRef.value) {
-    textareaRef.value.value = fileStore.fileContent
-    updateCursorPosition()
-  }
-})
 </script>
 
 <template>

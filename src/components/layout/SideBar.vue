@@ -35,15 +35,25 @@ function toggleSidebar(): void {
 </script>
 
 <template>
-  <aside class="sidebar" :class="{ collapsed: props.collapsed }">
+  <aside
+    class="sidebar"
+    :class="{ collapsed: props.collapsed }"
+  >
     <!-- 折叠状态下的图标栏 -->
-    <div v-if="props.collapsed" class="collapsed-bar">
+    <div
+      v-if="props.collapsed"
+      class="collapsed-bar"
+    >
       <button
         class="collapsed-btn"
         :class="{ active: activePanel === 'files' }"
         @click="switchPanel('files')"
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
           <path
             stroke-width="2"
             d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
@@ -55,16 +65,46 @@ function toggleSidebar(): void {
         :class="{ active: activePanel === 'assets' }"
         @click="switchPanel('assets')"
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
-          <path stroke-width="2" d="M21 15l-5-5L5 21" />
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <rect
+            x="3"
+            y="3"
+            width="18"
+            height="18"
+            rx="2"
+            stroke-width="2"
+          />
+          <circle
+            cx="8.5"
+            cy="8.5"
+            r="1.5"
+            fill="currentColor"
+          />
+          <path
+            stroke-width="2"
+            d="M21 15l-5-5L5 21"
+          />
         </svg>
       </button>
-      <div class="collapsed-divider"></div>
-      <button class="collapsed-btn" @click="toggleSidebar" title="展开侧边栏">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path stroke-width="2" d="M13 17l5-5-5-5M6 17l5-5-5-5" />
+      <div class="collapsed-divider" />
+      <button
+        class="collapsed-btn"
+        title="展开侧边栏"
+        @click="toggleSidebar"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M13 17l5-5-5-5M6 17l5-5-5-5"
+          />
         </svg>
       </button>
     </div>
@@ -73,8 +113,17 @@ function toggleSidebar(): void {
     <template v-else>
       <!-- 面板切换标签 -->
       <div class="sidebar-tabs">
-        <button class="tab-btn" :class="{ active: activePanel === 'files' }" @click="switchPanel('files')">
-          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <button
+          class="tab-btn"
+          :class="{ active: activePanel === 'files' }"
+          @click="switchPanel('files')"
+        >
+          <svg
+            class="tab-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
             <path
               stroke-width="2"
               d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
@@ -82,20 +131,55 @@ function toggleSidebar(): void {
           </svg>
           <span>文件</span>
         </button>
-        <button class="tab-btn" :class="{ active: activePanel === 'assets' }" @click="switchPanel('assets')">
-          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
-            <path stroke-width="2" d="M21 15l-5-5L5 21" />
+        <button
+          class="tab-btn"
+          :class="{ active: activePanel === 'assets' }"
+          @click="switchPanel('assets')"
+        >
+          <svg
+            class="tab-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
+            <rect
+              x="3"
+              y="3"
+              width="18"
+              height="18"
+              rx="2"
+              stroke-width="2"
+            />
+            <circle
+              cx="8.5"
+              cy="8.5"
+              r="1.5"
+              fill="currentColor"
+            />
+            <path
+              stroke-width="2"
+              d="M21 15l-5-5L5 21"
+            />
           </svg>
           <span>资源</span>
         </button>
       </div>
 
       <!-- 折叠按钮 -->
-      <button class="collapse-btn" @click="toggleSidebar" title="收起侧边栏">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path stroke-width="2" d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />
+      <button
+        class="collapse-btn"
+        title="收起侧边栏"
+        @click="toggleSidebar"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M11 17l-5-5 5-5M18 17l-5-5 5-5"
+          />
         </svg>
       </button>
 

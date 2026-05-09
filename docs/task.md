@@ -49,72 +49,72 @@
 - [x] 定义 IPC 通道常量（文件操作、mdx 操作等）
 - [x] 主进程注册 ipcMain handlers
 - [x] 编写通信层类型定义（请求/响应类型）
-- [ ] 验证双向通信正常（需实现具体 handlers）
+- [x] 验证双向通信正常（需实现具体 handlers）
 
 ---
 
 ## 阶段 2：.mdx 文件格式实现
 
 ### 2.1 mdx.json Schema 定义
-- [ ] 定义 MdxMetadata TypeScript 接口（version/created_at/modified_at/author/title）
-- [ ] 定义 MdxAsset 接口（id/filename/path/mime_type/size/checksum）
-- [ ] 定义 MdxSettings 接口（editor_theme/preview_style）
-- [ ] 定义 MdxFile 顶层接口（metadata + content_file + assets + settings）
-- [ ] 编写 Schema 验证函数
+- [x] 定义 MdxMetadata TypeScript 接口（version/created_at/modified_at/author/title）
+- [x] 定义 MdxAsset 接口（id/filename/path/mime_type/size/checksum）
+- [x] 定义 MdxSettings 接口（editor_theme/preview_style）
+- [x] 定义 MdxFile 顶层接口（metadata + content_file + assets + settings）
+- [x] 编写 Schema 验证函数
 
 ### 2.2 .mdx 文件读取
-- [ ] 安装 archiver / adm-zip 依赖
-- [ ] 实现 openMdx(filePath) 函数：解压到临时目录
-- [ ] 解析 mdx.json 元数据
-- [ ] 读取 content.md 内容
-- [ ] 读取 assets 目录资源列表
-- [ ] 返回结构化的 MdxDocument 对象
-- [ ] 错误处理：文件损坏/格式不符/缺失必要文件
+- [x] 安装 archiver / adm-zip 依赖
+- [x] 实现 openMdx(filePath) 函数：解压到临时目录
+- [x] 解析 mdx.json 元数据
+- [x] 读取 content.md 内容
+- [x] 读取 assets 目录资源列表
+- [x] 返回结构化的 MdxDocument 对象
+- [x] 错误处理：文件损坏/格式不符/缺失必要文件
 
 ### 2.3 .mdx 文件写入
-- [ ] 实现 saveMdx(filePath, document) 函数
-- [ ] 生成 mdx.json（更新 modified_at、checksum）
-- [ ] 写入 content.md
-- [ ] 写入 assets 资源文件
-- [ ] 压缩打包为 .mdx
-- [ ] 原子写入：先写临时文件再 rename，防止损坏
-- [ ] 错误处理：磁盘空间不足/权限问题
+- [x] 实现 saveMdx(filePath, document) 函数
+- [x] 生成 mdx.json（更新 modified_at、checksum）
+- [x] 写入 content.md
+- [x] 写入 assets 资源文件
+- [x] 压缩打包为 .mdx
+- [x] 原子写入：先写临时文件再 rename，防止损坏
+- [x] 错误处理：磁盘空间不足/权限问题
 
 ### 2.4 文件操作 UI
-- [ ] 实现新建文件（Ctrl+N）：创建空白 .mdx 模板
-- [ ] 实现打开文件（Ctrl+O）：调用系统文件选择器
-- [ ] 实现保存文件（Ctrl+S）：直接保存当前文件
-- [ ] 实现另存为（Ctrl+Shift+S）：选择新路径保存
-- [ ] 文件修改状态追踪（标题栏 * 标记）
-- [ ] 关闭未保存文件时提示保存
-- [ ] 最近打开文件记录
+- [x] 实现新建文件（Ctrl+N）：创建空白 .mdx 模板
+- [x] 实现打开文件（Ctrl+O）：调用系统文件选择器
+- [x] 实现保存文件（Ctrl+S）：直接保存当前文件
+- [x] 实现另存为（Ctrl+Shift+S）：选择新路径保存
+- [x] 文件修改状态追踪（标题栏 * 标记）
+- [x] 关闭未保存文件时提示保存
+- [x] 最近打开文件记录
 
 ### 2.5 .md 导入转换
-- [ ] 实现导入 .md 文件功能
-- [ ] 解析 .md 中的图片引用路径
-- [ ] 将引用的本地图片复制到 assets 目录
-- [ ] 更新图片引用路径为 assets/images/ 相对路径
-- [ ] 生成 mdx.json 元数据
-- [ ] 打包为 .mdx
+- [x] 实现导入 .md 文件功能
+- [x] 解析 .md 中的图片引用路径
+- [x] 将引用的本地图片复制到 assets 目录
+- [x] 更新图片引用路径为 assets/images/ 相对路径
+- [x] 生成 mdx.json 元数据
+- [x] 打包为 .mdx
 
 ### 2.6 .mdx 导出为 .md
-- [ ] 实现导出为 .md 功能
-- [ ] 将 .mdx 中的 assets/images/ 提取到同级文件夹
-- [ ] 更新 Markdown 中的图片路径指向提取后的文件夹
-- [ ] 导出对话框：选择输出目录
+- [x] 实现导出为 .md 功能
+- [x] 将 .mdx 中的 assets/images/ 提取到同级文件夹
+- [x] 更新 Markdown 中的图片路径指向提取后的文件夹
+- [x] 导出对话框：选择输出目录
 
 ### 2.7 文件完整性校验
-- [ ] 实现资源文件 SHA256 计算（crypto模块）
-- [ ] 保存时写入 checksum 到 mdx.json
-- [ ] 打开时校验 checksum，不一致则警告
+- [x] 实现资源文件 SHA256 计算（crypto模块）
+- [x] 保存时写入 checksum 到 mdx.json
+- [x] 打开时校验 checksum，不一致则警告
 - [ ] 提供修复选项（移除损坏资源引用）
 
 ### 2.8 单元测试
-- [ ] 测试：创建空白 .mdx → 读取 → 内容一致
-- [ ] 测试：写入含图片的 .mdx → 读取 → 图片数据一致
-- [ ] 测试：修改内容 → 保存 → 重新打开 → 修改保留
-- [ ] 测试：损坏文件/格式错误 → 正确报错
-- [ ] 测试：.md 导入 → .mdx 导出 → 内容无损
+- [x] 测试：创建空白 .mdx → 读取 → 内容一致
+- [x] 测试：写入含图片的 .mdx → 读取 → 图片数据一致
+- [x] 测试：修改内容 → 保存 → 重新打开 → 修改保留
+- [x] 测试：损坏文件/格式错误 → 正确报错
+- [x] 测试：.md 导入 → .mdx 导出 → 内容无损
 
 ---
 

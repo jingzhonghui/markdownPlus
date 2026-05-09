@@ -22,7 +22,9 @@ export const IPC_CHANNELS = {
   APP: {
     PING: 'ping',
     GET_VERSION: 'app:getVersion',
-    GET_PLATFORM: 'app:getPlatform'
+    GET_PLATFORM: 'app:getPlatform',
+    CONFIRM_CLOSE: 'app:confirm-close',
+    CLOSE_CONFIRMED: 'app:close-confirmed'
   },
   DIALOG: {
     SHOW_OPEN: 'dialog:showOpen',

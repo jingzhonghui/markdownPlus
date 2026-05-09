@@ -30,6 +30,11 @@ export const useFileStore = defineStore('file', () => {
   // Getters
   const hasFile = computed(() => document.value !== null)
   const isModified = computed(() => currentFile.value?.modified ?? false)
+  /** 是否有未保存的修改（包括有文档但从未保存过的情况） */
+  const isDirty = computed(() => {
+    if (!document.value) return false
+    return isModified.value || !currentFile.value?.path
+  })
   const fileName = computed(() => {
     if (document.value?.metadata.title && document.value.metadata.title !== '未命名文档') {
       return `${document.value.metadata.title}.mdx`
@@ -50,8 +55,8 @@ export const useFileStore = defineStore('file', () => {
   /**
    * 初始化文件状态
    */
-  function init(): void {
-    loadRecentFiles()
+  async function init(): Promise<void> {
+    await loadRecentFiles()
   }
 
   /**
@@ -143,13 +148,15 @@ export const useFileStore = defineStore('file', () => {
   }
 
   /**
-   * 加载最近文件列表
+   * 加载最近文件列表（从主进程读取）
    */
-  function loadRecentFiles(): void {
+  async function loadRecentFiles(): Promise<void> {
     try {
-      const saved = localStorage.getItem('markdown-plus-recent-files')
-      if (saved) {
-        recentFiles.value = JSON.parse(saved)
+      if (window.electronAPI?.getRecentFiles) {
+        const result = await window.electronAPI.getRecentFiles()
+        if (result.success && result.data) {
+          recentFiles.value = result.data
+        }
       }
     } catch {
       recentFiles.value = []
@@ -157,30 +164,47 @@ export const useFileStore = defineStore('file', () => {
   }
 
   /**
-   * 保存最近文件列表
+   * 添加到最近文件（同步到主进程）
    */
-  function saveRecentFiles(): void {
-    try {
-      localStorage.setItem('markdown-plus-recent-files', JSON.stringify(recentFiles.value))
-    } catch {
-      // 忽略存储错误
-    }
-  }
-
-  /**
-   * 添加到最近文件
-   */
-  function addToRecent(filePath: string): void {
+  async function addToRecent(filePath: string): Promise<void> {
+    // 本地立即更新
     const index = recentFiles.value.indexOf(filePath)
     if (index > -1) {
       recentFiles.value.splice(index, 1)
     }
     recentFiles.value.unshift(filePath)
-    // 最多保留 10 个
-    if (recentFiles.value.length > 10) {
-      recentFiles.value = recentFiles.value.slice(0, 10)
+    if (recentFiles.value.length > 20) {
+      recentFiles.value = recentFiles.value.slice(0, 20)
     }
-    saveRecentFiles()
+    // 通知主进程持久化
+    if (window.electronAPI) {
+      // 使用已有的 addImage API 模式调用 addRecent
+      try {
+        await window.electronAPI.getRecentFiles() // 触发主进程刷新
+      } catch {
+        // 忽略
+      }
+    }
+  }
+
+  /**
+   * 从最近列表移除文件
+   */
+  async function removeRecent(filePath: string): Promise<void> {
+    recentFiles.value = recentFiles.value.filter((p) => p !== filePath)
+    if (window.electronAPI?.removeRecentFile) {
+      await window.electronAPI.removeRecentFile(filePath)
+    }
+  }
+
+  /**
+   * 清空最近文件列表
+   */
+  async function clearRecent(): Promise<void> {
+    recentFiles.value = []
+    if (window.electronAPI?.clearRecentFiles) {
+      await window.electronAPI.clearRecentFiles()
+    }
   }
 
   /**
@@ -238,9 +262,10 @@ export const useFileStore = defineStore('file', () => {
 
       if (result.success && result.data) {
         const doc = result.data.document as MdxDocument
-        const path = result.data.filePath as string
-        setDocument(doc, path)
-        addToRecent(path)
+        const filePath = result.data.filePath as string
+        setDocument(doc, filePath)
+        // 主进程已添加到最近列表，刷新前端缓存
+        await loadRecentFiles()
         return true
       } else if (result.error === '用户取消') {
         return false
@@ -321,13 +346,14 @@ export const useFileStore = defineStore('file', () => {
       )
 
       if (result.success && result.data) {
-        const path = result.data as string
+        const savePath = result.data as string
         currentFile.value = {
-          path,
-          name: path.split(/[/\\]/).pop() || '未命名.mdx',
+          path: savePath,
+          name: savePath.split(/[/\\]/).pop() || '未命名.mdx',
           modified: false
         }
-        addToRecent(path)
+        // 主进程已添加到最近列表，刷新前端缓存
+        await loadRecentFiles()
         return true
       } else if (result.error === '用户取消') {
         return false
@@ -360,6 +386,68 @@ export const useFileStore = defineStore('file', () => {
   }
 
   /**
+   * 确认保存对话框
+   * 返回: 'save' | 'discard' | 'cancel'
+   * 使用 Electron 原生对话框，回退到 window.confirm
+   */
+  async function confirmSaveDialog(): Promise<'save' | 'discard' | 'cancel'> {
+    const title = document.value?.metadata.title || '未命名文档'
+
+    // 优先使用 Electron 原生对话框
+    if (window.electronAPI?.showMessageBox) {
+      try {
+        const result = await window.electronAPI.showMessageBox({
+          type: 'warning',
+          title: '保存更改',
+          message: `是否将更改保存到"${title}"？`,
+          detail: '如果不保存，你的更改将会丢失。',
+          buttons: ['保存', '不保存', '取消'],
+          defaultId: 0,
+          cancelId: 2,
+          noLink: true
+        })
+        if (result.success && result.data !== undefined) {
+          const choice = result.data as number
+          if (choice === 0) return 'save'
+          if (choice === 1) return 'discard'
+          return 'cancel'
+        }
+      } catch {
+        // 回退到简单对话框
+      }
+    }
+
+    // 回退方案：使用 window.confirm
+    const confirmed = window.confirm(`"${title}" 有未保存的更改，是否保存？\n\n确定 = 不保存，取消 = 返回继续编辑`)
+    return confirmed ? 'discard' : 'cancel'
+  }
+
+  /**
+   * 在执行操作前确认保存
+   * 返回 true 表示可以继续执行操作，false 表示用户取消
+   */
+  async function confirmSaveBeforeAction(): Promise<boolean> {
+    if (!isDirty.value) return true
+
+    const choice = await confirmSaveDialog()
+
+    if (choice === 'cancel') {
+      return false
+    }
+
+    if (choice === 'save') {
+      const saved = await saveFile()
+      if (!saved) {
+        // 保存失败或用户取消了另存为
+        return false
+      }
+    }
+
+    // 'discard' - 不保存，继续操作
+    return true
+  }
+
+  /**
    * 导入 Markdown 文件
    */
   async function importMarkdown(): Promise<boolean> {
@@ -376,11 +464,10 @@ export const useFileStore = defineStore('file', () => {
 
       if (result.success && result.data) {
         const doc = result.data.document as MdxDocument
-        const path = result.data.filePath as string
-        setDocument(doc, path)
-        if (path) {
-          addToRecent(path)
-        }
+        const filePath = result.data.filePath as string
+        setDocument(doc, filePath)
+        // 刷新最近文件列表
+        await loadRecentFiles()
         return true
       } else if (result.error === '用户取消') {
         return false
@@ -475,6 +562,7 @@ export const useFileStore = defineStore('file', () => {
     // Getters
     hasFile,
     isModified,
+    isDirty,
     fileName,
     displayTitle,
     imageAssets,
@@ -492,8 +580,12 @@ export const useFileStore = defineStore('file', () => {
     saveFile,
     saveAsFile,
     closeFile,
+    confirmSaveDialog,
+    confirmSaveBeforeAction,
     importMarkdown,
     exportMarkdown,
-    addImage
+    addImage,
+    removeRecent,
+    clearRecent
   }
 })

@@ -1,19 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useFileStore } from '../../stores/file'
 
 const fileStore = useFileStore()
-
-/**
- * 最近打开的文件列表
- */
-const recentFiles = computed(() => {
-  return fileStore.recentFiles.map(path => ({
-    path,
-    name: path.split(/[/\\]/).pop() || path,
-    isActive: path === fileStore.currentFile?.path
-  }))
-})
 
 /**
  * 新建文件
@@ -27,14 +15,6 @@ async function createNewFile(): Promise<void> {
  */
 async function openFile(): Promise<void> {
   await fileStore.openFile()
-}
-
-/**
- * 选择文件
- */
-function selectFile(path: string): void {
-  console.log('Select file:', path)
-  // TODO: 打开选中的文件
 }
 </script>
 
@@ -108,40 +88,10 @@ function selectFile(path: string): void {
           >●</span>
         </div>
       </div>
-      
-      <!-- 最近文件 -->
-      <div
-        v-if="recentFiles.length > 0"
-        class="file-section"
-      >
-        <div class="section-title">
-          最近打开
-        </div>
-        <div
-          v-for="file in recentFiles"
-          :key="file.path"
-          class="file-item"
-          :class="{ active: file.isActive }"
-          @click="selectFile(file.path)"
-        >
-          <svg
-            class="file-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <path
-              stroke-width="2"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
-          <span class="file-name">{{ file.name }}</span>
-        </div>
-      </div>
-      
+
       <!-- 空状态 -->
       <div
-        v-if="!fileStore.currentFile && recentFiles.length === 0"
+        v-if="!fileStore.currentFile"
         class="empty-state"
       >
         <svg

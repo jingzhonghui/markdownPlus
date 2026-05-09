@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { useFileStore } from '../../stores/file'
 
 const fileStore = useFileStore()
 const editorRef = ref<HTMLDivElement>()
 
+/** 标记是否正在同步内容到编辑器，避免 watch 和 input 循环触发 */
+let isSyncing = false
+
 /**
  * 处理输入事件
  */
 function handleInput(): void {
+  if (isSyncing) return
   if (editorRef.value) {
     fileStore.updateContent(editorRef.value.innerText)
   }
@@ -42,11 +46,16 @@ function handleKeydown(e: KeyboardEvent): void {
   }
 }
 
-onMounted(() => {
-  if (editorRef.value) {
-    editorRef.value.innerText = fileStore.fileContent
-  }
-})
+// 监听文件内容变化（打开新文件、模式切换时同步）
+watch(() => fileStore.fileContent, (newContent) => {
+  nextTick(() => {
+    if (editorRef.value && editorRef.value.innerText !== newContent) {
+      isSyncing = true
+      editorRef.value.innerText = newContent
+      nextTick(() => { isSyncing = false })
+    }
+  })
+}, { immediate: true })
 </script>
 
 <template>
@@ -58,9 +67,7 @@ onMounted(() => {
       spellcheck="false"
       @input="handleInput"
       @keydown="handleKeydown"
-    >
-      <p>在此输入内容，支持 Markdown 语法...</p>
-    </div>
+    />
   </div>
 </template>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 
@@ -12,15 +12,25 @@ const title = computed(() => {
 
 // 菜单显示状态
 const showFileMenu = ref(false)
+const showRecentSubmenu = ref(false)
+
+/** 从完整路径提取文件名用于显示 */
+function getFileName(filePath: string): string {
+  return filePath.split(/[/\\]/).pop() || filePath
+}
+
+/** 显示路径（只显示父目录名 + 文件名，类似 VSCode） */
+function getDisplayPath(filePath: string): string {
+  const parts = filePath.split(/[/\\]/)
+  if (parts.length <= 2) return filePath
+  return '...' + parts.slice(-2).join('/')
+}
 
 /**
  * 新建文件
  */
 async function newFile(): Promise<void> {
-  if (fileStore.isModified) {
-    const confirm = window.confirm('当前文件未保存，是否继续新建文件？')
-    if (!confirm) return
-  }
+  if (!await fileStore.confirmSaveBeforeAction()) return
   await fileStore.newFile()
   showFileMenu.value = false
 }
@@ -29,15 +39,34 @@ async function newFile(): Promise<void> {
  * 打开文件
  */
 async function openFile(): Promise<void> {
-  if (fileStore.isModified) {
-    const confirm = window.confirm('当前文件未保存，是否继续打开文件？')
-    if (!confirm) return
-  }
+  if (!await fileStore.confirmSaveBeforeAction()) return
   const success = await fileStore.openFile()
   if (success) {
     console.log('文件打开成功')
   }
   showFileMenu.value = false
+}
+
+/**
+ * 从最近列表打开文件
+ */
+async function openRecentFile(filePath: string): Promise<void> {
+  if (!await fileStore.confirmSaveBeforeAction()) return
+  const success = await fileStore.openFile(filePath)
+  if (!success) {
+    // 文件可能已被删除，从最近列表中移除
+    await fileStore.removeRecent(filePath)
+  }
+  showFileMenu.value = false
+  showRecentSubmenu.value = false
+}
+
+/**
+ * 清空最近文件列表
+ */
+async function clearRecentFiles(): Promise<void> {
+  await fileStore.clearRecent()
+  showRecentSubmenu.value = false
 }
 
 /**
@@ -66,10 +95,7 @@ async function saveAsFile(): Promise<void> {
  * 导入 Markdown
  */
 async function importMarkdown(): Promise<void> {
-  if (fileStore.isModified) {
-    const confirm = window.confirm('当前文件未保存，是否继续导入？')
-    if (!confirm) return
-  }
+  if (!await fileStore.confirmSaveBeforeAction()) return
   const success = await fileStore.importMarkdown()
   if (success) {
     console.log('导入成功')
@@ -100,6 +126,7 @@ function toggleTheme(): void {
  */
 function toggleFileMenu(): void {
   showFileMenu.value = !showFileMenu.value
+  showRecentSubmenu.value = false
 }
 
 /**
@@ -107,6 +134,14 @@ function toggleFileMenu(): void {
  */
 function closeMenu(): void {
   showFileMenu.value = false
+  showRecentSubmenu.value = false
+}
+
+/**
+ * 切换最近文件子菜单
+ */
+function toggleRecentSubmenu(): void {
+  showRecentSubmenu.value = !showRecentSubmenu.value
 }
 
 // 快捷键监听
@@ -134,6 +169,22 @@ function handleKeydown(e: KeyboardEvent) {
 
 // 添加全局键盘监听
 window.addEventListener('keydown', handleKeydown)
+
+/** 点击外部关闭菜单 */
+function handleClickOutside(e: MouseEvent): void {
+  const target = e.target as HTMLElement
+  if (!target.closest('.menu-dropdown')) {
+    closeMenu()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <template>
@@ -150,10 +201,7 @@ window.addEventListener('keydown', handleKeydown)
       <!-- 菜单栏 -->
       <nav class="menu-bar">
         <!-- 文件菜单 -->
-        <div
-          class="menu-dropdown"
-          @mouseleave="closeMenu"
-        >
+        <div class="menu-dropdown">
           <button
             class="menu-btn"
             :class="{ active: showFileMenu }"
@@ -187,9 +235,65 @@ window.addEventListener('keydown', handleKeydown)
               class="menu-item"
               @click="openFile"
             >
-              <span class="item-label">打开</span>
+              <span class="item-label">打开...</span>
               <span class="item-shortcut">Ctrl+O</span>
             </div>
+
+            <!-- 打开最近的文件（子菜单） -->
+            <div
+              class="menu-item submenu-trigger"
+              @mouseenter="showRecentSubmenu = true"
+              @mouseleave="showRecentSubmenu = false"
+            >
+              <span class="item-label">打开最近的文件</span>
+              <svg
+                class="submenu-arrow"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-width="2"
+                  d="M9 6l6 6-6 6"
+                />
+              </svg>
+
+              <!-- 最近文件子菜单 -->
+              <div
+                v-show="showRecentSubmenu"
+                class="submenu"
+              >
+                <template v-if="fileStore.recentFiles.length > 0">
+                  <div
+                    v-for="(filePath, index) in fileStore.recentFiles"
+                    :key="filePath"
+                    class="menu-item recent-file-item"
+                    :title="filePath"
+                    @click.stop="openRecentFile(filePath)"
+                  >
+                    <span class="recent-index">{{ index + 1 }}</span>
+                    <span class="recent-info">
+                      <span class="recent-name">{{ getFileName(filePath) }}</span>
+                      <span class="recent-path">{{ getDisplayPath(filePath) }}</span>
+                    </span>
+                  </div>
+                  <div class="menu-divider" />
+                  <div
+                    class="menu-item clear-recent-item"
+                    @click.stop="clearRecentFiles"
+                  >
+                    <span class="item-label">清除最近文件列表</span>
+                  </div>
+                </template>
+                <div
+                  v-else
+                  class="menu-item disabled-item"
+                >
+                  <span class="item-label">无最近打开的文件</span>
+                </div>
+              </div>
+            </div>
+
             <div class="menu-divider" />
             <div
               class="menu-item"
@@ -404,8 +508,8 @@ window.addEventListener('keydown', handleKeydown)
   top: 100%;
   left: 0;
   min-width: 220px;
-  margin-top: 4px;
   padding: 6px;
+  padding-top: 10px;
   background-color: var(--color-bg-primary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -443,6 +547,96 @@ window.addEventListener('keydown', handleKeydown)
   height: 1px;
   margin: 6px 0;
   background-color: var(--color-border);
+}
+
+/* 子菜单触发器 */
+.submenu-trigger {
+  position: relative;
+}
+
+.submenu-arrow {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.submenu {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  min-width: 300px;
+  max-height: 400px;
+  overflow-y: auto;
+  margin-left: 2px;
+  padding: 6px;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1001;
+}
+
+/* 最近文件列表项 */
+.recent-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px !important;
+}
+
+.recent-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  background-color: var(--color-bg-secondary);
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.recent-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.recent-name {
+  font-size: 13px;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-path {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clear-recent-item {
+  color: var(--color-text-secondary) !important;
+  font-size: 12px;
+}
+
+.clear-recent-item:hover {
+  color: var(--color-text) !important;
+}
+
+.disabled-item {
+  color: var(--color-text-secondary) !important;
+  cursor: default !important;
+  font-size: 12px;
+}
+
+.disabled-item:hover {
+  background-color: transparent !important;
 }
 
 .icon-btn {

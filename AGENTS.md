@@ -10,7 +10,7 @@
 
 - **定位**: 桌面 Markdown 编辑器
 - **目标用户**: 需要便携、自包含 Markdown 文档的开发者和写作者
-- **当前阶段**: 前期规划完成，即将进入开发
+- **当前阶段**: 阶段 2 已完成，进入阶段 3（编辑器核心）
 
 ---
 
@@ -49,6 +49,9 @@ markdown-plus/
 │   │   ├── reader.ts            # 读取/解压
 │   │   └── writer.ts            # 打包/压缩
 │   ├── ipc/                     # IPC 通信 handlers
+│   │   ├── channels.ts          # IPC 通道常量定义
+│   │   ├── file-handlers.ts     # 文件操作（最近文件列表持久化）
+│   │   └── mdx-handlers.ts      # .mdx 文件操作（打开/保存/关闭确认）
 │   └── utils/
 │       └── fs.ts                # 文件系统工具
 ├── src/                         # Vue 渲染进程
@@ -56,6 +59,7 @@ markdown-plus/
 │   ├── main.ts
 │   ├── components/
 │   │   ├── layout/              # Header / ToolBar / SideBar / StatusBar
+│   │   │   └── AppHeader.vue    # 顶部栏（文件菜单含最近文件子菜单）
 │   │   ├── editor/              # WysiwygEditor / SourceEditor / PreviewPanel
 │   │   ├── sidebar/             # FileExplorer / AssetManager
 │   │   └── modals/              # Export / Image / Link / Settings
@@ -113,17 +117,25 @@ npm run package
 - **渲染进程** (`src/`): 负责 UI 渲染和用户交互。不直接访问 Node.js API 或文件系统。
 - **预加载脚本** (`electron/preload.ts`): 通过 `contextBridge` 暴露安全的 IPC API 给渲染进程。
 - **通信**: 所有跨进程通信必须通过 IPC（`ipcMain.handle` / `ipcRenderer.invoke`）。
+- **窗口关闭拦截**: 主进程监听 `BrowserWindow.close` 事件，检测未保存修改后通过 IPC 通知渲染进程显示确认对话框，渲染进程确认后再调用 `closeConfirmed` 关闭窗口。
 
-### 5.2 文件格式 (.mdx)
+### 5.2 最近文件列表
+- 最近打开文件列表由主进程管理，持久化到 `app.getPath('userData')/recent-files.json`。
+- 最大保存 20 条记录，自动过滤已删除的文件路径。
+- 渲染进程通过 IPC（`file:getRecent`/`file:removeRecent`/`file:clearRecent`）访问。
+- 文件菜单中的"打开最近的文件"子菜单展示列表，支持清除操作。
+
+### 5.3 文件格式 (.mdx)
 - `.mdx` 文件本质是 ZIP 压缩包。
 - 内部结构固定：`mdx.json`（元数据）+ `content.md`（内容）+ `assets/`（资源）。
 - 元数据 Schema 定义在 `electron/mdx/schema.ts`。
 - 图片引用使用相对路径 `assets/images/xxx.png`。
 
-### 5.3 编辑器模式
-- 三种模式：WYSIWYG（ProseMirror）/ 分屏预览 / 源码编辑（CodeMirror 6）。
-- 模式切换时必须同步内容：ProseMirror Doc ↔ Markdown 双向转换。
-- 内容同步时尽可能保持光标和滚动位置。
+### 5.4 编辑器模式
+- 三种模式：WYSIWYG（当前为 contenteditable 占位实现）/ 分屏预览 / 源码编辑（当前为 textarea 占位实现）。
+- 当前 WysiwygEditor 使用 `contenteditable` div + `watch` 响应式同步内容，SourceEditor 使用 `textarea` + `watch` + `immediate:true`。
+- 模式切换使用 `v-if` 销毁/重建组件，切换时内容通过 Pinia store 同步。
+- 后续将替换为 ProseMirror（WYSIWYG）和 CodeMirror 6（源码），实现真正的 Markdown 渲染和编辑。
 
 ---
 
@@ -183,6 +195,9 @@ npm run package
 | Tailwind 类名在 Electron 中不生效 | 检查 `content` 配置是否覆盖 `.vue` 和 `.ts` 文件 |
 | IPC 通信返回 Promise 未处理 | 所有 `invoke` 调用必须 `await` 或 `.catch()` |
 | .mdx 文件保存后损坏 | 确认使用原子写入，检查临时文件清理逻辑 |
+| WYSIWYG 编辑器打开文件后内容空白 | 使用 `watch` + `immediate:true` 监听 `fileStore.fileContent`，而非仅 `onMounted` 一次性赋值 |
+| 下拉菜单鼠标移出按钮区域就消失 | 用点击外部关闭替代 `@mouseleave`，`margin` 间距改为 `padding` 避免不可交互空隙 |
+| watch 和 input 事件循环触发 | 编辑器同步内容时使用 `isSyncing` 标志位防止 `watch`→设值→`input`→`watch` 死循环 |
 
 ---
 

@@ -13,6 +13,7 @@ import { openMdx, cleanupTempDir, calculateChecksum } from '../mdx/reader'
 import { saveMdx, saveAsMdx, createMdx, validateFilePath } from '../mdx/writer'
 import { importFromMarkdown, importAndSaveAsMdx } from '../mdx/import'
 import { exportMdxFile, exportToMarkdown } from '../mdx/export'
+import { addRecentFile as addRecent } from './file-handlers'
 
 // 存储当前打开的文档信息
 interface OpenedDocument {
@@ -103,6 +104,9 @@ export function registerMdxHandlers(): void {
       currentDoc.tempDir = tempDir
       currentDoc.isModified = false
 
+      // 添加到最近文件列表
+      addRecent(targetPath)
+
       return {
         success: true,
         data: {
@@ -146,6 +150,7 @@ export function registerMdxHandlers(): void {
 
       if (result.success) {
         currentDoc.isModified = false
+        addRecent(currentDoc.filePath)
       }
 
       return result
@@ -208,6 +213,9 @@ export function registerMdxHandlers(): void {
         // 更新当前文档状态
         currentDoc.filePath = targetPath
         currentDoc.isModified = false
+
+        // 添加到最近文件列表
+        addRecent(targetPath)
 
         // 清理旧临时目录，打开新的
         if (currentDoc.tempDir) {
@@ -356,6 +364,18 @@ export function registerMdxHandlers(): void {
     return { success: true }
   })
 
+  // 关闭确认完成：用户已处理完保存提示，可以关闭窗口
+  ipcMain.handle(IPC_CHANNELS.APP.CLOSE_CONFIRMED, () => {
+    setCloseConfirmed(true)
+    // 触发窗口关闭
+    const { BrowserWindow } = require('electron') as typeof import('electron')
+    const win = BrowserWindow.getFocusedWindow()
+    if (win) {
+      win.close()
+    }
+    return { success: true }
+  })
+
   // 添加图片资源
   ipcMain.handle('mdx:addImage', async (_, imagePath: string, filename: string, mimeType: string, data: ArrayBuffer) => {
     try {
@@ -424,6 +444,23 @@ export function registerMdxHandlers(): void {
  */
 export function getCurrentDocument(): OpenedDocument {
   return { ...currentDoc }
+}
+
+/** 用户确认关闭后，标记可以关闭 */
+let closeConfirmed = false
+
+/**
+ * 设置关闭确认标志
+ */
+export function setCloseConfirmed(value: boolean): void {
+  closeConfirmed = value
+}
+
+/**
+ * 获取关闭确认标志
+ */
+export function isCloseConfirmed(): boolean {
+  return closeConfirmed
 }
 
 /**

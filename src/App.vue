@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useThemeStore } from './stores/theme'
 import { useFileStore } from './stores/file'
 import AppHeader from './components/layout/AppHeader.vue'
@@ -21,11 +21,35 @@ function toggleSidebar(): void {
   sidebarCollapsed.value = !sidebarCollapsed.value
 }
 
+/**
+ * 处理窗口关闭确认事件
+ * 主进程检测到未保存修改时发送此事件
+ */
+async function handleConfirmClose(): Promise<void> {
+  const canClose = await fileStore.confirmSaveBeforeAction()
+  if (canClose && window.electronAPI?.closeConfirmed) {
+    await window.electronAPI.closeConfirmed()
+  }
+}
+
+let removeConfirmCloseListener: (() => void) | null = null
+
 onMounted(() => {
   // 初始化主题
   themeStore.initTheme()
   // 初始化文件状态
   fileStore.init()
+
+  // 监听窗口关闭确认事件
+  if (window.electronAPI?.onConfirmClose) {
+    removeConfirmCloseListener = window.electronAPI.onConfirmClose(handleConfirmClose)
+  }
+})
+
+onUnmounted(() => {
+  if (removeConfirmCloseListener) {
+    removeConfirmCloseListener()
+  }
 })
 </script>
 

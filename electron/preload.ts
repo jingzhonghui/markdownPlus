@@ -12,6 +12,8 @@ export interface ElectronAPI {
   saveAsFile: (content?: string, title?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   closeFile: () => Promise<{ success: boolean; error?: string }>
   getRecentFiles: () => Promise<{ success: boolean; data?: string[]; error?: string }>
+  removeRecentFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
+  clearRecentFiles: () => Promise<{ success: boolean; error?: string }>
 
   // MDX 操作
   readMdx: (filePath: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
@@ -29,6 +31,10 @@ export interface ElectronAPI {
   showOpenDialog: (options?: unknown) => Promise<{ success: boolean; data?: string[]; error?: string }>
   showSaveDialog: (options?: unknown) => Promise<{ success: boolean; data?: string; error?: string }>
   showMessageBox: (options?: unknown) => Promise<{ success: boolean; data?: number; error?: string }>
+
+  // 事件监听
+  onConfirmClose: (callback: () => void) => () => void
+  closeConfirmed: () => void
 }
 
 // 通过 contextBridge 暴露安全的 API
@@ -40,6 +46,8 @@ const api: ElectronAPI = {
   saveAsFile: (content?, title?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE_AS, content, title),
   closeFile: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.CLOSE),
   getRecentFiles: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT),
+  removeRecentFile: (filePath) => ipcRenderer.invoke('file:removeRecent', filePath),
+  clearRecentFiles: () => ipcRenderer.invoke('file:clearRecent'),
 
   // MDX 操作
   readMdx: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.MDX.READ, filePath),
@@ -56,7 +64,15 @@ const api: ElectronAPI = {
   // 对话框
   showOpenDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG.SHOW_OPEN, options),
   showSaveDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG.SHOW_SAVE, options),
-  showMessageBox: (options) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG.SHOW_MESSAGE, options)
+  showMessageBox: (options) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG.SHOW_MESSAGE, options),
+
+  // 事件监听
+  onConfirmClose: (callback) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(IPC_CHANNELS.APP.CONFIRM_CLOSE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.APP.CONFIRM_CLOSE, handler)
+  },
+  closeConfirmed: () => ipcRenderer.invoke(IPC_CHANNELS.APP.CLOSE_CONFIRMED)
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)

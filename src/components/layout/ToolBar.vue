@@ -1,14 +1,7 @@
 <script setup lang="ts">
-import { useFileStore, type EditorMode } from '../../stores/file'
+import { useFileStore } from '../../stores/file'
 
 const fileStore = useFileStore()
-
-/**
- * 切换编辑器模式
- */
-function switchMode(mode: EditorMode): void {
-  fileStore.setEditorMode(mode)
-}
 
 /**
  * 应用格式
@@ -62,33 +55,6 @@ function insertCodeBlock(): void {
 
 <template>
   <div class="toolbar">
-    <!-- 模式切换 -->
-    <div class="mode-switcher">
-      <button 
-        class="mode-btn" 
-        :class="{ active: fileStore.editorMode === 'wysiwyg' }"
-        @click="switchMode('wysiwyg')"
-      >
-        所见即所得
-      </button>
-      <button 
-        class="mode-btn" 
-        :class="{ active: fileStore.editorMode === 'split' }"
-        @click="switchMode('split')"
-      >
-        分屏预览
-      </button>
-      <button 
-        class="mode-btn" 
-        :class="{ active: fileStore.editorMode === 'source' }"
-        @click="switchMode('source')"
-      >
-        源码编辑
-      </button>
-    </div>
-    
-    <div class="toolbar-divider" />
-    
     <!-- 格式化按钮组 -->
     <div class="format-group">
       <button
@@ -157,9 +123,9 @@ function insertCodeBlock(): void {
         </svg>
       </button>
     </div>
-    
+
     <div class="toolbar-divider" />
-    
+
     <!-- 块级元素 -->
     <div class="format-group">
       <button
@@ -235,9 +201,9 @@ function insertCodeBlock(): void {
         </svg>
       </button>
     </div>
-    
+
     <div class="toolbar-divider" />
-    
+
     <!-- 插入元素 -->
     <div class="format-group">
       <button
@@ -317,34 +283,6 @@ function insertCodeBlock(): void {
   background-color: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
-}
-
-.mode-switcher {
-  display: flex;
-  background-color: var(--color-bg-tertiary);
-  border-radius: var(--radius-md);
-  padding: 2px;
-}
-
-.mode-btn {
-  padding: 4px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.mode-btn:hover {
-  color: var(--color-text);
-}
-
-.mode-btn.active {
-  color: white;
-  background-color: var(--color-primary);
 }
 
 .toolbar-divider {

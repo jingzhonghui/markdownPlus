@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useThemeStore } from './stores/theme'
 import { useFileStore } from './stores/file'
 import AppHeader from './components/layout/AppHeader.vue'
@@ -10,6 +10,16 @@ import EditorPanel from './components/editor/EditorPanel.vue'
 
 const themeStore = useThemeStore()
 const fileStore = useFileStore()
+
+// 侧边栏折叠状态
+const sidebarCollapsed = ref(false)
+
+/**
+ * 切换侧边栏折叠状态
+ */
+function toggleSidebar(): void {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
 
 onMounted(() => {
   // 初始化主题
@@ -25,7 +35,7 @@ onMounted(() => {
     :data-theme="themeStore.currentTheme"
   >
     <!-- 顶部菜单栏 -->
-    <AppHeader />
+    <AppHeader @toggle-sidebar="toggleSidebar" />
     
     <!-- 工具栏 -->
     <ToolBar />
@@ -33,7 +43,7 @@ onMounted(() => {
     <!-- 主体区域 -->
     <div class="main-content">
       <!-- 左侧边栏 -->
-      <SideBar />
+      <SideBar :collapsed="sidebarCollapsed" @toggle="toggleSidebar" />
       
       <!-- 编辑区域 -->
       <EditorPanel />

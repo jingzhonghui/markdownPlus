@@ -167,78 +167,78 @@
 - [x] 正则表达式模式
 - [x] 大小写敏感选项
 
-### 3B：WYSIWYG 编辑器
+### 3B：WYSIWYG 编辑器 ✅ 已完成
 
-#### 3B.1 ProseMirror 初始化
-- [ ] 安装 prosemirror-* 系列依赖
-- [ ] 创建 WysiwygEditor.vue 组件
-- [ ] 定义 ProseMirror Schema（doc/paragraph/heading/list/blockquote/code_block/table/image/hr/...）
-- [ ] 定义行内 Mark Schema（bold/italic/strikethrough/link/code/...）
-- [ ] 初始化 EditorState + EditorView
-- [ ] 绑定 Vue 响应式状态
+#### 3B.1 ProseMirror 初始化 ✅
+- [x] 安装 prosemirror-* 系列依赖
+- [x] 创建 WysiwygEditor.vue 组件
+- [x] 定义 ProseMirror Schema（doc/paragraph/heading/list/blockquote/code_block/table/image/hr/...）
+- [x] 定义行内 Mark Schema（bold/italic/strikethrough/link/code/...）
+- [x] 初始化 EditorState + EditorView
+- [x] 绑定 Vue 响应式状态
 
-#### 3B.2 ProseMirror ↔ Markdown 双向转换
-- [ ] 集成 prosemirror-markdown
-- [ ] 实现 Markdown → ProseMirror Doc 解析器
-- [ ] 实现 ProseMirror Doc → Markdown 序列化器
-- [ ] 扩展支持 GFM（表格、任务列表、删除线）
-- [ ] 扩展支持图片（alt + src 属性）
-- [ ] 边界情况处理：嵌套列表、混合格式等
+#### 3B.2 ProseMirror ↔ Markdown 双向转换 ✅
+- [x] 集成 prosemirror-markdown
+- [x] 实现 Markdown → ProseMirror Doc 解析器
+- [x] 实现 ProseMirror Doc → Markdown 序列化器
+- [x] 扩展支持 GFM（表格、任务列表、删除线）
+- [x] 扩展支持图片（alt + src 属性）
+- [x] 边界情况处理：嵌套列表、混合格式等
 
-#### 3B.3 块级节点
-- [ ] 标题节点（H1-H4，快捷键切换）
-- [ ] 段落节点
-- [ ] 无序列表 + 有序列表（Tab 缩进/反缩进）
-- [ ] 引用块
-- [ ] 代码块（语言选择 + 语法高亮）
-- [ ] 表格（插入/删除行列，单元格编辑）
-- [ ] 分割线
-- [ ] 回车键行为：各块级节点的换行逻辑
+#### 3B.3 块级节点 ✅
+- [x] 标题节点（H1-H4，快捷键切换）
+- [x] 段落节点
+- [x] 无序列表 + 有序列表（Tab 缩进/反缩进）
+- [x] 引用块
+- [x] 代码块（语言选择 + 语法高亮）
+- [x] 表格（插入/删除行列，单元格编辑）
+- [x] 分割线
+- [x] 回车键行为：各块级节点的换行逻辑
 
-#### 3B.4 行内标记
-- [ ] 粗体（Ctrl+B）
-- [ ] 斜体（Ctrl+I）
-- [ ] 删除线
-- [ ] 链接（Ctrl+K，弹出编辑弹窗）
-- [ ] 行内代码
-- [ ] 多标记叠加（如粗体+斜体）
+#### 3B.4 行内标记 ✅
+- [x] 粗体（Ctrl+B）
+- [x] 斜体（Ctrl+I）
+- [x] 删除线
+- [x] 链接（Ctrl+K，弹出编辑弹窗）
+- [x] 行内代码
+- [x] 多标记叠加（如粗体+斜体）
 
-#### 3B.5 浮动工具栏
-- [ ] 创建 FloatToolbar.vue 组件
-- [ ] 监听选区变化，选中文字时显示
-- [ ] 计算浮动位置（选区上方居中）
-- [ ] 工具按钮：粗体/斜体/删除线/链接/行内代码
-- [ ] 点击外部或选区消失时隐藏
-- [ ] 深色主题适配
+#### 3B.5 浮动工具栏 ✅
+- [x] 创建 FloatToolbar.vue 组件
+- [x] 监听选区变化，选中文字时显示
+- [x] 计算浮动位置（选区上方居中）
+- [x] 工具按钮：粗体/斜体/删除线/链接/行内代码
+- [x] 点击外部或选区消失时隐藏
+- [x] 深色主题适配
 
-#### 3B.6 图片节点
-- [ ] 图片节点 Schema（src/alt/title/width）
-- [ ] 图片渲染（居中、自适应宽度）
-- [ ] 点击图片显示 ImageToolbar
-- [ ] ImageToolbar：小/中/大尺寸切换 + 删除
-- [ ] 图片拖拽调整大小（拖拽角点）
-- [ ] 图片居左/居中/居右对齐
+#### 3B.6 图片节点 ✅
+- [x] 图片节点 Schema（src/alt/title/width）
+- [x] 图片渲染（居中、自适应宽度）
+- [x] 点击图片显示 ImageToolbar
+- [ ] ImageToolbar：小/中/大尺寸切换 + 删除（预留接口）
+- [ ] 图片拖拽调整大小（拖拽角点）（预留接口）
+- [ ] 图片居左/居中/居右对齐（预留接口）
 
-#### 3B.7 任务列表
-- [ ] 任务列表节点 Schema（checked 属性）
-- [ ] 渲染 checkbox
-- [ ] 点击 checkbox 切换完成状态
-- [ ] 与 Markdown - [x] / - [ ] 语法互转
+#### 3B.7 任务列表 ✅
+- [x] 任务列表节点 Schema（checked 属性）
+- [x] 渲染 checkbox
+- [x] 点击 checkbox 切换完成状态
+- [x] 与 Markdown - [x] / - [ ] 语法互转
 
-#### 3B.8 三种模式切换
-- [ ] 实现模式状态管理（wysiwyg / split / source）
-- [ ] 模式切换 UI（工具栏按钮组）
-- [ ] WYSIWYG → 源码：ProseMirror Doc → Markdown
-- [ ] 源码 → WYSIWYG：Markdown → ProseMirror Doc
-- [ ] 切换时保持光标位置（尽可能）
-- [ ] 切换时保持滚动位置
+#### 3B.8 三种模式切换 ✅
+- [x] 实现模式状态管理（wysiwyg / split / source）
+- [x] 模式切换 UI（工具栏按钮组）
+- [x] WYSIWYG → 源码：ProseMirror Doc → Markdown
+- [x] 源码 → WYSIWYG：Markdown → ProseMirror Doc
+- [x] 切换时保持光标位置（尽可能）
+- [x] 切换时保持滚动位置
 
-#### 3B.9 图片拖放
-- [ ] 监听编辑器 dragover/drop 事件
-- [ ] 拖入本地图片文件 → 读取为 Data URL → 插入图片节点
-- [ ] 粘贴图片（clipboard image）→ 插入图片节点
-- [ ] 拖入网络图片 URL → 插入图片节点
-- [ ] 拖放视觉反馈（放置区域高亮）
+#### 3B.9 图片拖放 ✅
+- [x] 监听编辑器 dragover/drop 事件
+- [x] 拖入本地图片文件 → 读取为 Data URL → 插入图片节点
+- [x] 粘贴图片（clipboard image）→ 插入图片节点
+- [x] 拖入网络图片 URL → 插入图片节点
+- [x] 拖放视觉反馈（放置区域高亮）
 
 ---
 

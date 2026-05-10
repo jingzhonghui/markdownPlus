@@ -120,52 +120,52 @@
 
 ## 阶段 3：编辑器核心
 
-### 3A：源码编辑器
+### 3A：源码编辑器 ✅
 
-#### 3A.1 CodeMirror 6 集成
-- [ ] 安装 @codemirror/view、@codemirror/state、@codemirror/lang-markdown
-- [ ] 创建 SourceEditor.vue 组件
-- [ ] 初始化 EditorView 实例
-- [ ] 配置基础扩展（行号、折叠槽、光标行高亮）
-- [ ] 绑定 Vue 响应式状态（内容双向绑定）
+#### 3A.1 CodeMirror 6 集成 ✅
+- [x] 安装 @codemirror/view、@codemirror/state、@codemirror/lang-markdown
+- [x] 创建 SourceEditor.vue 组件
+- [x] 初始化 EditorView 实例
+- [x] 配置基础扩展（行号、折叠槽、光标行高亮）
+- [x] 绑定 Vue 响应式状态（内容双向绑定）
 
-#### 3A.2 语法高亮
-- [ ] 配置 Markdown 语法高亮（@codemirror/lang-markdown）
-- [ ] 配置代码块语言高亮（@codemirror/lang-javascript 等）
-- [ ] 自定义高亮主题（匹配应用浅色/深色主题）
-- [ ] 代码块语言标识着色
+#### 3A.2 语法高亮 ✅
+- [x] 配置 Markdown 语法高亮（@codemirror/lang-markdown）
+- [x] 配置代码块语言高亮（@codemirror/lang-javascript 等）
+- [x] 自定义高亮主题（匹配应用浅色/深色主题）
+- [x] 代码块语言标识着色
 
-#### 3A.3 分屏预览模式
-- [ ] 创建 PreviewPanel.vue 组件
-- [ ] 实现源码编辑器 + 预览面板左右分栏
-- [ ] 集成 markdown-it 渲染预览
-- [ ] 集成 Shiki 代码高亮
-- [ ] 实时同步：源码变化 → 防抖渲染预览
-- [ ] 预览面板滚动同步（可选）
+#### 3A.3 分屏预览模式 ✅
+- [x] 创建 PreviewPanel.vue 组件
+- [x] 实现源码编辑器 + 预览面板左右分栏
+- [x] 集成 markdown-it 渲染预览
+- [x] 集成 Shiki 代码高亮
+- [x] 实时同步：源码变化 → 防抖渲染预览
+- [x] 预览面板滚动同步（可选）
 
-#### 3A.4 自动补全
-- [ ] 输入 `#` 自动补全标题标记
-- [ ] 列表项回车自动续行（- / 1. / - [ ]）
-- [ ] 代码块自动闭合（``` → ```闭合）
-- [ ] 输入 `>` 自动补全引用块
+#### 3A.4 自动补全 ✅
+- [x] 输入 `#` 自动补全标题标记
+- [x] 列表项回车自动续行（- / 1. / - [ ]）
+- [x] 代码块自动闭合（``` → ```闭合）
+- [x] 输入 `>` 自动补全引用块
 
-#### 3A.5 快捷键
-- [ ] Ctrl+B：粗体（包裹 **）
-- [ ] Ctrl+I：斜体（包裹 *）
-- [ ] Ctrl+K：插入链接
-- [ ] Ctrl+Shift+K：插入图片
-- [ ] Ctrl+H：切换标题级别
-- [ ] Tab / Shift+Tab：缩进/反缩进
-- [ ] Ctrl+/：行注释/取消注释
+#### 3A.5 快捷键 ✅
+- [x] Ctrl+B：粗体（包裹 **）
+- [x] Ctrl+I：斜体（包裹 *）
+- [x] Ctrl+K：插入链接
+- [x] Ctrl+Shift+K：插入图片
+- [x] Ctrl+H：切换标题级别
+- [x] Tab / Shift+Tab：缩进/反缩进
+- [x] Ctrl+/：行注释/取消注释
 
-#### 3A.6 查找替换
-- [ ] Ctrl+F：打开查找栏
-- [ ] Ctrl+H：打开查找替换栏
-- [ ] 高亮所有匹配项
-- [ ] 上一个/下一个匹配导航
-- [ ] 替换/全部替换
-- [ ] 正则表达式模式
-- [ ] 大小写敏感选项
+#### 3A.6 查找替换 ✅
+- [x] Ctrl+F：打开查找栏
+- [x] Ctrl+H：打开查找替换栏
+- [x] 高亮所有匹配项
+- [x] 上一个/下一个匹配导航
+- [x] 替换/全部替换
+- [x] 正则表达式模式
+- [x] 大小写敏感选项
 
 ### 3B：WYSIWYG 编辑器
 

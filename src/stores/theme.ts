@@ -17,11 +17,12 @@ export const useThemeStore = defineStore('theme', () => {
   // State
   const theme = ref<ThemeType>('system')
   const followSystem = ref(true)
+  const systemPreference = ref<'light' | 'dark'>(getSystemTheme())
 
   // Getters
   const currentTheme = computed(() => {
     if (followSystem.value || theme.value === 'system') {
-      return getSystemTheme()
+      return systemPreference.value
     }
     return theme.value
   })
@@ -92,18 +93,23 @@ export const useThemeStore = defineStore('theme', () => {
   }
 
   /**
+   * 更新系统主题偏好
+   */
+  function updateSystemPreference(): void {
+    systemPreference.value = getSystemTheme()
+  }
+
+  /**
    * 初始化主题
    */
   function initTheme(): void {
     loadTheme()
+    updateSystemPreference()
     // 监听系统主题变化
     if (window.matchMedia) {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
       mediaQuery.addEventListener('change', () => {
-        if (followSystem.value) {
-          // 触发响应式更新
-          theme.value = theme.value
-        }
+        updateSystemPreference()
       })
     }
   }
@@ -111,6 +117,7 @@ export const useThemeStore = defineStore('theme', () => {
   return {
     theme,
     followSystem,
+    systemPreference,
     currentTheme,
     isDark,
     isLight,

@@ -517,33 +517,290 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
+  // 图片压缩设置
+  const imageCompressSettings = ref({
+    enabled: true,
+    quality: 85,
+    maxWidth: 1920,
+    maxHeight: 1080
+  })
+
+  /**
+   * 设置图片压缩选项
+   */
+  function setImageCompressSettings(settings: Partial<typeof imageCompressSettings.value>): void {
+    imageCompressSettings.value = { ...imageCompressSettings.value, ...settings }
+  }
+
   /**
    * 添加图片到文档
    */
-  async function addImage(file: File): Promise<{ success: boolean; path?: string; error?: string }> {
+  async function addImage(
+    file: File,
+    options?: { compress?: boolean; quality?: number; maxWidth?: number; maxHeight?: number }
+  ): Promise<{ success: boolean; path?: string; asset?: MdxImageAsset; error?: string }> {
     try {
       if (!window.electronAPI || !document.value) {
         return { success: false, error: '无法添加图片' }
       }
 
       const arrayBuffer = await file.arrayBuffer()
+
+      // 合并默认设置和传入选项
+      const compressOptions = {
+        compress: options?.compress ?? imageCompressSettings.value.enabled,
+        quality: options?.quality ?? imageCompressSettings.value.quality,
+        maxWidth: options?.maxWidth ?? imageCompressSettings.value.maxWidth,
+        maxHeight: options?.maxHeight ?? imageCompressSettings.value.maxHeight
+      }
+
       const result = await window.electronAPI.addImage(
-        '',
         file.name,
         file.type,
-        arrayBuffer
+        arrayBuffer,
+        compressOptions
       )
 
       if (result.success && result.data) {
         // 更新文档中的资源列表
         const { asset } = result.data as { asset: MdxImageAsset; relativePath: string }
         document.value.assets.images.push(asset)
-        return { success: true, path: asset.path }
+        // 标记文档已修改
+        if (currentFile.value) {
+          currentFile.value.modified = true
+        }
+        return { success: true, path: asset.path, asset }
       } else {
         return { success: false, error: result.error || '添加图片失败' }
       }
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : '添加图片失败' }
+    }
+  }
+
+  /**
+   * 获取图片数据
+   */
+  async function getImage(imagePath: string): Promise<{ success: boolean; data?: string; error?: string }> {
+    try {
+      if (!window.electronAPI) {
+        return { success: false, error: 'Electron API 不可用' }
+      }
+
+      const result = await window.electronAPI.getImage(imagePath)
+      if (result.success && result.data) {
+        // Electron IPC 传输 Buffer 会序列化为 { type: 'Buffer', data: number[] }
+        let byteArray: Uint8Array
+        const bufferData = result.data.buffer as unknown
+
+        if (bufferData instanceof Uint8Array) {
+          // 已经是 Uint8Array
+          byteArray = bufferData
+        } else if (Array.isArray(bufferData)) {
+          // 是普通数组
+          byteArray = new Uint8Array(bufferData)
+        } else if (bufferData && typeof bufferData === 'object') {
+          // 是 { type: 'Buffer', data: number[] } 格式
+          const bufferObj = bufferData as { type?: string; data?: number[] }
+          if (bufferObj.data && Array.isArray(bufferObj.data)) {
+            byteArray = new Uint8Array(bufferObj.data)
+          } else {
+            return { success: false, error: '图片数据格式不正确' }
+          }
+        } else {
+          return { success: false, error: '图片数据格式不正确' }
+        }
+
+        // 将 Uint8Array 转换为 Data URL
+        let binary = ''
+        for (let i = 0; i < byteArray.byteLength; i++) {
+          binary += String.fromCharCode(byteArray[i])
+        }
+        const base64 = btoa(binary)
+        const mimeType = result.data.mimeType || 'image/png'
+        const dataUrl = `data:${mimeType};base64,${base64}`
+        return { success: true, data: dataUrl }
+      } else {
+        return { success: false, error: result.error || '获取图片失败' }
+      }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '获取图片失败' }
+    }
+  }
+
+  /**
+   * 删除资源
+   */
+  async function removeAsset(assetId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!window.electronAPI || !document.value) {
+        return { success: false, error: '无法删除资源' }
+      }
+
+      const result = await window.electronAPI.removeAsset(assetId)
+      if (result.success) {
+        // 从前端状态中移除
+        const imageIndex = document.value.assets.images.findIndex(img => img.id === assetId)
+        if (imageIndex > -1) {
+          document.value.assets.images.splice(imageIndex, 1)
+        }
+        if (document.value.assets.attachments) {
+          const attIndex = document.value.assets.attachments.findIndex(att => att.id === assetId)
+          if (attIndex > -1) {
+            document.value.assets.attachments.splice(attIndex, 1)
+          }
+        }
+        // 标记文档已修改
+        if (currentFile.value) {
+          currentFile.value.modified = true
+        }
+        return { success: true }
+      } else {
+        return { success: false, error: result.error || '删除资源失败' }
+      }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '删除资源失败' }
+    }
+  }
+
+  /**
+   * 刷新资源列表
+   */
+  async function refreshAssets(): Promise<boolean> {
+    try {
+      if (!window.electronAPI || !document.value) {
+        return false
+      }
+
+      const result = await window.electronAPI.listAssets()
+      if (result.success && result.data) {
+        document.value.assets.images = result.data.images
+        document.value.assets.attachments = result.data.attachments
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 添加附件到文档
+   */
+  async function addAttachment(file: File): Promise<{ success: boolean; path?: string; error?: string }> {
+    try {
+      if (!window.electronAPI || !document.value) {
+        return { success: false, error: '无法添加附件' }
+      }
+
+      const arrayBuffer = await file.arrayBuffer()
+      const result = await window.electronAPI.addAttachment(file.name, file.type, arrayBuffer)
+
+      if (result.success && result.data) {
+        // 标记文档已修改
+        if (currentFile.value) {
+          currentFile.value.modified = true
+        }
+        const { relativePath } = result.data as { relativePath: string }
+        return { success: true, path: relativePath }
+      } else {
+        return { success: false, error: result.error || '添加附件失败' }
+      }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '添加附件失败' }
+    }
+  }
+
+  /**
+   * 检测孤立资源（未被引用的图片/附件）
+   */
+  function detectOrphanAssets(): Array<{ id: string; filename: string; type: 'image' | 'attachment' }> {
+    if (!document.value) return []
+
+    const content = fileContent.value
+    const orphans: Array<{ id: string; filename: string; type: 'image' | 'attachment' }> = []
+
+    // 检查图片
+    for (const image of document.value.assets.images) {
+      // 检查 Markdown 中是否引用了该图片
+      const imagePattern = new RegExp(`!\\[.*?\\]\\(${escapeRegExp(image.path)}\\)`, 'i')
+      if (!imagePattern.test(content)) {
+        orphans.push({ id: image.id, filename: image.filename, type: 'image' })
+      }
+    }
+
+    // 检查附件
+    if (document.value.assets.attachments) {
+      for (const attachment of document.value.assets.attachments) {
+        // 检查 Markdown 中是否引用了该附件
+        const linkPattern = new RegExp(`\\[.*?\\]\\(${escapeRegExp(attachment.path)}\\)`, 'i')
+        if (!linkPattern.test(content)) {
+          orphans.push({ id: attachment.id, filename: attachment.filename, type: 'attachment' })
+        }
+      }
+    }
+
+    return orphans
+  }
+
+  /**
+   * 清理孤立资源
+   */
+  async function cleanupOrphanAssets(): Promise<{ success: boolean; removed: number; error?: string }> {
+    const orphans = detectOrphanAssets()
+    let removed = 0
+
+    for (const orphan of orphans) {
+      const result = await removeAsset(orphan.id)
+      if (result.success) {
+        removed++
+      }
+    }
+
+    return { success: true, removed }
+  }
+
+  /**
+   * 转义正则表达式特殊字符
+   */
+  function escapeRegExp(string: string): string {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  /**
+   * 重命名图片并更新引用
+   */
+  async function renameImage(assetId: string, newFilename: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!document.value) {
+        return { success: false, error: '没有打开的文档' }
+      }
+
+      const image = document.value.assets.images.find(img => img.id === assetId)
+      if (!image) {
+        return { success: false, error: '图片不存在' }
+      }
+
+      const oldPath = image.path
+      const newPath = `assets/images/${newFilename}`
+
+      // 更新文档中的资源路径
+      image.filename = newFilename
+      image.path = newPath
+
+      // 更新 Markdown 内容中的引用
+      const oldPattern = new RegExp(`(!\\[.*?\\]\\()${escapeRegExp(oldPath)}(\\))`, 'g')
+      fileContent.value = fileContent.value.replace(oldPattern, `$1${newPath}$2`)
+      document.value.content = fileContent.value
+
+      // 标记文档已修改
+      if (currentFile.value) {
+        currentFile.value.modified = true
+      }
+
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '重命名失败' }
     }
   }
 
@@ -566,6 +823,7 @@ export const useFileStore = defineStore('file', () => {
     fileName,
     displayTitle,
     imageAssets,
+    imageCompressSettings,
     // Actions
     init,
     setFile,
@@ -575,6 +833,7 @@ export const useFileStore = defineStore('file', () => {
     markSaved,
     setEditorMode,
     setCursorPosition,
+    setImageCompressSettings,
     newFile,
     openFile,
     saveFile,
@@ -585,6 +844,13 @@ export const useFileStore = defineStore('file', () => {
     importMarkdown,
     exportMarkdown,
     addImage,
+    getImage,
+    removeAsset,
+    refreshAssets,
+    addAttachment,
+    detectOrphanAssets,
+    cleanupOrphanAssets,
+    renameImage,
     removeRecent,
     clearRecent
   }

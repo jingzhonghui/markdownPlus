@@ -272,22 +272,26 @@ export function removeAsset(document: MdxDocument, assetId: string): boolean {
  */
 export function prepareAssetsData(tempDir: string, document: MdxDocument): Map<string, Buffer> {
   const assetsData = new Map<string, Buffer>()
-  const assetsDir = path.join(tempDir, 'assets')
 
   // 读取图片资源
+  // 注意: image.path 已经是相对于 tempDir 的路径 (如 "assets/images/xxx.png")
   for (const image of document.assets.images) {
-    const imagePath = path.join(assetsDir, image.path)
+    const imagePath = path.join(tempDir, image.path)
     if (fs.existsSync(imagePath)) {
       assetsData.set(image.path, fs.readFileSync(imagePath))
+    } else {
+      console.warn(`图片文件不存在: ${imagePath}`)
     }
   }
 
   // 读取附件资源
   if (document.assets.attachments) {
     for (const attachment of document.assets.attachments) {
-      const attachmentPath = path.join(assetsDir, attachment.path)
+      const attachmentPath = path.join(tempDir, attachment.path)
       if (fs.existsSync(attachmentPath)) {
         assetsData.set(attachment.path, fs.readFileSync(attachmentPath))
+      } else {
+        console.warn(`附件文件不存在: ${attachmentPath}`)
       }
     }
   }

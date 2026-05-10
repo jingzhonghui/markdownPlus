@@ -247,7 +247,7 @@ async function selectImageFile(): Promise<void> {
       </button>
     </div>
 
-    <div class="toolbar-divider"></div>
+    <div class="toolbar-divider" />
 
     <!-- 块级元素 -->
     <div class="format-group">
@@ -345,217 +345,217 @@ async function selectImageFile(): Promise<void> {
         </svg>
       </button>
     </div>
-    <div class="toolbar-divider"></div>
+    <div class="toolbar-divider" />
 
     <!-- 插入元素 -->
     <div class="format-group">
-        <button
-          class="format-btn"
-          title="链接 Ctrl+K"
-          @click="insertLink"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
-            <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
-          </svg>
-        </button>
-        <button
-          class="format-btn"
-          title="图片"
-          @click="insertImage"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <rect
-              x="3"
-              y="3"
-              width="18"
-              height="18"
-              rx="2"
-              ry="2"
-            />
-            <circle
-              cx="8.5"
-              cy="8.5"
-              r="1.5"
-            />
-            <polyline points="21 15 16 10 5 21" />
-          </svg>
-        </button>
-        <button
-          class="format-btn"
-          title="表格"
-          @click="insertTable"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <rect
-              x="3"
-              y="3"
-              width="18"
-              height="18"
-              rx="2"
-            />
-            <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- 链接对话框 -->
-      <div
-        v-if="linkDialogOpen"
-        class="dialog-overlay"
-        @click="linkDialogOpen = false"
+      <button
+        class="format-btn"
+        title="链接 Ctrl+K"
+        @click="insertLink"
       >
-        <div
-          class="dialog"
-          @click.stop
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
         >
-          <h3 class="dialog-title">
-            插入链接
-          </h3>
-          <input
-            v-model="linkHref"
-            type="text"
-            placeholder="链接地址 (https://...)"
-            class="dialog-input"
-            @keydown.enter="confirmInsertLink"
-          >
-          <input
-            v-model="linkTitle"
-            type="text"
-            placeholder="标题 (可选)"
-            class="dialog-input"
-            @keydown.enter="confirmInsertLink"
-          >
-          <div class="dialog-actions">
-            <button
-              class="dialog-btn dialog-btn-cancel"
-              @click="linkDialogOpen = false"
-            >
-              取消
-            </button>
-            <button
-              class="dialog-btn dialog-btn-confirm"
-              @click="confirmInsertLink"
-            >
-              确定
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 图片对话框 -->
-      <div
-        v-if="imageDialogOpen"
-        class="dialog-overlay"
-        @click="imageDialogOpen = false"
+          <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+          <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+        </svg>
+      </button>
+      <button
+        class="format-btn"
+        title="图片"
+        @click="insertImage"
       >
-        <div
-          class="dialog"
-          @click.stop
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
         >
-          <h3 class="dialog-title">
-            插入图片
-          </h3>
-          <input
-            v-model="imageSrc"
-            type="text"
-            placeholder="图片地址 (URL 或相对路径)"
-            class="dialog-input"
-            @keydown.enter="confirmInsertImage"
-          >
-          <input
-            v-model="imageAlt"
-            type="text"
-            placeholder="替代文本 (可选)"
-            class="dialog-input"
-            @keydown.enter="confirmInsertImage"
-          >
-          <div class="dialog-divider">
-            或
-          </div>
+          <rect
+            x="3"
+            y="3"
+            width="18"
+            height="18"
+            rx="2"
+            ry="2"
+          />
+          <circle
+            cx="8.5"
+            cy="8.5"
+            r="1.5"
+          />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+      </button>
+      <button
+        class="format-btn"
+        title="表格"
+        @click="insertTable"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <rect
+            x="3"
+            y="3"
+            width="18"
+            height="18"
+            rx="2"
+          />
+          <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- 链接对话框 -->
+    <div
+      v-if="linkDialogOpen"
+      class="dialog-overlay"
+      @click="linkDialogOpen = false"
+    >
+      <div
+        class="dialog"
+        @click.stop
+      >
+        <h3 class="dialog-title">
+          插入链接
+        </h3>
+        <input
+          v-model="linkHref"
+          type="text"
+          placeholder="链接地址 (https://...)"
+          class="dialog-input"
+          @keydown.enter="confirmInsertLink"
+        >
+        <input
+          v-model="linkTitle"
+          type="text"
+          placeholder="标题 (可选)"
+          class="dialog-input"
+          @keydown.enter="confirmInsertLink"
+        >
+        <div class="dialog-actions">
           <button
-            class="dialog-file-btn"
-            @click="selectImageFile"
+            class="dialog-btn dialog-btn-cancel"
+            @click="linkDialogOpen = false"
           >
-            <svg
-              viewBox="0 0 24 24"
-              width="16"
-              height="16"
-              fill="currentColor"
-            >
-              <path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
-            </svg>
-            选择本地图片
+            取消
           </button>
-          <div class="dialog-actions">
-            <button
-              class="dialog-btn dialog-btn-cancel"
-              @click="imageDialogOpen = false"
-            >
-              取消
-            </button>
-            <button
-              class="dialog-btn dialog-btn-confirm"
-              @click="confirmInsertImage"
-            >
-              确定
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 代码块对话框 -->
-      <div
-        v-if="codeBlockDialogOpen"
-        class="dialog-overlay"
-        @click="codeBlockDialogOpen = false"
-      >
-        <div
-          class="dialog"
-          @click.stop
-        >
-          <h3 class="dialog-title">
-            插入代码块
-          </h3>
-          <input
-            v-model="codeLanguage"
-            type="text"
-            placeholder="编程语言 (如: javascript, python, 可选)"
-            class="dialog-input"
-            @keydown.enter="confirmInsertCodeBlock"
+          <button
+            class="dialog-btn dialog-btn-confirm"
+            @click="confirmInsertLink"
           >
-          <div class="dialog-actions">
-            <button
-              class="dialog-btn dialog-btn-cancel"
-              @click="codeBlockDialogOpen = false"
-            >
-              取消
-            </button>
-            <button
-              class="dialog-btn dialog-btn-confirm"
-              @click="confirmInsertCodeBlock"
-            >
-              确定
-            </button>
-          </div>
+            确定
+          </button>
         </div>
       </div>
     </div>
+
+    <!-- 图片对话框 -->
+    <div
+      v-if="imageDialogOpen"
+      class="dialog-overlay"
+      @click="imageDialogOpen = false"
+    >
+      <div
+        class="dialog"
+        @click.stop
+      >
+        <h3 class="dialog-title">
+          插入图片
+        </h3>
+        <input
+          v-model="imageSrc"
+          type="text"
+          placeholder="图片地址 (URL 或相对路径)"
+          class="dialog-input"
+          @keydown.enter="confirmInsertImage"
+        >
+        <input
+          v-model="imageAlt"
+          type="text"
+          placeholder="替代文本 (可选)"
+          class="dialog-input"
+          @keydown.enter="confirmInsertImage"
+        >
+        <div class="dialog-divider">
+          或
+        </div>
+        <button
+          class="dialog-file-btn"
+          @click="selectImageFile"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="currentColor"
+          >
+            <path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
+          </svg>
+          选择本地图片
+        </button>
+        <div class="dialog-actions">
+          <button
+            class="dialog-btn dialog-btn-cancel"
+            @click="imageDialogOpen = false"
+          >
+            取消
+          </button>
+          <button
+            class="dialog-btn dialog-btn-confirm"
+            @click="confirmInsertImage"
+          >
+            确定
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 代码块对话框 -->
+    <div
+      v-if="codeBlockDialogOpen"
+      class="dialog-overlay"
+      @click="codeBlockDialogOpen = false"
+    >
+      <div
+        class="dialog"
+        @click.stop
+      >
+        <h3 class="dialog-title">
+          插入代码块
+        </h3>
+        <input
+          v-model="codeLanguage"
+          type="text"
+          placeholder="编程语言 (如: javascript, python, 可选)"
+          class="dialog-input"
+          @keydown.enter="confirmInsertCodeBlock"
+        >
+        <div class="dialog-actions">
+          <button
+            class="dialog-btn dialog-btn-cancel"
+            @click="codeBlockDialogOpen = false"
+          >
+            取消
+          </button>
+          <button
+            class="dialog-btn dialog-btn-confirm"
+            @click="confirmInsertCodeBlock"
+          >
+            确定
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>

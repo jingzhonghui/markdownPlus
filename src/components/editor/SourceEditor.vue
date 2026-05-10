@@ -605,6 +605,60 @@ function destroyEditor(): void {
 }
 
 /**
+ * 处理拖放事件 - 图片拖放
+ */
+function handleDragOver(e: DragEvent): void {
+  e.preventDefault()
+}
+
+async function handleDrop(e: DragEvent): Promise<void> {
+  e.preventDefault()
+
+  if (!e.dataTransfer) return
+
+  const files = Array.from(e.dataTransfer.files)
+  for (const file of files) {
+    if (file.type.startsWith('image/')) {
+      await insertImageFromFile(file)
+    }
+  }
+}
+
+/**
+ * 处理粘贴事件 - 图片粘贴
+ */
+async function handlePaste(e: ClipboardEvent): Promise<void> {
+  if (!e.clipboardData) return
+
+  // 优先处理图片文件
+  const files = Array.from(e.clipboardData.files)
+  for (const file of files) {
+    if (file.type.startsWith('image/')) {
+      e.preventDefault()
+      await insertImageFromFile(file)
+      return
+    }
+  }
+}
+
+/**
+ * 从文件插入图片
+ */
+async function insertImageFromFile(file: File): Promise<void> {
+  const view = editorView.value
+  if (!view) return
+
+  const result = await fileStore.addImage(file)
+  if (result.success && result.path) {
+    const { from } = view.state.selection.main
+    view.dispatch({
+      changes: { from, insert: `![${file.name}](${result.path})` }
+    })
+    view.focus()
+  }
+}
+
+/**
  * 更新编辑器主题
  */
 function updateTheme(): void {
@@ -619,9 +673,25 @@ function updateTheme(): void {
 // Lifecycle
 onMounted(() => {
   initEditor()
+
+  // 添加拖放和粘贴事件监听
+  const editorEl = editorRef.value
+  if (editorEl) {
+    editorEl.addEventListener('dragover', handleDragOver)
+    editorEl.addEventListener('drop', handleDrop)
+    editorEl.addEventListener('paste', handlePaste)
+  }
 })
 
 onUnmounted(() => {
+  // 移除事件监听
+  const editorEl = editorRef.value
+  if (editorEl) {
+    editorEl.removeEventListener('dragover', handleDragOver)
+    editorEl.removeEventListener('drop', handleDrop)
+    editorEl.removeEventListener('paste', handlePaste)
+  }
+
   destroyEditor()
 })
 

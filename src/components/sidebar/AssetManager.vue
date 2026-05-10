@@ -1,35 +1,98 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useFileStore } from '../../stores/file'
+import type { MdxImageAsset, MdxAttachmentAsset } from '../../types/mdx'
 
 /**
- * 资源项接口
+ * 资源项类型
  */
-interface AssetItem {
-  id: string
-  name: string
-  size: number
-  type: 'image' | 'attachment'
-  url?: string
+type AssetItem = MdxImageAsset | MdxAttachmentAsset
+
+/**
+ * 排序字段
+ */
+type SortField = 'name' | 'size' | 'type'
+
+/**
+ * 排序方向
+ */
+type SortOrder = 'asc' | 'desc'
+
+const fileStore = useFileStore()
+
+// 本地状态
+const selectedAssets = ref<string[]>([])
+const sortField = ref<SortField>('name')
+const sortOrder = ref<SortOrder>('asc')
+const isDragging = ref(false)
+
+// 图片 URL 缓存 - 使用 ref 存储对象
+const imageDataUrls = ref<Record<string, string>>({})
+
+/**
+ * 获取图片 URL（用于模板）
+ */
+function getImageUrl(id: string): string {
+  return imageDataUrls.value[id] || ''
 }
 
-// 模拟资源数据
-const assets = ref<AssetItem[]>([
-  { id: '1', name: 'screenshot.png', size: 24576, type: 'image' },
-  { id: '2', name: 'diagram.jpg', size: 156300, type: 'image' },
-  { id: '3', name: 'document.pdf', size: 1024000, type: 'attachment' }
-])
+// 获取资源列表
+const assets = computed<AssetItem[]>(() => {
+  const images = fileStore.document?.assets.images || []
+  const attachments = fileStore.document?.assets.attachments || []
+  return [...images, ...attachments]
+})
 
-const selectedAssets = ref<string[]>([])
+// 图片资源
+const images = computed(() => fileStore.document?.assets.images || [])
+
+// 附件资源
+const attachments = computed(() => fileStore.document?.assets.attachments || [])
+
+// 排序后的资源
+const sortedImages = computed(() => {
+  return sortAssets([...images.value], sortField.value, sortOrder.value)
+})
+
+const sortedAttachments = computed(() => {
+  return sortAssets([...attachments.value], sortField.value, sortOrder.value)
+})
+
+// 是否有文档打开
+const hasDocument = computed(() => fileStore.hasFile)
 
 /**
- * 图片资源
+ * 排序资源列表
  */
-const images = computed(() => assets.value.filter(a => a.type === 'image'))
+function sortAssets(list: AssetItem[], field: SortField, order: SortOrder): AssetItem[] {
+  return list.sort((a, b) => {
+    let comparison = 0
+    switch (field) {
+      case 'name':
+        comparison = a.filename.localeCompare(b.filename)
+        break
+      case 'size':
+        comparison = a.size - b.size
+        break
+      case 'type':
+        comparison = a.mime_type.localeCompare(b.mime_type)
+        break
+    }
+    return order === 'asc' ? comparison : -comparison
+  })
+}
 
 /**
- * 附件资源
+ * 切换排序
  */
-const attachments = computed(() => assets.value.filter(a => a.type === 'attachment'))
+function toggleSort(field: SortField): void {
+  if (sortField.value === field) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortField.value = field
+    sortOrder.value = 'asc'
+  }
+}
 
 /**
  * 格式化文件大小
@@ -38,6 +101,27 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * 获取图片的缩略图 URL
+ */
+async function getImageThumbnail(asset: MdxImageAsset): Promise<string> {
+  // 如果已经加载过，直接返回
+  if (imageDataUrls.value[asset.id]) {
+    return imageDataUrls.value[asset.id]
+  }
+
+  // 从主进程获取图片数据
+  const result = await fileStore.getImage(asset.path)
+  if (result.success && result.data) {
+    // 使用对象赋值触发响应式更新
+    imageDataUrls.value = { ...imageDataUrls.value, [asset.id]: result.data }
+    return result.data
+  }
+
+  // 返回占位符
+  return ''
 }
 
 /**
@@ -55,57 +139,195 @@ function toggleSelection(id: string): void {
 /**
  * 添加资源
  */
-function addAsset(): void {
-  console.log('Add asset')
-  // TODO: 实现添加资源功能
+async function addAsset(): Promise<void> {
+  if (!window.electronAPI) return
+
+  const result = await window.electronAPI.showOpenDialog({
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
+  })
+
+  if (result.success && result.data) {
+    for (const filePath of result.data) {
+      // 读取文件并添加
+      try {
+        const response = await fetch(`file://${filePath}`)
+        const blob = await response.blob()
+        const file = new File([blob], filePath.split(/[/\\]/).pop() || 'unnamed', { type: blob.type })
+        await fileStore.addImage(file)
+      } catch (err) {
+        console.error('添加资源失败:', err)
+      }
+    }
+    // 刷新资源列表
+    await fileStore.refreshAssets()
+  }
 }
 
 /**
  * 删除选中的资源
  */
-function deleteSelected(): void {
-  assets.value = assets.value.filter(a => !selectedAssets.value.includes(a.id))
+async function deleteSelected(): Promise<void> {
+  for (const id of selectedAssets.value) {
+    await fileStore.removeAsset(id)
+  }
   selectedAssets.value = []
 }
 
 /**
- * 插入资源到编辑器
+ * 插入图片到编辑器
  */
-function insertAsset(asset: AssetItem): void {
-  console.log('Insert asset:', asset)
-  // TODO: 实现插入资源到编辑器
+function insertImage(asset: MdxImageAsset): void {
+  // 构建 Markdown 图片语法
+  const imageMarkdown = `![${asset.filename}](${asset.path})`
+
+  // 插入到编辑器
+  const content = fileStore.fileContent
+  const newContent = content + '\n\n' + imageMarkdown + '\n'
+  fileStore.updateContent(newContent)
 }
+
+/**
+ * 插入附件到编辑器
+ */
+function insertAttachment(asset: MdxAttachmentAsset): void {
+  // 构建附件链接
+  const attachmentMarkdown = `[📎 ${asset.filename}](${asset.path})`
+
+  // 插入到编辑器
+  const content = fileStore.fileContent
+  const newContent = content + '\n\n' + attachmentMarkdown + '\n'
+  fileStore.updateContent(newContent)
+}
+
+/**
+ * 拖放事件处理
+ */
+function handleDragOver(e: DragEvent): void {
+  e.preventDefault()
+  isDragging.value = true
+}
+
+function handleDragLeave(e: DragEvent): void {
+  e.preventDefault()
+  isDragging.value = false
+}
+
+async function handleDrop(e: DragEvent): Promise<void> {
+  e.preventDefault()
+  isDragging.value = false
+
+  if (!e.dataTransfer?.files) return
+
+  for (const file of Array.from(e.dataTransfer.files)) {
+    if (file.type.startsWith('image/')) {
+      await fileStore.addImage(file)
+    } else {
+      await fileStore.addAttachment(file)
+    }
+  }
+
+  // 刷新资源列表
+  await fileStore.refreshAssets()
+}
+
+// 监听文档变化，加载图片缩略图
+watch(() => fileStore.document, async (doc) => {
+  if (!doc) {
+    imageDataUrls.value = {}
+    return
+  }
+  // 文档加载后，延迟加载图片确保资源列表已更新
+  setTimeout(async () => {
+    const imgs = doc.assets.images || []
+    for (const image of imgs) {
+      if (!imageDataUrls.value[image.id]) {
+        await getImageThumbnail(image)
+      }
+    }
+  }, 100)
+}, { immediate: true })
+
+// 监听文档打开状态，清空选择
+watch(() => fileStore.currentFile?.path, () => {
+  selectedAssets.value = []
+})
+
+// onMounted 时 watch 的 immediate 已经会触发加载，这里不需要重复加载
 </script>
 
 <template>
-  <div class="asset-manager">
+  <div
+    class="asset-manager"
+    :class="{ 'dragging': isDragging }"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
+  >
     <!-- 头部操作栏 -->
     <div class="manager-header">
       <span class="manager-title">资源管理器</span>
       <span class="asset-count">{{ assets.length }} 个文件</span>
     </div>
-    
+
+    <!-- 排序选项 -->
+    <div
+      v-if="assets.length > 0"
+      class="sort-bar"
+    >
+      <button
+        class="sort-btn"
+        :class="{ active: sortField === 'name' }"
+        @click="toggleSort('name')"
+      >
+        名称 {{ sortField === 'name' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
+      </button>
+      <button
+        class="sort-btn"
+        :class="{ active: sortField === 'size' }"
+        @click="toggleSort('size')"
+      >
+        大小 {{ sortField === 'size' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
+      </button>
+      <button
+        class="sort-btn"
+        :class="{ active: sortField === 'type' }"
+        @click="toggleSort('type')"
+      >
+        类型 {{ sortField === 'type' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
+      </button>
+    </div>
+
     <!-- 资源列表 -->
     <div class="asset-list">
       <!-- 图片资源 -->
       <div
-        v-if="images.length > 0"
+        v-if="sortedImages.length > 0"
         class="asset-section"
       >
         <div class="section-title">
-          图片 ({{ images.length }})
+          图片 ({{ sortedImages.length }})
         </div>
         <div class="image-grid">
           <div
-            v-for="image in images"
+            v-for="image in sortedImages"
             :key="image.id"
             class="image-card"
             :class="{ selected: selectedAssets.includes(image.id) }"
             @click="toggleSelection(image.id)"
-            @dblclick="insertAsset(image)"
+            @dblclick="insertImage(image)"
           >
             <div class="image-thumbnail">
+              <img
+                v-if="getImageUrl(image.id)"
+                :src="getImageUrl(image.id)"
+                :alt="image.filename"
+              >
               <svg
+                v-else
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -132,14 +354,14 @@ function insertAsset(asset: AssetItem): void {
             </div>
             <div class="image-info">
               <div class="image-name">
-                {{ image.name }}
+                {{ image.filename }}
               </div>
               <div class="image-size">
                 {{ formatSize(image.size) }}
               </div>
             </div>
           </div>
-          
+
           <!-- 添加图片按钮 -->
           <div
             class="image-card add-card"
@@ -163,22 +385,23 @@ function insertAsset(asset: AssetItem): void {
           </div>
         </div>
       </div>
-      
+
       <!-- 附件资源 -->
       <div
-        v-if="attachments.length > 0"
+        v-if="sortedAttachments.length > 0"
         class="asset-section"
       >
         <div class="section-title">
-          附件 ({{ attachments.length }})
+          附件 ({{ sortedAttachments.length }})
         </div>
         <div class="attachment-list">
           <div
-            v-for="attachment in attachments"
+            v-for="attachment in sortedAttachments"
             :key="attachment.id"
             class="attachment-item"
             :class="{ selected: selectedAssets.includes(attachment.id) }"
             @click="toggleSelection(attachment.id)"
+            @dblclick="insertAttachment(attachment)"
           >
             <svg
               class="attachment-icon"
@@ -193,7 +416,7 @@ function insertAsset(asset: AssetItem): void {
             </svg>
             <div class="attachment-info">
               <div class="attachment-name">
-                {{ attachment.name }}
+                {{ attachment.filename }}
               </div>
               <div class="attachment-size">
                 {{ formatSize(attachment.size) }}
@@ -202,10 +425,10 @@ function insertAsset(asset: AssetItem): void {
           </div>
         </div>
       </div>
-      
+
       <!-- 空状态 -->
       <div
-        v-if="assets.length === 0"
+        v-if="assets.length === 0 && hasDocument"
         class="empty-state"
       >
         <svg
@@ -246,8 +469,32 @@ function insertAsset(asset: AssetItem): void {
           添加资源
         </button>
       </div>
+
+      <!-- 无文档打开状态 -->
+      <div
+        v-if="!hasDocument"
+        class="empty-state"
+      >
+        <svg
+          class="empty-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="1.5"
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+          />
+        </svg>
+        <p class="empty-text">
+          未打开文档
+        </p>
+        <p class="empty-hint">
+          新建或打开文件以管理资源
+        </p>
+      </div>
     </div>
-    
+
     <!-- 底部操作栏 -->
     <div
       v-if="selectedAssets.length > 0"
@@ -261,6 +508,26 @@ function insertAsset(asset: AssetItem): void {
         删除
       </button>
     </div>
+
+    <!-- 拖放提示 -->
+    <div
+      v-if="isDragging"
+      class="drag-overlay"
+    >
+      <div class="drag-message">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M12 4v16m8-8H4"
+          />
+        </svg>
+        <span>释放以添加资源</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -269,6 +536,12 @@ function insertAsset(asset: AssetItem): void {
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
+}
+
+.asset-manager.dragging {
+  border: 2px dashed var(--color-primary);
+  background-color: var(--color-primary-light);
 }
 
 .manager-header {
@@ -288,6 +561,34 @@ function insertAsset(asset: AssetItem): void {
 .asset-count {
   font-size: 11px;
   color: var(--color-text-tertiary);
+}
+
+.sort-bar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sort-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sort-btn:hover {
+  border-color: var(--color-border-hover);
+}
+
+.sort-btn.active {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-light);
 }
 
 .asset-list {
@@ -342,6 +643,13 @@ function insertAsset(asset: AssetItem): void {
   justify-content: center;
   background-color: var(--color-bg-tertiary);
   color: var(--color-text-tertiary);
+  overflow: hidden;
+}
+
+.image-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .image-thumbnail svg {
@@ -517,5 +825,42 @@ function insertAsset(asset: AssetItem): void {
 .delete-btn:hover {
   background-color: var(--color-error);
   color: white;
+}
+
+.drag-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(var(--color-primary-rgb), 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drag-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 48px;
+  background-color: var(--color-bg-primary);
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.drag-message svg {
+  width: 32px;
+  height: 32px;
+  color: var(--color-primary);
+}
+
+.drag-message span {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-primary);
 }
 </style>

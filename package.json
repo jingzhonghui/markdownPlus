@@ -52,6 +52,7 @@
     "prosemirror-state": "^1.4.4",
     "prosemirror-transform": "^1.12.0",
     "prosemirror-view": "^1.41.8",
+    "sharp": "^0.34.5",
     "shiki": "^4.0.2"
   },
   "devDependencies": {

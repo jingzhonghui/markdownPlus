@@ -30,6 +30,10 @@ const themeStore = useThemeStore()
 const editorRef = ref<HTMLDivElement>()
 const viewRef = ref<EditorView | null>(null)
 const isUpdating = ref(false)
+const isDragging = ref(false)
+
+// 图片缓存
+const imageCache = new Map<string, string>()
 
 // 浮动工具栏状态
 const floatToolbar = ref({
@@ -228,7 +232,116 @@ function hideFloatToolbar(): void {
   floatToolbar.value.visible = false
 }
 
-// 监听文件内容变化（外部更新时同步到编辑器）
+/**
+ * 处理拖放事件
+ */
+function handleDragOver(e: DragEvent): void {
+  e.preventDefault()
+  isDragging.value = true
+}
+
+function handleDragLeave(e: DragEvent): void {
+  e.preventDefault()
+  isDragging.value = false
+}
+
+async function handleDrop(e: DragEvent): Promise<void> {
+  e.preventDefault()
+  isDragging.value = false
+
+  if (!e.dataTransfer) return
+
+  // 处理文件拖放
+  const files = Array.from(e.dataTransfer.files)
+  for (const file of files) {
+    if (file.type.startsWith('image/')) {
+      await insertImageFromFile(file)
+    }
+  }
+
+  // 处理 URL 拖放
+  const url = e.dataTransfer.getData('text/uri-list')
+  if (url && isImageUrl(url)) {
+    insertImage(url)
+  }
+}
+
+/**
+ * 处理粘贴事件
+ */
+async function handlePaste(e: ClipboardEvent): Promise<void> {
+  if (!e.clipboardData) return
+
+  // 优先处理图片文件
+  const files = Array.from(e.clipboardData.files)
+  for (const file of files) {
+    if (file.type.startsWith('image/')) {
+      e.preventDefault()
+      await insertImageFromFile(file)
+      return
+    }
+  }
+}
+
+/**
+ * 从文件插入图片
+ */
+async function insertImageFromFile(file: File): Promise<void> {
+  const result = await fileStore.addImage(file)
+  if (result.success && result.path) {
+    const view = viewRef.value
+    if (!view) return
+    const { state, dispatch } = view
+    insertImage(result.path, file.name)(state, dispatch)
+    view.focus()
+  }
+}
+
+/**
+ * 检查是否是图片 URL
+ */
+function isImageUrl(url: string): boolean {
+  return /\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i.test(url)
+}
+
+/**
+ * 加载并显示编辑器中的图片
+ * 将相对路径的图片转换为 Data URL
+ */
+async function loadEditorImages(): Promise<void> {
+  if (!editorRef.value) return
+
+  const images = editorRef.value.querySelectorAll('img')
+
+  for (const img of images) {
+    const src = img.getAttribute('src')
+    if (!src) continue
+
+    // 外部链接直接显示
+    if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
+      continue
+    }
+
+    // 从缓存获取
+    if (imageCache.has(src)) {
+      img.src = imageCache.get(src)!
+      continue
+    }
+
+    // 异步加载图片数据
+    try {
+      const result = await fileStore.getImage(src)
+      if (result.success && result.data) {
+        imageCache.set(src, result.data)
+        img.src = result.data
+      }
+    } catch (err) {
+      console.error('加载图片失败:', src, err)
+    }
+  }
+}
+
+  // 监听文件内容变化（外部更新时同步到编辑器）
 watch(() => fileStore.fileContent, (newContent) => {
   const view = viewRef.value
   if (!view) return
@@ -243,6 +356,8 @@ watch(() => fileStore.fileContent, (newContent) => {
 
   nextTick(() => {
     isUpdating.value = false
+    // 内容变化后加载图片
+    loadEditorImages()
   })
 })
 
@@ -257,13 +372,48 @@ watch(() => themeStore.currentTheme, () => {
   })
 })
 
+// 监听文档切换，清空图片缓存
+watch(() => fileStore.currentFile?.path, (newPath, oldPath) => {
+  if (newPath !== oldPath) {
+    imageCache.clear()
+    // 切换文档后重新加载图片
+    nextTick(() => {
+      loadEditorImages()
+    })
+  }
+})
+
 // 生命周期
 onMounted(() => {
   initEditor()
+
+  // 添加拖放和粘贴事件监听
+  const editorEl = editorRef.value
+  if (editorEl) {
+    editorEl.addEventListener('dragover', handleDragOver)
+    editorEl.addEventListener('dragleave', handleDragLeave)
+    editorEl.addEventListener('drop', handleDrop)
+    editorEl.addEventListener('paste', handlePaste)
+  }
+
+  // 初始化后加载图片
+  nextTick(() => {
+    loadEditorImages()
+  })
 })
 
 onUnmounted(() => {
   document.removeEventListener('selectionchange', handleSelectionChange)
+
+  // 移除事件监听
+  const editorEl = editorRef.value
+  if (editorEl) {
+    editorEl.removeEventListener('dragover', handleDragOver)
+    editorEl.removeEventListener('dragleave', handleDragLeave)
+    editorEl.removeEventListener('drop', handleDrop)
+    editorEl.removeEventListener('paste', handlePaste)
+  }
+
   viewRef.value?.destroy()
 })
 
@@ -286,7 +436,10 @@ defineExpose({
 </script>
 
 <template>
-  <div class="wysiwyg-container">
+  <div
+    class="wysiwyg-container"
+    :class="{ 'dragging': isDragging }"
+  >
     <div
       ref="editorRef"
       class="wysiwyg-editor"
@@ -318,6 +471,11 @@ defineExpose({
   overflow-y: auto;
   background-color: var(--color-bg-primary);
   position: relative;
+}
+
+.wysiwyg-container.dragging .wysiwyg-editor {
+  background-color: var(--color-primary-light);
+  border: 2px dashed var(--color-primary);
 }
 
 .wysiwyg-editor {

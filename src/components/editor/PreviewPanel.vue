@@ -5,6 +5,9 @@ import { useThemeStore } from '../../stores/theme'
 import { renderMarkdown } from '../../utils/markdown'
 import { createHighlighter, type Highlighter } from 'shiki'
 
+// 图片缓存
+const imageCache = new Map<string, string>()
+
 // Props
 interface Props {
   /** 是否允许滚动同步 */
@@ -81,8 +84,9 @@ function renderPreview(): void {
     clearTimeout(renderDebounceTimer)
   }
   
-  renderDebounceTimer = setTimeout(() => {
-    applyCodeHighlight()
+  renderDebounceTimer = setTimeout(async () => {
+    await applyCodeHighlight()
+    await loadImages()
   }, 100)
 }
 
@@ -160,11 +164,58 @@ function scrollToLine(line: number): void {
   }
 }
 
+/**
+ * 加载并显示图片
+ * 将相对路径的图片转换为 Data URL
+ */
+async function loadImages(): Promise<void> {
+  if (!previewRef.value || !fileStore.document) return
+
+  const images = previewRef.value.querySelectorAll('img')
+  
+  for (const img of images) {
+    const src = img.getAttribute('src')
+    if (!src) continue
+
+    // 外部链接直接显示
+    if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
+      continue
+    }
+
+    // 从缓存获取
+    if (imageCache.has(src)) {
+      img.src = imageCache.get(src)!
+      continue
+    }
+
+    // 异步加载图片数据
+    try {
+      const result = await fileStore.getImage(src)
+      if (result.success && result.data) {
+        imageCache.set(src, result.data)
+        img.src = result.data
+      } else {
+        // 图片加载失败，显示占位符
+        img.alt = img.alt || '图片加载失败'
+      }
+    } catch (err) {
+      console.error('加载图片失败:', src, err)
+    }
+  }
+}
+
 // 监听内容变化
 watch(() => fileStore.fileContent, () => {
   nextTick(() => {
     renderPreview()
   })
+})
+
+// 监听文档变化，清空图片缓存
+watch(() => fileStore.currentFile?.path, (newPath, oldPath) => {
+  if (newPath !== oldPath) {
+    imageCache.clear()
+  }
 })
 
 // 监听主题变化

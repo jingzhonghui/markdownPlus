@@ -17,7 +17,13 @@ export const IPC_CHANNELS = {
     READ: 'mdx:read',
     WRITE: 'mdx:write',
     IMPORT_MD: 'mdx:importMd',
-    EXPORT_MD: 'mdx:exportMd'
+    EXPORT_MD: 'mdx:exportMd',
+    ADD_IMAGE: 'mdx:addImage',
+    GET_IMAGE: 'mdx:getImage',
+    REMOVE_ASSET: 'mdx:removeAsset',
+    LIST_ASSETS: 'mdx:listAssets',
+    ADD_ATTACHMENT: 'mdx:addAttachment',
+    GET_ATTACHMENT: 'mdx:getAttachment'
   },
   APP: {
     PING: 'ping',

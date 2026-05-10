@@ -377,14 +377,48 @@ export function registerMdxHandlers(): void {
   })
 
   // 添加图片资源
-  ipcMain.handle('mdx:addImage', async (_, imagePath: string, filename: string, mimeType: string, data: ArrayBuffer) => {
+  ipcMain.handle(IPC_CHANNELS.MDX.ADD_IMAGE, async (_, filename: string, mimeType: string, data: ArrayBuffer, options?: { compress?: boolean; quality?: number; maxWidth?: number; maxHeight?: number }) => {
     try {
       if (!currentDoc.document) {
         return { success: false, error: '没有打开的文档' }
       }
 
+      let buffer = Buffer.from(data)
+
+      // 如果需要压缩，调用压缩功能
+      if (options?.compress) {
+        try {
+          const sharp = await import('sharp')
+          let sharpInstance = sharp.default(buffer)
+
+          // 获取图片元数据
+          const metadata = await sharpInstance.metadata()
+
+          // 调整尺寸
+          if (options.maxWidth || options.maxHeight) {
+            sharpInstance = sharpInstance.resize(options.maxWidth, options.maxHeight, {
+              fit: 'inside',
+              withoutEnlargement: true
+            })
+          }
+
+          // 根据 MIME 类型选择压缩格式
+          const quality = options.quality ?? 85
+          if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+            buffer = await sharpInstance.jpeg({ quality }).toBuffer()
+          } else if (mimeType === 'image/png') {
+            // PNG 使用自适应质量
+            buffer = await sharpInstance.png({ quality }).toBuffer()
+          } else if (mimeType === 'image/webp') {
+            buffer = await sharpInstance.webp({ quality }).toBuffer()
+          }
+        } catch {
+          // sharp 不可用或压缩失败，使用原始数据
+          console.warn('图片压缩失败，使用原始数据')
+        }
+      }
+
       const { addImageAsset } = await import('../mdx/writer')
-      const buffer = Buffer.from(data)
       const result = addImageAsset(currentDoc.document, filename, mimeType, buffer)
 
       // 如果有临时目录，写入图片文件
@@ -395,6 +429,9 @@ export function registerMdxHandlers(): void {
         fs.mkdirSync(path.dirname(fullPath), { recursive: true })
         fs.writeFileSync(fullPath, buffer)
       }
+
+      // 标记文档已修改
+      currentDoc.isModified = true
 
       return {
         success: true,
@@ -410,7 +447,7 @@ export function registerMdxHandlers(): void {
   })
 
   // 获取图片数据
-  ipcMain.handle('mdx:getImage', async (_, imagePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.MDX.GET_IMAGE, async (_, imagePath: string) => {
     try {
       if (!currentDoc.tempDir) {
         return { success: false, error: '没有打开的文档' }
@@ -425,11 +462,154 @@ export function registerMdxHandlers(): void {
       }
 
       const data = fs.readFileSync(fullPath)
+      const ext = path.extname(fullPath).toLowerCase()
+      // 将文件扩展名映射为正确的 MIME 类型
+      const mimeTypeMap: Record<string, string> = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+        '.bmp': 'image/bmp',
+        '.ico': 'image/x-icon'
+      }
+      const mimeType = mimeTypeMap[ext] || 'image/png'
       return {
         success: true,
         data: {
           buffer: data,
-          mimeType: path.extname(fullPath).toLowerCase()
+          mimeType
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 添加附件资源
+  ipcMain.handle(IPC_CHANNELS.MDX.ADD_ATTACHMENT, async (_, filename: string, mimeType: string, data: ArrayBuffer) => {
+    try {
+      if (!currentDoc.document) {
+        return { success: false, error: '没有打开的文档' }
+      }
+
+      const buffer = Buffer.from(data)
+      const { addAttachmentAsset } = await import('../mdx/writer')
+      const result = addAttachmentAsset(currentDoc.document, filename, mimeType, buffer)
+
+      // 如果有临时目录，写入附件文件
+      if (currentDoc.tempDir) {
+        const fs = await import('fs')
+        const path = await import('path')
+        const fullPath = path.join(currentDoc.tempDir, result.relativePath)
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+        fs.writeFileSync(fullPath, buffer)
+      }
+
+      // 标记文档已修改
+      currentDoc.isModified = true
+
+      return {
+        success: true,
+        data: {
+          asset: result.asset,
+          relativePath: result.relativePath
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 获取附件数据
+  ipcMain.handle(IPC_CHANNELS.MDX.GET_ATTACHMENT, async (_, attachmentPath: string) => {
+    try {
+      if (!currentDoc.tempDir) {
+        return { success: false, error: '没有打开的文档' }
+      }
+
+      const fs = await import('fs')
+      const path = await import('path')
+      const fullPath = path.join(currentDoc.tempDir, attachmentPath)
+
+      if (!fs.existsSync(fullPath)) {
+        return { success: false, error: '附件不存在' }
+      }
+
+      const data = fs.readFileSync(fullPath)
+      const ext = path.extname(fullPath).toLowerCase()
+      // 将文件扩展名映射为正确的 MIME 类型
+      const mimeTypeMap: Record<string, string> = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+        '.bmp': 'image/bmp',
+        '.ico': 'image/x-icon',
+        '.pdf': 'application/pdf',
+        '.txt': 'text/plain',
+        '.md': 'text/markdown',
+        '.json': 'application/json',
+        '.zip': 'application/zip'
+      }
+      const mimeType = mimeTypeMap[ext] || 'application/octet-stream'
+      return {
+        success: true,
+        data: {
+          buffer: data,
+          mimeType
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 删除资源
+  ipcMain.handle(IPC_CHANNELS.MDX.REMOVE_ASSET, async (_, assetId: string) => {
+    try {
+      if (!currentDoc.document) {
+        return { success: false, error: '没有打开的文档' }
+      }
+
+      const { removeAsset } = await import('../mdx/writer')
+      const removed = removeAsset(currentDoc.document, assetId)
+
+      if (removed) {
+        // 标记文档已修改
+        currentDoc.isModified = true
+        return { success: true }
+      } else {
+        return { success: false, error: '资源不存在' }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 列出所有资源
+  ipcMain.handle(IPC_CHANNELS.MDX.LIST_ASSETS, async () => {
+    try {
+      if (!currentDoc.document) {
+        return { success: false, error: '没有打开的文档' }
+      }
+
+      const { listAssets } = await import('../mdx/reader')
+      const assets = listAssets(currentDoc.document)
+
+      return {
+        success: true,
+        data: {
+          images: currentDoc.document.assets.images,
+          attachments: currentDoc.document.assets.attachments || [],
+          all: assets
         }
       }
     } catch (error) {

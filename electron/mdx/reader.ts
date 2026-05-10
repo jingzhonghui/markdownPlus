@@ -134,17 +134,18 @@ function readContent(contentPath: string): string {
 
 /**
  * 读取资源文件列表
- * @param assetsDir assets 目录路径
+ * @param tempDir 临时目录路径
  * @param assets 资源元数据
  * @returns 资源数据映射（路径 -> Buffer）
  */
-export function readAssets(assetsDir: string, assets: MdxAssets): Map<string, Buffer> {
+export function readAssets(tempDir: string, assets: MdxAssets): Map<string, Buffer> {
   const assetData = new Map<string, Buffer>()
 
   // 读取图片资源
+  // 注意: image.path 已经是相对于 tempDir 的路径 (如 "assets/images/xxx.png")
   if (assets.images && Array.isArray(assets.images)) {
     for (const image of assets.images) {
-      const imagePath = path.join(assetsDir, image.path)
+      const imagePath = path.join(tempDir, image.path)
       if (fs.existsSync(imagePath)) {
         // 验证校验和
         if (verifyChecksum(imagePath, image.checksum)) {
@@ -153,7 +154,7 @@ export function readAssets(assetsDir: string, assets: MdxAssets): Map<string, Bu
           console.warn(`图片校验和验证失败: ${image.path}`)
         }
       } else {
-        console.warn(`图片文件不存在: ${image.path}`)
+        console.warn(`图片文件不存在: ${imagePath}`)
       }
     }
   }
@@ -161,7 +162,7 @@ export function readAssets(assetsDir: string, assets: MdxAssets): Map<string, Bu
   // 读取附件资源
   if (assets.attachments && Array.isArray(assets.attachments)) {
     for (const attachment of assets.attachments) {
-      const attachmentPath = path.join(assetsDir, attachment.path)
+      const attachmentPath = path.join(tempDir, attachment.path)
       if (fs.existsSync(attachmentPath)) {
         if (verifyChecksum(attachmentPath, attachment.checksum)) {
           assetData.set(attachment.path, fs.readFileSync(attachmentPath))
@@ -169,7 +170,7 @@ export function readAssets(assetsDir: string, assets: MdxAssets): Map<string, Bu
           console.warn(`附件校验和验证失败: ${attachment.path}`)
         }
       } else {
-        console.warn(`附件文件不存在: ${attachment.path}`)
+        console.warn(`附件文件不存在: ${attachmentPath}`)
       }
     }
   }
@@ -277,8 +278,7 @@ export function openMdx(filePath: string): MdxResult<{ document: MdxDocument; te
  * @returns 资源数据映射
  */
 export function loadAssets(tempDir: string, assets: MdxAssets): Map<string, Buffer> {
-  const assetsDir = path.join(tempDir, 'assets')
-  return readAssets(assetsDir, assets)
+  return readAssets(tempDir, assets)
 }
 
 /**

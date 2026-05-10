@@ -4,6 +4,8 @@ import { useFileStore } from '../../stores/file'
 import WysiwygEditor from './WysiwygEditor.vue'
 import SourceEditor from './SourceEditor.vue'
 import PreviewPanel from './PreviewPanel.vue'
+import { Splitpanes, Pane } from 'splitpanes'
+import 'splitpanes/dist/splitpanes.css'
 import type { EditorView } from 'prosemirror-view'
 
 const fileStore = useFileStore()
@@ -169,15 +171,24 @@ provide('editorController', {
       v-if="showWysiwyg"
       ref="wysiwygEditorRef"
     />
-    
-    <!-- 源码编辑器（分屏模式或源码模式） -->
+
+    <!-- 源码模式：仅显示编辑器 -->
     <SourceEditor
-      v-if="showSource"
-      :class="{ 'split-mode': showPreview }"
+      v-if="showSource && !showPreview"
     />
-    
-    <!-- 预览面板（仅分屏模式） -->
-    <PreviewPanel v-if="showPreview" />
+
+    <!-- 分屏模式：可拖拽调整左右面板 -->
+    <Splitpanes
+      v-if="showSource && showPreview"
+      class="splitpanes-theme"
+    >
+      <Pane :min-size="20">
+        <SourceEditor />
+      </Pane>
+      <Pane :min-size="20">
+        <PreviewPanel />
+      </Pane>
+    </Splitpanes>
   </div>
 </template>
 
@@ -189,8 +200,45 @@ provide('editorController', {
   background-color: var(--color-bg-primary);
 }
 
-.split-mode {
+/* Splitpanes 主题适配 */
+.splitpanes-theme {
   flex: 1;
+  display: flex;
+}
+
+.splitpanes-theme :deep(.splitpanes__pane) {
+  background-color: var(--color-bg-primary);
+  overflow: hidden;
+}
+
+.splitpanes-theme :deep(.splitpanes__splitter) {
+  background-color: var(--color-bg-secondary);
+  border-left: 1px solid var(--color-border);
   border-right: 1px solid var(--color-border);
+  position: relative;
+  width: 7px;
+  cursor: col-resize;
+  transition: background-color 0.2s;
+}
+
+.splitpanes-theme :deep(.splitpanes__splitter:hover) {
+  background-color: var(--color-primary);
+}
+
+.splitpanes-theme :deep(.splitpanes__splitter::before) {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 24px;
+  background-color: var(--color-border);
+  border-radius: 1px;
+  transition: background-color 0.2s;
+}
+
+.splitpanes-theme :deep(.splitpanes__splitter:hover::before) {
+  background-color: white;
 }
 </style>

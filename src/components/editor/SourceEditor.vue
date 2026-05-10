@@ -447,7 +447,30 @@ function getThemeExtension(): Extension {
   const isDark = themeStore.isDark
   
   if (isDark) {
-    return oneDark
+    // 深色主题：继承 oneDark 并增强选区样式
+    return [
+      oneDark,
+      EditorView.theme({
+        '&': {
+          backgroundColor: 'var(--color-bg-primary)'
+        },
+        '.cm-selectionBackground': {
+          backgroundColor: 'rgba(96, 165, 250, 0.4) !important'
+        },
+        '.cm-selectionMatch': {
+          backgroundColor: 'rgba(96, 165, 250, 0.3) !important'
+        },
+        '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+          backgroundColor: 'rgba(96, 165, 250, 0.5) !important'
+        },
+        '.cm-activeLine': {
+          backgroundColor: 'rgba(96, 165, 250, 0.08)'
+        },
+        '.cm-activeLineGutter': {
+          backgroundColor: 'rgba(96, 165, 250, 0.08)'
+        }
+      })
+    ]
   }
   
   // 浅色主题使用默认样式
@@ -463,13 +486,19 @@ function getThemeExtension(): Extension {
       borderLeftColor: 'var(--color-primary)'
     },
     '.cm-selectionBackground': {
-      backgroundColor: 'var(--color-primary-light)'
+      backgroundColor: 'rgba(59, 130, 246, 0.3) !important'
+    },
+    '.cm-selectionMatch': {
+      backgroundColor: 'rgba(59, 130, 246, 0.2) !important'
+    },
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+      backgroundColor: 'rgba(59, 130, 246, 0.4) !important'
     },
     '.cm-activeLine': {
-      backgroundColor: 'var(--color-bg-secondary)'
+      backgroundColor: 'rgba(59, 130, 246, 0.05)'
     },
     '.cm-activeLineGutter': {
-      backgroundColor: 'var(--color-bg-secondary)'
+      backgroundColor: 'rgba(59, 130, 246, 0.05)'
     },
     '.cm-gutters': {
       backgroundColor: 'var(--color-bg-secondary)',
@@ -868,5 +897,48 @@ defineExpose({
 .codemirror-wrapper :deep(.cm-searchMatch-selected) {
   background-color: var(--color-primary);
   color: white;
+}
+
+/* 选区样式 - 确保选中效果更明显 */
+.codemirror-wrapper :deep(.cm-selectionBackground) {
+  background-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+.codemirror-wrapper :deep(.cm-selectionMatch) {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+.codemirror-wrapper :deep(.cm-focused) .cm-selectionBackground {
+  background-color: rgba(59, 130, 246, 0.4) !important;
+}
+
+/* 深色主题选区样式 */
+[data-theme='dark'] .codemirror-wrapper :deep(.cm-selectionBackground) {
+  background-color: rgba(96, 165, 250, 0.4) !important;
+}
+
+[data-theme='dark'] .codemirror-wrapper :deep(.cm-selectionMatch) {
+  background-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+[data-theme='dark'] .codemirror-wrapper :deep(.cm-focused) .cm-selectionBackground {
+  background-color: rgba(96, 165, 250, 0.5) !important;
+}
+
+/* 当前行背景 - 降低透明度让选区更明显 */
+.codemirror-wrapper :deep(.cm-activeLine) {
+  background-color: rgba(59, 130, 246, 0.05) !important;
+}
+
+.codemirror-wrapper :deep(.cm-activeLineGutter) {
+  background-color: rgba(59, 130, 246, 0.05) !important;
+}
+
+[data-theme='dark'] .codemirror-wrapper :deep(.cm-activeLine) {
+  background-color: rgba(96, 165, 250, 0.08) !important;
+}
+
+[data-theme='dark'] .codemirror-wrapper :deep(.cm-activeLineGutter) {
+  background-color: rgba(96, 165, 250, 0.08) !important;
 }
 </style>

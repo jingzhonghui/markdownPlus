@@ -9,6 +9,7 @@ import {
 } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
+import { storeToRefs } from 'pinia'
 import { EditorView } from 'prosemirror-view'
 import { EditorState } from 'prosemirror-state'
 import {
@@ -21,12 +22,14 @@ import {
   toggleHeading,
   insertImage
 } from '../../utils/prosemirror'
+import { TextSelection } from 'prosemirror-state'
 import { toggleMark, wrapIn, setBlockType } from 'prosemirror-commands'
 import { wrapInList } from 'prosemirror-schema-list'
 import FloatToolbar from './FloatToolbar.vue'
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
+const { fileContent } = storeToRefs(fileStore)
 const editorRef = ref<HTMLDivElement>()
 const viewRef = ref<EditorView | null>(null)
 const isUpdating = ref(false)
@@ -67,10 +70,13 @@ function createEditorState(content: string): EditorState {
     ...createPlugins(markdownSchema),
     taskListClickPlugin,
     createDocumentChangePlugin((state) => {
-      if (isUpdating.value) return
-
       const markdown = serializeMarkdown(state.doc)
-      fileStore.updateContent(markdown)
+      // 规范化比较，避免换行符差异导致的循环更新
+      const currentContent = (fileStore.fileContent || '').replace(/\n+$/, '')
+      const newMarkdown = markdown.replace(/\n+$/, '')
+      if (currentContent !== newMarkdown) {
+        fileStore.updateContent(markdown)
+      }
     })
   ]
 
@@ -233,6 +239,20 @@ function hideFloatToolbar(): void {
 }
 
 /**
+ * 处理容器点击 - 确保编辑器获得焦点
+ */
+function handleContainerClick(e: MouseEvent): void {
+  const view = viewRef.value
+  if (!view) return
+
+  // 如果点击的是编辑器容器而非编辑器本身，聚焦到编辑器
+  const target = e.target as HTMLElement
+  if (target === editorRef.value || target.classList.contains('wysiwyg-container')) {
+    view.focus()
+  }
+}
+
+/**
  * 处理拖放事件
  */
 function handleDragOver(e: DragEvent): void {
@@ -342,21 +362,43 @@ async function loadEditorImages(): Promise<void> {
 }
 
   // 监听文件内容变化（外部更新时同步到编辑器）
-watch(() => fileStore.fileContent, (newContent) => {
+watch(fileContent, (newContent) => {
   const view = viewRef.value
   if (!view) return
 
-  // 避免循环更新
-  const currentMarkdown = serializeMarkdown(view.state.doc)
-  if (currentMarkdown === newContent) return
+  // 避免循环更新 - 规范化比较（去除末尾多余换行）
+  const currentMarkdown = serializeMarkdown(view.state.doc).replace(/\n+$/, '')
+  const normalizedNewContent = (newContent || '').replace(/\n+$/, '')
+  if (currentMarkdown === normalizedNewContent) return
 
   isUpdating.value = true
-  const newState = createEditorState(newContent)
+
+  // 保存当前选区位置
+  const { selection } = view.state
+  const anchorPos = selection.anchor
+  const headPos = selection.head
+
+  // 创建新状态并更新视图
+  const newState = createEditorState(newContent || '')
   view.updateState(newState)
+
+  // 尝试恢复选区位置
+  const newDocLength = newState.doc.content.size
+  const safeAnchor = Math.min(anchorPos, newDocLength)
+  const safeHead = Math.min(headPos, newDocLength)
+
+  try {
+    if (safeAnchor <= safeHead) {
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, safeAnchor, safeHead)))
+    } else {
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, safeHead, safeAnchor)))
+    }
+  } catch {
+    // 忽略选区恢复失败
+  }
 
   nextTick(() => {
     isUpdating.value = false
-    // 内容变化后加载图片
     loadEditorImages()
   })
 })
@@ -396,9 +438,11 @@ onMounted(() => {
     editorEl.addEventListener('paste', handlePaste)
   }
 
-  // 初始化后加载图片
+  // 初始化后加载图片并聚焦
   nextTick(() => {
     loadEditorImages()
+    // 自动聚焦到编辑器
+    viewRef.value?.focus()
   })
 })
 
@@ -439,6 +483,7 @@ defineExpose({
   <div
     class="wysiwyg-container"
     :class="{ 'dragging': isDragging }"
+    @click="handleContainerClick"
   >
     <div
       ref="editorRef"

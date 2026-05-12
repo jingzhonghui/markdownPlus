@@ -22,7 +22,9 @@ import {
 import {
   createInstantPlugins,
   createInstantNodeViews,
-  toggleBlockSourceMode
+  toggleBlockSourceMode,
+  instantRenderKey,
+  convertBlockToRendered
 } from '../../utils/prosemirror/instant'
 import { TextSelection } from 'prosemirror-state'
 import { toggleMark, wrapIn, setBlockType } from 'prosemirror-commands'
@@ -69,11 +71,30 @@ function createEditorState(content: string): EditorState {
     ...createInstantPlugins(markdownSchema),
     taskListClickPlugin,
     createDocumentChangePlugin((state) => {
-      const markdown = serializeMarkdown(state.doc)
-      const currentContent = (fileStore.fileContent || '').replace(/\n+$/, '')
-      const newMarkdown = markdown.replace(/\n+$/, '')
-      if (currentContent !== newMarkdown) {
-        fileStore.updateContent(markdown)
+      try {
+        // 序列化时需要将源码态块临时转换为渲染态
+        // 否则纯文本 `**hello**` 会被序列化器转义为 `\*\*hello\*\*`
+        let docToSerialize = state.doc
+        const pluginState = instantRenderKey.getState(state)
+        if (pluginState && pluginState.sourceBlocks.size > 0) {
+          const tr = state.tr.setMeta('ir-content-conversion', true)
+          const sorted = [...pluginState.sourceBlocks].sort((a, b) => b - a)
+          for (const pos of sorted) {
+            const node = tr.doc.nodeAt(pos)
+            if (node) convertBlockToRendered(tr, pos, node)
+          }
+          if (tr.docChanged) {
+            docToSerialize = tr.doc
+          }
+        }
+        const markdown = serializeMarkdown(docToSerialize)
+        const currentContent = (fileStore.fileContent || '').replace(/\n+$/, '')
+        const newMarkdown = markdown.replace(/\n+$/, '')
+        if (currentContent !== newMarkdown) {
+          fileStore.updateContent(markdown)
+        }
+      } catch (e) {
+        console.error('序列化失败:', e)
       }
     })
   ]
@@ -119,6 +140,23 @@ function initEditor(): void {
   })
 
   document.addEventListener('selectionchange', handleSelectionChange)
+
+  // 触发初始源码态内容转换
+  // appendTransaction 在初始化时不会被调用，需要手动触发
+  try {
+    const view = viewRef.value
+    if (view) {
+      nextTick(() => {
+        try {
+          view.dispatch(view.state.tr.setMeta('ir-trigger-init', true))
+        } catch (e) {
+          console.error('初始源码态转换失败:', e)
+        }
+      })
+    }
+  } catch (e) {
+    console.error('初始化错误:', e)
+  }
 }
 
 /**
@@ -386,7 +424,26 @@ watch(fileContent, (newContent) => {
   const view = viewRef.value
   if (!view) return
 
-  const currentMarkdown = serializeMarkdown(view.state.doc).replace(/\n+$/, '')
+  // 序列化时需要临时将源码态块转换为渲染态，确保序列化结果正确
+  let docToSerialize = view.state.doc
+  const pluginState = instantRenderKey.getState(view.state)
+  if (pluginState && pluginState.sourceBlocks.size > 0) {
+    try {
+      const tr = view.state.tr.setMeta('ir-content-conversion', true)
+      const sorted = [...pluginState.sourceBlocks].sort((a, b) => b - a)
+      for (const pos of sorted) {
+        const node = tr.doc.nodeAt(pos)
+        if (node) convertBlockToRendered(tr, pos, node)
+      }
+      if (tr.docChanged) {
+        docToSerialize = tr.doc
+      }
+    } catch (e) {
+      console.error('序列化临时转换失败:', e)
+    }
+  }
+
+  const currentMarkdown = serializeMarkdown(docToSerialize).replace(/\n+$/, '')
   const normalizedNewContent = (newContent || '').replace(/\n+$/, '')
   if (currentMarkdown === normalizedNewContent) return
 
@@ -398,6 +455,9 @@ watch(fileContent, (newContent) => {
 
   const newState = createEditorState(newContent || '')
   view.updateState(newState)
+
+  // 触发源码态内容转换
+  view.dispatch(view.state.tr.setMeta('ir-trigger-init', true))
 
   const newDocLength = newState.doc.content.size
   const safeAnchor = Math.min(anchorPos, newDocLength)
@@ -565,7 +625,18 @@ defineExpose({
   font-size: 0.9em;
   user-select: none;
   pointer-events: none;
-  margin-right: 4px;
+}
+
+/* 源码态文本样式：使用等宽字体，取消加粗/斜体等渲染效果 */
+.instant-editor :deep(.ir-source p),
+.instant-editor :deep(.ir-source h1),
+.instant-editor :deep(.ir-source h2),
+.instant-editor :deep(.ir-source h3),
+.instant-editor :deep(.ir-source h4) {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  font-weight: normal;
+  font-style: normal;
 }
 
 /* 渲染态：隐藏 Markdown 标记符 */

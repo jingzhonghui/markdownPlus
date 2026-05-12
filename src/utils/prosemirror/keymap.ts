@@ -28,6 +28,7 @@ import {
 } from 'prosemirror-schema-list'
 import { undo, redo } from 'prosemirror-history'
 import { markdownSchema } from './schema'
+import { instantRenderKey, getSelectionBlockPos } from './instant/state'
 
 /**
  * 切换标题级别的命令
@@ -245,11 +246,23 @@ export function buildKeymap(schema: Schema): Record<string, Command> {
     'Mod-Shift-z': redo,
     'Mod-y': redo,
 
-    // 基本格式
-    'Mod-b': toggleMark(schema.marks.bold),
-    'Mod-i': toggleMark(schema.marks.italic),
-    'Mod-`': toggleCode,
-    'Mod-Shift-x': toggleStrikethrough,
+    // 基本格式（源码态下禁用，因为用户在编辑原始 Markdown 文本）
+    'Mod-b': (state, dispatch) => {
+      if (isInSourceMode(state)) return false
+      return toggleMark(schema.marks.bold)(state, dispatch)
+    },
+    'Mod-i': (state, dispatch) => {
+      if (isInSourceMode(state)) return false
+      return toggleMark(schema.marks.italic)(state, dispatch)
+    },
+    'Mod-`': (state, dispatch) => {
+      if (isInSourceMode(state)) return false
+      return toggleCode()(state, dispatch)
+    },
+    'Mod-Shift-x': (state, dispatch) => {
+      if (isInSourceMode(state)) return false
+      return toggleStrikethrough()(state, dispatch)
+    },
 
     // 标题 (Ctrl+1 ~ Ctrl+4)
     'Mod-1': toggleHeading(1),
@@ -321,4 +334,15 @@ export {
   customSplitListItem,
   handleTab,
   handleShiftTab
+}
+
+/**
+ * 检查当前光标所在块是否处于源码态
+ */
+function isInSourceMode(state: EditorState): boolean {
+  const pluginState = instantRenderKey.getState(state)
+  if (!pluginState) return false
+  const blockPos = getSelectionBlockPos(state)
+  if (blockPos === null) return false
+  return pluginState.sourceBlocks.has(blockPos)
 }

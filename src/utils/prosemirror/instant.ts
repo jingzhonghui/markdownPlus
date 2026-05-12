@@ -23,7 +23,9 @@ export {
   getSelectionBlockPos,
   getSelectedBlockPositions,
   getMarkdownMarker,
-  DECORATION_TYPES
+  DECORATION_TYPES,
+  convertBlockToRendered,
+  instantRenderKey
 } from './instant/index'
 
 export type { BlockRenderState } from './instant/index'

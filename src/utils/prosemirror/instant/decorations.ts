@@ -1,7 +1,6 @@
 /**
  * 即时渲染模式 - Decoration 系统
- * 负责将源码态的块渲染为带 Markdown 标记符的样式
- * 以及管理渲染态下标记符的隐藏
+ * 负责为块级节点添加源码态/渲染态的 CSS 类
  */
 import { Decoration, DecorationSet } from 'prosemirror-view'
 import type { EditorState } from 'prosemirror-state'
@@ -10,21 +9,20 @@ import { instantRenderKey } from './state'
 
 /**
  * 装饰类型常量
+ * 注意：类名需要与 CSS 样式和 NodeView 保持一致
  */
 export const DECORATION_TYPES = {
   /** 源码态：整个块显示 Markdown 标记 */
-  SOURCE_MODE: 'ir-source-mode',
+  SOURCE_MODE: 'ir-source',
   /** 渲染态：隐藏 Markdown 标记符 */
-  RENDERED_MODE: 'ir-rendered-mode',
-  /** 隐藏标记符的装饰 */
-  HIDE_MARKER: 'ir-hide-marker',
+  RENDERED_MODE: 'ir-rendered',
   /** 块级节点边框指示 */
   BLOCK_BORDER: 'ir-block-border'
 } as const
 
 /**
  * 创建源码态的装饰
- * 为处于源码态的块添加 CSS 类和视觉指示
+ * 为处于源码态的块添加 CSS 类，为其他块添加渲染态 CSS 类
  */
 function createSourceModeDecorations(state: EditorState): DecorationSet {
   const decorations: Decoration[] = []
@@ -34,25 +32,29 @@ function createSourceModeDecorations(state: EditorState): DecorationSet {
 
   const sourceBlocks = pluginState.sourceBlocks
 
-  // 为每个源码态的块添加装饰
-  state.doc.descendants((node, pos) => {
-    if (!node.isBlock || state.doc.resolve(pos).depth !== 1) return
+  state.doc.descendants((node, pos, parent) => {
+    // 检查是否是顶层块节点
+    const isTopBlock = node.isBlock && parent?.type.name === 'doc'
 
-    if (sourceBlocks.has(pos)) {
-      // 添加源码态样式
-      const deco = Decoration.node(pos, pos + node.nodeSize, {
-        class: DECORATION_TYPES.SOURCE_MODE,
-        'data-ir-source': 'true'
-      })
-      decorations.push(deco)
-    } else {
-      // 添加渲染态样式（标记符隐藏）
-      const deco = Decoration.node(pos, pos + node.nodeSize, {
-        class: DECORATION_TYPES.RENDERED_MODE,
-        'data-ir-rendered': 'true'
-      })
-      decorations.push(deco)
+    if (isTopBlock) {
+      if (sourceBlocks.has(pos)) {
+        decorations.push(
+          Decoration.node(pos, pos + node.nodeSize, {
+            class: DECORATION_TYPES.SOURCE_MODE,
+            'data-ir-source': 'true'
+          })
+        )
+      } else {
+        decorations.push(
+          Decoration.node(pos, pos + node.nodeSize, {
+            class: DECORATION_TYPES.RENDERED_MODE,
+            'data-ir-rendered': 'true'
+          })
+        )
+      }
     }
+
+    return true
   })
 
   return DecorationSet.create(state.doc, decorations)
@@ -68,11 +70,9 @@ export function createInstantDecorationsPlugin(): Plugin {
         return createSourceModeDecorations(state)
       },
       apply(tr, oldDecorations, oldState, newState) {
-        // 检查是否需要更新装饰
         const pluginState = instantRenderKey.getState(newState)
         if (!pluginState) return oldDecorations.map(tr.mapping, tr.doc)
 
-        // 如果选区或文档变化，重新计算装饰
         if (tr.selectionSet || tr.docChanged || tr.getMeta(instantRenderKey)) {
           return createSourceModeDecorations(newState)
         }

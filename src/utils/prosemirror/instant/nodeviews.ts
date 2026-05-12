@@ -76,8 +76,26 @@ export class InstantRenderNodeView implements NodeView {
     const wasSource = this.dom.classList.contains('ir-source')
 
     if (isSource !== wasSource) {
-      // 状态切换，需要重新创建 DOM
-      return false
+      // 状态切换，更新 DOM 类名
+      if (isSource) {
+        this.dom.classList.remove('ir-rendered')
+        this.dom.classList.add('ir-source')
+        // 添加标记符（如果不存在）
+        if (!this.dom.querySelector('.ir-marker')) {
+          const marker = this.createMarker(node)
+          if (marker) {
+            this.dom.insertBefore(marker, this.dom.firstChild)
+          }
+        }
+      } else {
+        this.dom.classList.remove('ir-source')
+        this.dom.classList.add('ir-rendered')
+        // 移除标记符
+        const marker = this.dom.querySelector('.ir-marker')
+        if (marker) {
+          marker.remove()
+        }
+      }
     }
 
     this.node = node

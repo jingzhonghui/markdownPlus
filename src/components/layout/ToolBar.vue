@@ -42,7 +42,7 @@ const codeLanguage = ref('')
  * 应用格式
  */
 function applyFormat(format: string): void {
-  if (fileStore.editorMode === 'wysiwyg' && editorController) {
+  if (fileStore.editorMode === 'instant' && editorController) {
     editorController.applyFormat(format)
   } else {
     // 源码模式：通过事件通知 SourceEditor
@@ -55,7 +55,7 @@ function applyFormat(format: string): void {
  */
 function handleHeadingSelect(level: number): void {
   headingMenuOpen.value = false
-  if (fileStore.editorMode === 'wysiwyg' && editorController) {
+  if (fileStore.editorMode === 'instant' && editorController) {
     editorController.setHeading(level)
   } else {
     window.dispatchEvent(new CustomEvent('editor:heading', { detail: level }))
@@ -76,7 +76,7 @@ function insertLink(): void {
  */
 function confirmInsertLink(): void {
   if (linkHref.value.trim()) {
-    if (fileStore.editorMode === 'wysiwyg' && editorController) {
+    if (fileStore.editorMode === 'instant' && editorController) {
       editorController.insertLink(linkHref.value.trim(), linkTitle.value.trim())
     } else {
       window.dispatchEvent(new CustomEvent('editor:link', {
@@ -101,7 +101,7 @@ function insertImage(): void {
  */
 function confirmInsertImage(): void {
   if (imageSrc.value.trim()) {
-    if (fileStore.editorMode === 'wysiwyg' && editorController) {
+    if (fileStore.editorMode === 'instant' && editorController) {
       editorController.insertImage(imageSrc.value.trim(), imageAlt.value.trim())
     } else {
       window.dispatchEvent(new CustomEvent('editor:image', {
@@ -124,7 +124,7 @@ function insertCodeBlock(): void {
  * 确认插入代码块
  */
 function confirmInsertCodeBlock(): void {
-  if (fileStore.editorMode === 'wysiwyg' && editorController) {
+  if (fileStore.editorMode === 'instant' && editorController) {
     editorController.insertCodeBlock(codeLanguage.value.trim())
   } else {
     window.dispatchEvent(new CustomEvent('editor:codeBlock', {
@@ -157,7 +157,7 @@ async function selectImageFile(): Promise<void> {
         const reader = new FileReader()
         reader.onload = (event) => {
           const dataUrl = event.target?.result as string
-          if (fileStore.editorMode === 'wysiwyg' && editorController) {
+          if (fileStore.editorMode === 'instant' && editorController) {
             editorController.insertImage(dataUrl, file.name)
           } else {
             window.dispatchEvent(new CustomEvent('editor:image', {

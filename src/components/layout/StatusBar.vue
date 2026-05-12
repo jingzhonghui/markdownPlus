@@ -28,7 +28,7 @@ const saveStatusClass = computed(() => {
  * 顺序：所见即所得 -> 分屏预览 -> 源码编辑 -> 所见即所得
  */
 function toggleEditorMode(): void {
-  const modes: EditorMode[] = ['wysiwyg', 'split', 'source']
+  const modes: EditorMode[] = ['instant', 'split', 'source']
   const currentIndex = modes.indexOf(fileStore.editorMode)
   const nextIndex = (currentIndex + 1) % modes.length
   fileStore.setEditorMode(modes[nextIndex])
@@ -39,7 +39,7 @@ function toggleEditorMode(): void {
  */
 const modeIcon = computed(() => {
   const icons: Record<EditorMode, string> = {
-    wysiwyg: 'wysiwyg',
+    instant: 'instant',
     split: 'split',
     source: 'source'
   }
@@ -51,7 +51,7 @@ const modeIcon = computed(() => {
  */
 const modeTooltip = computed(() => {
   const tooltips: Record<EditorMode, string> = {
-    wysiwyg: '所见即所得',
+    instant: '即时渲染',
     split: '分屏预览',
     source: '源码编辑'
   }
@@ -81,20 +81,16 @@ const modeTooltip = computed(() => {
         :title="modeTooltip"
         @click="toggleEditorMode"
       >
-        <!-- 所见即所得图标 -->
+        <!-- 即时渲染图标 -->
         <svg
-          v-if="modeIcon === 'wysiwyg'"
+          v-if="modeIcon === 'instant'"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
         >
           <path
             stroke-width="2"
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-          />
-          <path
-            stroke-width="2"
-            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+            d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
           />
         </svg>
         <!-- 分屏预览图标 -->
@@ -217,7 +213,7 @@ const modeTooltip = computed(() => {
 }
 
 /* 不同模式下的颜色标识 */
-.mode-toggle-btn.wysiwyg {
+.mode-toggle-btn.instant {
   color: var(--color-primary);
   border-color: var(--color-primary);
   background-color: var(--color-primary-light);

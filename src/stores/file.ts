@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type { MdxDocument, MdxImageAsset } from '../types/mdx'
 
-export type EditorMode = 'wysiwyg' | 'split' | 'source'
+export type EditorMode = 'instant' | 'split' | 'source'
 
 export interface FileInfo {
   path: string
@@ -19,7 +19,7 @@ export const useFileStore = defineStore('file', () => {
   const currentFile = ref<FileInfo | null>(null)
   const document = ref<MdxDocument | null>(null)
   const fileContent = ref('')
-  const editorMode = ref<EditorMode>('wysiwyg')
+  const editorMode = ref<EditorMode>('instant')
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const recentFiles = ref<string[]>([])

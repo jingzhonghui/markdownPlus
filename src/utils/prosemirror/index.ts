@@ -43,6 +43,30 @@ export {
   baseKeymap
 } from './plugins'
 
+// 即时渲染模式
+export {
+  createInstantPlugins,
+  createInstantRenderPlugin,
+  createInstantDecorationsPlugin,
+  InstantRenderNodeView,
+  HeadingNodeView,
+  BlockquoteNodeView,
+  CodeBlockNodeView,
+  TableNodeView,
+  ImageNodeView,
+  ListItemNodeView,
+  createInstantNodeViews,
+  isBlockInSourceMode,
+  setBlockSourceMode,
+  toggleBlockSourceMode,
+  getSelectionBlockPos,
+  getSelectedBlockPositions,
+  getMarkdownMarker,
+  DECORATION_TYPES
+} from './instant/index'
+
+export type { BlockRenderState, InstantRenderState } from './instant/index'
+
 // ProseMirror 核心类型重导出
 export type { EditorState, Transaction, Selection } from 'prosemirror-state'
 export type { Node as ProseMirrorNode } from 'prosemirror-model'

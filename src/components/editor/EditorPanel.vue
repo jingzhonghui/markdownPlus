@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, provide } from 'vue'
 import { useFileStore } from '../../stores/file'
-import WysiwygEditor from './WysiwygEditor.vue'
+import InstantEditor from './InstantEditor.vue'
 import SourceEditor from './SourceEditor.vue'
 import PreviewPanel from './PreviewPanel.vue'
 import { Splitpanes, Pane } from 'splitpanes'
@@ -11,14 +11,14 @@ import type { EditorView } from 'prosemirror-view'
 const fileStore = useFileStore()
 
 /**
- * WysiwygEditor 组件引用
+ * InstantEditor 组件引用
  */
-const wysiwygEditorRef = ref<InstanceType<typeof WysiwygEditor> | null>(null)
+const instantEditorRef = ref<InstanceType<typeof InstantEditor> | null>(null)
 
 /**
- * 是否显示 WYSIWYG 编辑器
+ * 是否显示即时渲染编辑器
  */
-const showWysiwyg = computed(() => fileStore.editorMode === 'wysiwyg')
+const showInstant = computed(() => fileStore.editorMode === 'instant')
 
 /**
  * 是否显示源码编辑器
@@ -34,16 +34,16 @@ const showPreview = computed(() => fileStore.editorMode === 'split')
  * 获取 ProseMirror EditorView 实例
  */
 function getEditorView(): EditorView | null {
-  return wysiwygEditorRef.value?.getView() || null
+  return instantEditorRef.value?.getView() || null
 }
 
 /**
- * 在 WYSIWYG 编辑器中应用格式
+ * 在即时渲染编辑器中应用格式
  */
 function applyFormat(format: string): void {
-  if (!wysiwygEditorRef.value) return
+  if (!instantEditorRef.value) return
 
-  const view = wysiwygEditorRef.value.getView()
+  const view = instantEditorRef.value.getView()
   if (!view) return
 
   const { state, dispatch } = view
@@ -99,16 +99,16 @@ function applyFormat(format: string): void {
  * 设置标题级别
  */
 function setHeading(level: number): void {
-  wysiwygEditorRef.value?.toggleHeadingLevel(level)
+  instantEditorRef.value?.toggleHeadingLevel(level)
 }
 
 /**
  * 插入链接
  */
 function insertLink(href?: string, title?: string): void {
-  if (!wysiwygEditorRef.value) return
+  if (!instantEditorRef.value) return
 
-  const view = wysiwygEditorRef.value.getView()
+  const view = instantEditorRef.value.getView()
   if (!view) return
 
   const { state, dispatch } = view
@@ -124,16 +124,16 @@ function insertLink(href?: string, title?: string): void {
  * 插入图片
  */
 function insertImage(src?: string, alt?: string, title?: string): void {
-  wysiwygEditorRef.value?.insertImage(src || '', alt, title)
+  instantEditorRef.value?.insertImage(src || '', alt, title)
 }
 
 /**
  * 插入代码块
  */
 function insertCodeBlock(language?: string): void {
-  if (!wysiwygEditorRef.value) return
+  if (!instantEditorRef.value) return
 
-  const view = wysiwygEditorRef.value.getView()
+  const view = instantEditorRef.value.getView()
   if (!view) return
 
   const { state, dispatch } = view
@@ -149,7 +149,7 @@ function insertCodeBlock(language?: string): void {
  * 设置块级类型
  */
 function setBlockTypeCommand(type: string, attrs?: Record<string, unknown>): void {
-  wysiwygEditorRef.value?.setBlockTypeCommand(type, attrs)
+  instantEditorRef.value?.setBlockTypeCommand(type, attrs)
 }
 
 // 提供编辑器控制方法给子组件
@@ -166,10 +166,10 @@ provide('editorController', {
 
 <template>
   <div class="editor-panel">
-    <!-- WYSIWYG 编辑器 -->
-    <WysiwygEditor
-      v-if="showWysiwyg"
-      ref="wysiwygEditorRef"
+    <!-- 即时渲染编辑器 -->
+    <InstantEditor
+      v-if="showInstant"
+      ref="instantEditorRef"
     />
 
     <!-- 源码模式：仅显示编辑器 -->

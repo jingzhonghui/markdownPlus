@@ -26,7 +26,7 @@ function toggleSidebar(): void {
  * 主进程检测到未保存修改时发送此事件
  */
 async function handleConfirmClose(): Promise<void> {
-  const canClose = await fileStore.confirmSaveBeforeAction()
+  const canClose = await fileStore.confirmSaveBeforeClose()
   if (canClose && window.electronAPI?.closeConfirmed) {
     await window.electronAPI.closeConfirmed()
   }
@@ -63,7 +63,7 @@ onUnmounted(() => {
     
     <!-- 工具栏 -->
     <ToolBar />
-    
+
     <!-- 主体区域 -->
     <div class="main-content">
       <!-- 左侧边栏 -->

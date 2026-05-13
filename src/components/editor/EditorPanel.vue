@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useFileStore } from '../../stores/file'
 import SourceEditor from './SourceEditor.vue'
 import PreviewPanel from './PreviewPanel.vue'
+import TabBar from './TabBar.vue'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
 
@@ -16,6 +17,9 @@ const showPreview = computed(() => fileStore.editorMode === 'split')
 
 <template>
   <div class="editor-panel">
+    <!-- 标签栏 -->
+    <TabBar />
+
     <!-- 源码模式：仅显示编辑器 -->
     <SourceEditor
       v-if="!showPreview"
@@ -40,6 +44,7 @@ const showPreview = computed(() => fileStore.editorMode === 'split')
 .editor-panel {
   flex: 1;
   display: flex;
+  flex-direction: column;
   overflow: hidden;
   background-color: var(--color-bg-primary);
 }

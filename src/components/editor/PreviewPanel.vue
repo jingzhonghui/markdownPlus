@@ -240,11 +240,12 @@ defineExpose({
 
 <template>
   <div class="preview-container">
-    <div class="preview-header">
-      <span class="preview-title">预览</span>
+    <div
+      v-if="!isShikiReady"
+      class="preview-header"
+    >
       <div class="preview-actions">
-        <button 
-          v-if="!isShikiReady" 
+        <button
           class="preview-status"
           title="代码高亮加载中"
         >
@@ -279,17 +280,13 @@ defineExpose({
 .preview-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
+  justify-content: flex-end;
+  padding: 4px 16px;
   background-color: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
-}
-
-.preview-title {
-  font-weight: 600;
 }
 
 .preview-actions {

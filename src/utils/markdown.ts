@@ -13,7 +13,7 @@ export function getMarkdownIt(): MarkdownIt {
       html: true,
       linkify: true,
       typographer: true,
-      breaks: false,
+      breaks: true,
       highlight: (str: string, lang: string) => {
         // 代码高亮由 Shiki 处理，这里只返回原始代码
         return `<pre class="shiki"><code class="language-${lang || 'text'}">${escapeHtml(str)}</code></pre>`

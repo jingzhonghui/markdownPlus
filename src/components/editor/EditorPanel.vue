@@ -60,7 +60,7 @@ const showPreview = computed(() => fileStore.editorMode === 'split')
   border-left: 1px solid var(--color-border);
   border-right: 1px solid var(--color-border);
   position: relative;
-  width: 7px;
+  width: 1px;
   cursor: col-resize;
   transition: background-color 0.2s;
 }

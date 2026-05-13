@@ -348,7 +348,7 @@ onUnmounted(() => {
 
         <button
           class="icon-btn"
-          title="打开 (Ctrl+O)"
+          title="打开文件 (Ctrl+O)"
           @click="openFile"
         >
           <svg
@@ -359,7 +359,11 @@ onUnmounted(() => {
           >
             <path
               stroke-width="2"
-              d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
+              d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+            />
+            <path
+              stroke-width="2"
+              d="M14 2v6h6"
             />
           </svg>
         </button>

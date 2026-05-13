@@ -3,6 +3,10 @@ import { useFileStore } from '../../stores/file'
 
 const fileStore = useFileStore()
 
+const emit = defineEmits<{
+  collapse: []
+}>()
+
 /**
  * 新建文件
  */
@@ -22,7 +26,6 @@ async function openFile(): Promise<void> {
   <div class="file-explorer">
     <!-- 头部操作栏 -->
     <div class="explorer-header">
-      <span class="explorer-title">文件浏览器</span>
       <div class="explorer-actions">
         <button
           class="action-btn"
@@ -52,13 +55,33 @@ async function openFile(): Promise<void> {
           >
             <path
               stroke-width="2"
-              d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
+              d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+            />
+            <path
+              stroke-width="2"
+              d="M14 2v6h6"
+            />
+          </svg>
+        </button>
+        <button
+          class="action-btn"
+          title="收起侧边栏"
+          @click="emit('collapse')"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
+            <path
+              stroke-width="2"
+              d="M11 17l-5-5 5-5M18 17l-5-5 5-5"
             />
           </svg>
         </button>
       </div>
     </div>
-    
+
     <!-- 文件列表 -->
     <div class="file-list">
       <!-- 当前打开的文件 -->
@@ -129,15 +152,8 @@ async function openFile(): Promise<void> {
 .explorer-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--color-border);
-}
-
-.explorer-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text);
 }
 
 .explorer-actions {

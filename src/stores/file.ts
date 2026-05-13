@@ -10,6 +10,12 @@ export interface FileInfo {
   modified: boolean
 }
 
+export interface FolderItem {
+  name: string
+  path: string
+  isDirectory: boolean
+}
+
 /**
  * 文件状态管理 Store
  * 集成 MDX 文件操作功能
@@ -26,6 +32,11 @@ export const useFileStore = defineStore('file', () => {
   const wordCount = ref(0)
   const cursorLine = ref(1)
   const cursorColumn = ref(1)
+
+  // 文件夹浏览状态
+  const openedFolderPath = ref<string | null>(null)
+  const folderItems = ref<FolderItem[]>([])
+  const folderHistory = ref<string[]>([])
 
   // Getters
   const hasFile = computed(() => document.value !== null)
@@ -804,6 +815,180 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
+  /**
+   * 打开文件夹（选择文件夹对话框 + 读取内容）
+   */
+  async function openFolder(): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      if (!window.electronAPI) {
+        error.value = 'Electron API 不可用'
+        return false
+      }
+
+      const dialogResult = await window.electronAPI.showOpenDialog({
+        properties: ['openDirectory'],
+        title: '选择文件夹'
+      })
+
+      if (!dialogResult.success || !dialogResult.data || dialogResult.data.length === 0) {
+        return false
+      }
+
+      const dirPath = dialogResult.data[0]
+      await readFolder(dirPath)
+      return true
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '打开文件夹失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 读取指定文件夹内容
+   */
+  async function readFolder(dirPath: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) {
+        return false
+      }
+
+      const result = await window.electronAPI.readFolder(dirPath)
+      if (result.success && result.data) {
+        openedFolderPath.value = dirPath
+        folderItems.value = result.data
+        return true
+      }
+      return false
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '读取文件夹失败'
+      return false
+    }
+  }
+
+  /**
+   * 关闭文件夹浏览
+   */
+  function closeFolder(): void {
+    openedFolderPath.value = null
+    folderItems.value = []
+    folderHistory.value = []
+  }
+
+  /**
+   * 进入子文件夹
+   */
+  async function navigateToFolder(dirPath: string): Promise<boolean> {
+    if (openedFolderPath.value) {
+      folderHistory.value.push(openedFolderPath.value)
+    }
+    return await readFolder(dirPath)
+  }
+
+  /**
+   * 返回上一级目录
+   */
+  async function navigateUp(): Promise<boolean> {
+    if (!openedFolderPath.value) return false
+    const parts = openedFolderPath.value.split(/[/\\]/)
+    parts.pop()
+    const parentPath = parts.join('/')
+    if (!parentPath || parentPath === openedFolderPath.value) return false
+    return await readFolder(parentPath)
+  }
+
+  /**
+   * 在指定目录创建 .mdx 文件
+   */
+  async function createFile(dirPath: string, name: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result = await window.electronAPI.createFile(dirPath, name)
+      if (result.success) {
+        await readFolder(openedFolderPath.value!)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 在指定目录创建文件夹
+   */
+  async function createFolder(parentPath: string, name: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result = await window.electronAPI.createFolder(parentPath, name)
+      if (result.success) {
+        await readFolder(openedFolderPath.value!)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 重命名文件/文件夹
+   */
+  async function renameItem(oldPath: string, newName: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result = await window.electronAPI.renameFile(oldPath, newName)
+      if (result.success) {
+        // 如果重命名的是当前打开的文件，更新 currentFile
+        if (currentFile.value?.path === oldPath) {
+          currentFile.value.path = result.data!.path
+          currentFile.value.name = newName
+        }
+        await readFolder(openedFolderPath.value!)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 删除文件/文件夹
+   */
+  async function deleteItem(targetPath: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result = await window.electronAPI.deleteFile(targetPath)
+      if (result.success) {
+        // 如果删除的是当前打开的文件，关闭文档
+        if (currentFile.value?.path === targetPath) {
+          setDocument(null)
+        }
+        await readFolder(openedFolderPath.value!)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 复制路径到剪贴板
+   */
+  function copyPath(filePath: string): void {
+    try {
+      navigator.clipboard.writeText(filePath)
+    } catch {
+      // 忽略
+    }
+  }
+
   return {
     // State
     currentFile,
@@ -816,6 +1001,8 @@ export const useFileStore = defineStore('file', () => {
     wordCount,
     cursorLine,
     cursorColumn,
+    openedFolderPath,
+    folderItems,
     // Getters
     hasFile,
     isModified,
@@ -852,6 +1039,18 @@ export const useFileStore = defineStore('file', () => {
     cleanupOrphanAssets,
     renameImage,
     removeRecent,
-    clearRecent
+    clearRecent,
+    // Folder actions
+    openFolder,
+    readFolder,
+    closeFolder,
+    navigateToFolder,
+    navigateUp,
+    // Context menu actions
+    createFile,
+    createFolder,
+    renameItem,
+    deleteItem,
+    copyPath
   }
 })

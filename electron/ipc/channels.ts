@@ -11,7 +11,10 @@ export const IPC_CHANNELS = {
     SAVE: 'file:save',
     SAVE_AS: 'file:saveAs',
     CLOSE: 'file:close',
-    RECENT: 'file:recent'
+    RECENT: 'file:recent',
+    CREATE: 'file:create',
+    RENAME: 'file:rename',
+    DELETE: 'file:delete'
   },
   MDX: {
     READ: 'mdx:read',
@@ -44,5 +47,9 @@ export const IPC_CHANNELS = {
     SHOW_OPEN: 'dialog:showOpen',
     SHOW_SAVE: 'dialog:showSave',
     SHOW_MESSAGE: 'dialog:showMessage'
+  },
+  FOLDER: {
+    READ: 'folder:read',
+    CREATE: 'folder:create'
   }
 } as const

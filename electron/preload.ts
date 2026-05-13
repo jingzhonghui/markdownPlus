@@ -3,6 +3,13 @@ import { IPC_CHANNELS } from './ipc/channels'
 
 export { IPC_CHANNELS }
 
+// 文件夹条目类型
+export interface FolderItem {
+  name: string
+  path: string
+  isDirectory: boolean
+}
+
 // 图片压缩选项
 export interface ImageCompressOptions {
   compress?: boolean
@@ -44,6 +51,13 @@ export interface ElectronAPI {
   listAssets: () => Promise<{ success: boolean; data?: { images: ImageAssetInfo[]; attachments: unknown[]; all: unknown[] }; error?: string }>
   addAttachment: (filename: string, mimeType: string, data: ArrayBuffer) => Promise<{ success: boolean; data?: unknown; error?: string }>
   getAttachment: (attachmentPath: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
+
+  // 文件夹操作
+  readFolder: (dirPath: string) => Promise<{ success: boolean; data?: FolderItem[]; error?: string }>
+  createFile: (dirPath: string, name: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
+  createFolder: (parentPath: string, name: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
+  renameFile: (oldPath: string, newName: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
+  deleteFile: (targetPath: string) => Promise<{ success: boolean; error?: string }>
 
   // 应用信息
   ping: () => Promise<string>
@@ -91,6 +105,13 @@ const api: ElectronAPI = {
   listAssets: () => ipcRenderer.invoke(IPC_CHANNELS.MDX.LIST_ASSETS),
   addAttachment: (filename, mimeType, data) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_ATTACHMENT, filename, mimeType, data),
   getAttachment: (attachmentPath) => ipcRenderer.invoke(IPC_CHANNELS.MDX.GET_ATTACHMENT, attachmentPath),
+
+  // 文件夹操作
+  readFolder: (dirPath) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.READ, dirPath),
+  createFile: (dirPath, name) => ipcRenderer.invoke(IPC_CHANNELS.FILE.CREATE, { dirPath, name }),
+  createFolder: (parentPath, name) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.CREATE, { parentPath, name }),
+  renameFile: (oldPath, newName) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RENAME, { oldPath, newName }),
+  deleteFile: (targetPath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.DELETE, { targetPath }),
 
   // 应用信息
   ping: () => ipcRenderer.invoke(IPC_CHANNELS.APP.PING),

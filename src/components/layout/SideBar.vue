@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import FileExplorer from '../sidebar/FileExplorer.vue'
+import { useFileStore } from '../../stores/file'
+
+const fileStore = useFileStore()
 
 interface Props {
   collapsed?: boolean
@@ -19,6 +22,13 @@ const emit = defineEmits<{
 function toggleSidebar(): void {
   emit('toggle')
 }
+
+/**
+ * 打开文件夹
+ */
+function openFolder(): void {
+  fileStore.openFolder()
+}
 </script>
 
 <template>
@@ -34,6 +44,7 @@ function toggleSidebar(): void {
       <button
         class="collapsed-btn"
         title="新建文件"
+        @click="fileStore.newFile()"
       >
         <svg
           viewBox="0 0 24 24"
@@ -49,6 +60,7 @@ function toggleSidebar(): void {
       <button
         class="collapsed-btn"
         title="打开文件"
+        @click="fileStore.openFile()"
       >
         <svg
           viewBox="0 0 24 24"
@@ -62,6 +74,22 @@ function toggleSidebar(): void {
           <path
             stroke-width="2"
             d="M14 2v6h6"
+          />
+        </svg>
+      </button>
+      <button
+        class="collapsed-btn"
+        title="打开文件夹"
+        @click="openFolder"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
           />
         </svg>
       </button>

@@ -49,6 +49,14 @@ async function openFile(): Promise<void> {
 }
 
 /**
+ * 打开文件夹
+ */
+async function openFolder(): Promise<void> {
+  await fileStore.openFolder()
+  showFileMenu.value = false
+}
+
+/**
  * 从最近列表打开文件
  */
 async function openRecentFile(filePath: string): Promise<void> {
@@ -270,6 +278,12 @@ onUnmounted(() => {
             >
               <span class="item-label">打开...</span>
               <span class="item-shortcut">Ctrl+O</span>
+            </div>
+            <div
+              class="menu-item"
+              @click="openFolder"
+            >
+              <span class="item-label">打开文件夹...</span>
             </div>
 
             <!-- 打开最近的文件（子菜单） -->

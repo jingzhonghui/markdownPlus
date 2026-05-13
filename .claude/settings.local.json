@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npx tsc:*)",
       "Bash(taskkill /f /im electron.exe)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(npx electron-vite *)"
     ]
   }
 }

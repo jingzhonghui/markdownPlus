@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { useFileStore } from '../../stores/file'
+import type { FolderItem } from '../../stores/file'
 
 const fileStore = useFileStore()
 
@@ -7,19 +9,170 @@ const emit = defineEmits<{
   collapse: []
 }>()
 
-/**
- * 新建文件
- */
+// ========== 右键菜单状态 ==========
+interface ContextMenuItem {
+  label: string
+  action: () => void
+}
+
+const contextMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  items: [] as ContextMenuItem[]
+})
+
+function closeContextMenu(): void {
+  contextMenu.visible = false
+}
+
+function showContextMenu(event: MouseEvent, items: ContextMenuItem[]): void {
+  contextMenu.items = items
+  contextMenu.x = event.clientX
+  contextMenu.y = event.clientY
+  contextMenu.visible = true
+
+  // 菜单打开后，下个 tick 调整位置防止超出视口
+  nextTick(() => {
+    const menuEl = document.querySelector('.context-menu') as HTMLElement | null
+    if (!menuEl) return
+    const rect = menuEl.getBoundingClientRect()
+    if (rect.right > window.innerWidth) {
+      contextMenu.x = window.innerWidth - rect.width - 8
+    }
+    if (rect.bottom > window.innerHeight) {
+      contextMenu.y = window.innerHeight - rect.height - 8
+    }
+  })
+}
+
+function onEmptyContextMenu(event: MouseEvent): void {
+  const items: ContextMenuItem[] = [
+    { label: '新建文件', action: () => promptCreateFile(fileStore.openedFolderPath!) },
+    { label: '新建文件夹', action: () => promptCreateFolder(fileStore.openedFolderPath!) },
+    { label: '刷新', action: () => fileStore.readFolder(fileStore.openedFolderPath!) }
+  ]
+  showContextMenu(event, items)
+}
+
+function onFileContextMenu(event: MouseEvent, item: FolderItem): void {
+  const items: ContextMenuItem[] = [
+    { label: '打开', action: () => onFileClick(item.path) },
+    { label: '重命名', action: () => promptRename(item) },
+    { label: '删除', action: () => promptDelete(item) },
+    { label: '复制路径', action: () => fileStore.copyPath(item.path) }
+  ]
+  showContextMenu(event, items)
+}
+
+function onFolderContextMenu(event: MouseEvent, item: FolderItem): void {
+  const items: ContextMenuItem[] = [
+    { label: '新建文件', action: () => promptCreateFile(item.path) },
+    { label: '新建文件夹', action: () => promptCreateFolder(item.path) },
+    { label: '刷新', action: () => fileStore.readFolder(fileStore.openedFolderPath!) },
+    { label: '重命名', action: () => promptRename(item) },
+    { label: '删除', action: () => promptDelete(item) },
+    { label: '复制路径', action: () => fileStore.copyPath(item.path) }
+  ]
+  showContextMenu(event, items)
+}
+
+// ========== 输入对话框 ==========
+const showInputDialog = ref(false)
+const inputDialogTitle = ref('')
+const inputValue = ref('')
+const inputPlaceholder = ref('')
+const inputRef = ref<HTMLInputElement | null>(null)
+let inputResolve: ((value: string | null) => void) | null = null
+
+function openInputDialog(title: string, initialValue: string, placeholder: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    inputDialogTitle.value = title
+    inputValue.value = initialValue
+    inputPlaceholder.value = placeholder
+    showInputDialog.value = true
+    inputResolve = resolve
+    nextTick(() => inputRef.value?.focus())
+  })
+}
+
+function confirmInput(): void {
+  const val = inputValue.value.trim()
+  if (!val) return
+  showInputDialog.value = false
+  inputResolve?.(val)
+  inputResolve = null
+}
+
+function cancelInput(): void {
+  showInputDialog.value = false
+  inputResolve?.(null)
+  inputResolve = null
+}
+
+// ========== 操作函数 ==========
+async function promptCreateFile(dirPath: string): Promise<void> {
+  const name = await openInputDialog('新建文件', '未命名.mdx', '文件名 (.mdx / .md)')
+  if (!name) return
+  await fileStore.createFile(dirPath, name)
+}
+
+async function promptCreateFolder(dirPath: string): Promise<void> {
+  const name = await openInputDialog('新建文件夹', '新建文件夹', '文件夹名称')
+  if (!name) return
+  await fileStore.createFolder(dirPath, name)
+}
+
+async function promptRename(item: FolderItem): Promise<void> {
+  const name = await openInputDialog('重命名', item.name, '新名称')
+  if (!name || name === item.name) return
+  await fileStore.renameItem(item.path, name)
+}
+
+async function promptDelete(item: FolderItem): Promise<void> {
+  const type = item.isDirectory ? '文件夹' : '文件'
+  if (!window.confirm(`确定要删除${type} "${item.name}" 吗？\n此操作不可恢复。`)) return
+  await fileStore.deleteItem(item.path)
+}
+
+// ========== 基础操作 ==========
 async function createNewFile(): Promise<void> {
   await fileStore.newFile()
 }
 
-/**
- * 打开文件
- */
 async function openFile(): Promise<void> {
   await fileStore.openFile()
 }
+
+async function openFolder(): Promise<void> {
+  await fileStore.openFolder()
+}
+
+async function onFolderClick(dirPath: string): Promise<void> {
+  await fileStore.navigateToFolder(dirPath)
+}
+
+async function onFileClick(filePath: string): Promise<void> {
+  await fileStore.openFile(filePath)
+}
+
+function getFolderName(): string {
+  if (!fileStore.openedFolderPath) return ''
+  const parts = fileStore.openedFolderPath.split(/[/\\]/)
+  return parts[parts.length - 1] || fileStore.openedFolderPath
+}
+
+function isActiveFile(itemPath: string): boolean {
+  return fileStore.currentFile?.path === itemPath
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeContextMenu)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeContextMenu)
+})
 </script>
 
 <template>
@@ -65,6 +218,24 @@ async function openFile(): Promise<void> {
         </button>
         <button
           class="action-btn"
+          title="打开文件夹"
+          @click="openFolder"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
+            <path
+              stroke-width="2"
+              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+            />
+          </svg>
+        </button>
+      </div>
+      <div class="explorer-collapse">
+        <button
+          class="action-btn"
           title="收起侧边栏"
           @click="emit('collapse')"
         >
@@ -83,17 +254,87 @@ async function openFile(): Promise<void> {
     </div>
 
     <!-- 文件列表 -->
-    <div class="file-list">
-      <!-- 当前打开的文件 -->
+    <div
+      class="file-list"
+      @contextmenu.prevent.stop="onEmptyContextMenu"
+    >
+      <!-- 文件夹浏览 -->
       <div
-        v-if="fileStore.currentFile"
+        v-if="fileStore.openedFolderPath"
         class="file-section"
       >
-        <div class="section-title">
-          当前文档
+        <div class="section-title folder-title">
+          <span class="folder-name-text">{{ getFolderName() }}</span>
+          <div class="folder-title-actions">
+            <button
+              class="action-btn action-btn-sm"
+              title="返回上一级"
+              @click="fileStore.navigateUp()"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-width="2"
+                  d="M5 12h14M12 5l-7 7 7 7"
+                />
+              </svg>
+            </button>
+            <button
+              class="action-btn action-btn-sm"
+              title="关闭文件夹"
+              @click="fileStore.closeFolder()"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
-        <div class="file-item active">
+
+        <!-- 文件夹内容列表 -->
+        <div
+          v-if="fileStore.folderItems.length === 0"
+          class="folder-empty"
+        >
+          文件夹为空
+        </div>
+        <div
+          v-for="item in fileStore.folderItems"
+          :key="item.path"
+          class="file-item"
+          :class="{
+            'is-directory': item.isDirectory,
+            'active': !item.isDirectory && isActiveFile(item.path)
+          }"
+          @click="item.isDirectory ? onFolderClick(item.path) : onFileClick(item.path)"
+          @contextmenu.prevent.stop="item.isDirectory ? onFolderContextMenu($event, item) : onFileContextMenu($event, item)"
+        >
+          <!-- 文件夹图标 -->
           <svg
+            v-if="item.isDirectory"
+            class="file-icon folder-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
+            <path
+              stroke-width="2"
+              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+            />
+          </svg>
+          <!-- 文件图标 -->
+          <svg
+            v-else
             class="file-icon"
             viewBox="0 0 24 24"
             fill="none"
@@ -104,17 +345,17 @@ async function openFile(): Promise<void> {
               d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
             />
           </svg>
-          <span class="file-name">{{ fileStore.fileName }}</span>
+          <span class="file-name">{{ item.name }}</span>
           <span
-            v-if="fileStore.isModified"
+            v-if="!item.isDirectory && isActiveFile(item.path) && fileStore.isModified"
             class="modified-indicator"
           >●</span>
         </div>
       </div>
 
-      <!-- 空状态 -->
+      <!-- 空状态（未打开文件夹） -->
       <div
-        v-if="!fileStore.currentFile"
+        v-if="!fileStore.openedFolderPath"
         class="empty-state"
       >
         <svg
@@ -129,16 +370,74 @@ async function openFile(): Promise<void> {
           />
         </svg>
         <p class="empty-text">
-          暂无文件
+          打开文件夹以浏览文件
         </p>
         <button
           class="empty-action"
-          @click="createNewFile"
+          @click="openFolder"
         >
-          创建新文件
+          打开文件夹
         </button>
       </div>
     </div>
+
+    <!-- ====== 右键菜单 ====== -->
+    <teleport to="body">
+      <div
+        v-if="contextMenu.visible"
+        class="context-menu"
+        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+        @click.stop
+        @contextmenu.prevent.stop
+      >
+        <div
+          v-for="(item, index) in contextMenu.items"
+          :key="index"
+          class="context-menu-item"
+          @click="item.action(); closeContextMenu()"
+        >
+          {{ item.label }}
+        </div>
+      </div>
+    </teleport>
+
+    <!-- ====== 输入对话框（新建/重命名） ====== -->
+    <teleport to="body">
+      <div
+        v-if="showInputDialog"
+        class="dialog-overlay"
+        @click="cancelInput"
+      >
+        <div
+          class="dialog"
+          @click.stop
+        >
+          <h3 class="dialog-title">{{ inputDialogTitle }}</h3>
+          <input
+            ref="inputRef"
+            v-model="inputValue"
+            class="dialog-input"
+            :placeholder="inputPlaceholder"
+            @keyup.enter="confirmInput"
+            @keyup.escape="cancelInput"
+          >
+          <div class="dialog-actions">
+            <button
+              class="dialog-btn dialog-btn-cancel"
+              @click="cancelInput"
+            >
+              取消
+            </button>
+            <button
+              class="dialog-btn dialog-btn-confirm"
+              @click="confirmInput"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -152,6 +451,7 @@ async function openFile(): Promise<void> {
 .explorer-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 8px 12px;
   border-bottom: 1px solid var(--color-border);
 }
@@ -159,6 +459,10 @@ async function openFile(): Promise<void> {
 .explorer-actions {
   display: flex;
   gap: 4px;
+}
+
+.explorer-collapse {
+  display: flex;
 }
 
 .action-btn {
@@ -185,6 +489,11 @@ async function openFile(): Promise<void> {
   height: 16px;
 }
 
+.action-btn-sm svg {
+  width: 14px;
+  height: 14px;
+}
+
 .file-list {
   flex: 1;
   overflow-y: auto;
@@ -203,6 +512,21 @@ async function openFile(): Promise<void> {
   color: var(--color-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.folder-title-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.folder-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
 .file-item {
@@ -228,6 +552,10 @@ async function openFile(): Promise<void> {
   font-weight: 500;
 }
 
+.file-item.is-directory .file-name {
+  font-weight: 500;
+}
+
 .file-icon {
   width: 16px;
   height: 16px;
@@ -237,6 +565,10 @@ async function openFile(): Promise<void> {
 
 .file-item.active .file-icon {
   color: var(--color-primary);
+}
+
+.folder-icon {
+  color: var(--color-accent-yellow, #d4a017);
 }
 
 .file-name {
@@ -251,6 +583,13 @@ async function openFile(): Promise<void> {
 .modified-indicator {
   font-size: 10px;
   color: var(--color-warning);
+}
+
+.folder-empty {
+  padding: 16px 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-align: center;
 }
 
 .empty-state {
@@ -290,5 +629,109 @@ async function openFile(): Promise<void> {
 .empty-action:hover {
   background-color: var(--color-primary);
   color: white;
+}
+</style>
+
+<!-- 全局样式（不受 scoped 限制，用于 teleport 出去的组件） -->
+<style>
+.context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.context-menu-item {
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.context-menu-item:hover {
+  background: var(--color-bg-secondary);
+}
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.dialog {
+  min-width: 360px;
+  padding: 20px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.dialog-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.dialog-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.dialog-input:focus {
+  border-color: var(--color-primary);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dialog-btn {
+  padding: 6px 16px;
+  font-size: 13px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dialog-btn-cancel {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+}
+
+.dialog-btn-cancel:hover {
+  color: var(--color-text);
+}
+
+.dialog-btn-confirm {
+  color: #fff;
+  background: var(--color-primary);
+}
+
+.dialog-btn-confirm:hover {
+  background: var(--color-primary-hover);
 }
 </style>

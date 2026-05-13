@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { IPC_CHANNELS } from './ipc/channels'
 import { registerFileHandlers } from './ipc/file-handlers'
 import { registerMdxHandlers, cleanupAll, getCurrentDocument, isCloseConfirmed, setCloseConfirmed } from './ipc/mdx-handlers'
 
@@ -13,6 +14,7 @@ function createWindow(): void {
     height: 900,
     show: false,
     autoHideMenuBar: true,
+    frame: false,
     webPreferences: {
       preload: join(__dirname, '../preload/preload.cjs'),
       sandbox: false,
@@ -43,6 +45,26 @@ function createWindow(): void {
       e.preventDefault()
       mainWindow.webContents.send('app:confirm-close')
     }
+  })
+
+  // 窗口控制 IPC handlers
+  ipcMain.handle(IPC_CHANNELS.WINDOW.MINIMIZE, () => mainWindow.minimize())
+  ipcMain.handle(IPC_CHANNELS.WINDOW.MAXIMIZE, () => {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize()
+    } else {
+      mainWindow.maximize()
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.WINDOW.CLOSE, () => mainWindow.close())
+  ipcMain.handle(IPC_CHANNELS.WINDOW.IS_MAXIMIZED, () => mainWindow.isMaximized())
+
+  // 监听最大化状态变化，通知渲染进程
+  mainWindow.on('maximize', () => {
+    mainWindow.webContents.send(IPC_CHANNELS.WINDOW.MAXIMIZED)
+  })
+  mainWindow.on('unmaximize', () => {
+    mainWindow.webContents.send(IPC_CHANNELS.WINDOW.UNMAXIMIZED)
   })
 
   // 根据开发/生产环境加载页面

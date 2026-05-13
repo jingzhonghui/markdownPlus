@@ -32,6 +32,14 @@ export const IPC_CHANNELS = {
     CONFIRM_CLOSE: 'app:confirm-close',
     CLOSE_CONFIRMED: 'app:close-confirmed'
   },
+  WINDOW: {
+    MINIMIZE: 'window:minimize',
+    MAXIMIZE: 'window:maximize',
+    MAXIMIZED: 'window:maximized',
+    UNMAXIMIZED: 'window:unmaximized',
+    CLOSE: 'window:close',
+    IS_MAXIMIZED: 'window:isMaximized'
+  },
   DIALOG: {
     SHOW_OPEN: 'dialog:showOpen',
     SHOW_SAVE: 'dialog:showSave',

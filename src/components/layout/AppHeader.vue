@@ -13,6 +13,7 @@ const title = computed(() => {
 // 菜单显示状态
 const showFileMenu = ref(false)
 const showRecentSubmenu = ref(false)
+const isMaximized = ref(false)
 
 /** 从完整路径提取文件名用于显示 */
 function getFileName(filePath: string): string {
@@ -144,6 +145,24 @@ function toggleRecentSubmenu(): void {
   showRecentSubmenu.value = !showRecentSubmenu.value
 }
 
+/**
+ * 窗口控制
+ */
+function handleMinimize(): void {
+  window.electronAPI?.windowMinimize()
+}
+
+function handleMaximize(): void {
+  window.electronAPI?.windowMaximize()
+}
+
+function handleClose(): void {
+  window.electronAPI?.windowClose()
+}
+
+let removeMaximizedListener: (() => void) | null = null
+let removeUnmaximizedListener: (() => void) | null = null
+
 // 快捷键监听
 function handleKeydown(e: KeyboardEvent) {
   // Ctrl+N 新建
@@ -178,12 +197,26 @@ function handleClickOutside(e: MouseEvent): void {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
+
+  // 初始化最大化状态
+  const maximized = await window.electronAPI?.windowIsMaximized()
+  isMaximized.value = maximized ?? false
+
+  // 监听最大化状态变化
+  removeMaximizedListener = window.electronAPI?.onWindowMaximized(() => {
+    isMaximized.value = true
+  }) ?? null
+  removeUnmaximizedListener = window.electronAPI?.onWindowUnmaximized(() => {
+    isMaximized.value = false
+  }) ?? null
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  removeMaximizedListener?.()
+  removeUnmaximizedListener?.()
 })
 </script>
 
@@ -426,6 +459,57 @@ onUnmounted(() => {
           />
         </svg>
       </button>
+
+      <!-- 窗口控制按钮 -->
+      <div class="window-controls">
+        <button
+          class="window-btn"
+          title="最小化"
+          @click="handleMinimize"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            fill="currentColor"
+          >
+            <path d="M3 8h10v1H3z" />
+          </svg>
+        </button>
+        <button
+          class="window-btn"
+          :title="isMaximized ? '还原' : '最大化'"
+          @click="handleMaximize"
+        >
+          <svg
+            v-if="isMaximized"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+          >
+            <path d="M3 3h8v2H5v6H3V3zm2 2h8v8H5V5zm2 2v4h4V7H7z" />
+          </svg>
+          <svg
+            v-else
+            viewBox="0 0 16 16"
+            fill="currentColor"
+          >
+            <path d="M3 3h10v10H3V3zm1 1v8h8V4H4z" />
+          </svg>
+        </button>
+        <button
+          class="window-btn close"
+          title="关闭"
+          @click="handleClose"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          >
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      </div>
     </div>
   </header>
 </template>
@@ -440,12 +524,14 @@ onUnmounted(() => {
   background-color: var(--color-bg-primary);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
+  -webkit-app-region: drag;
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: var(--spacing-lg);
+  -webkit-app-region: no-drag;
 }
 
 .logo {
@@ -671,5 +757,42 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+  -webkit-app-region: no-drag;
+}
+
+/* 窗口控制按钮 */
+.window-controls {
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.window-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.window-btn:hover {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text);
+}
+
+.window-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.window-btn.close:hover {
+  background-color: #e81123;
+  color: white;
 }
 </style>

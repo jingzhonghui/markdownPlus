@@ -58,6 +58,14 @@ export interface ElectronAPI {
   // 事件监听
   onConfirmClose: (callback: () => void) => () => void
   closeConfirmed: () => void
+
+  // 窗口控制
+  windowMinimize: () => Promise<void>
+  windowMaximize: () => Promise<void>
+  windowClose: () => Promise<void>
+  windowIsMaximized: () => Promise<boolean>
+  onWindowMaximized: (callback: () => void) => () => void
+  onWindowUnmaximized: (callback: () => void) => () => void
 }
 
 // 通过 contextBridge 暴露安全的 API
@@ -100,7 +108,23 @@ const api: ElectronAPI = {
     ipcRenderer.on(IPC_CHANNELS.APP.CONFIRM_CLOSE, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.APP.CONFIRM_CLOSE, handler)
   },
-  closeConfirmed: () => ipcRenderer.invoke(IPC_CHANNELS.APP.CLOSE_CONFIRMED)
+  closeConfirmed: () => ipcRenderer.invoke(IPC_CHANNELS.APP.CLOSE_CONFIRMED),
+
+  // 窗口控制
+  windowMinimize: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW.MINIMIZE),
+  windowMaximize: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW.MAXIMIZE),
+  windowClose: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW.CLOSE),
+  windowIsMaximized: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW.IS_MAXIMIZED),
+  onWindowMaximized: (callback) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(IPC_CHANNELS.WINDOW.MAXIMIZED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW.MAXIMIZED, handler)
+  },
+  onWindowUnmaximized: (callback) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(IPC_CHANNELS.WINDOW.UNMAXIMIZED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW.UNMAXIMIZED, handler)
+  }
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc:*)",
-      "Bash(taskkill /f /im electron.exe)"
+      "Bash(taskkill /f /im electron.exe)",
+      "Bash(npm run:*)"
     ]
   }
 }

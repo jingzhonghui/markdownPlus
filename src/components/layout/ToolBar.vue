@@ -1,18 +1,5 @@
 <script setup lang="ts">
-import { inject, ref } from 'vue'
-import { useFileStore } from '../../stores/file'
-
-const fileStore = useFileStore()
-
-interface EditorController {
-  applyFormat: (format: string) => void
-  setHeading: (level: number) => void
-  insertLink: (href?: string, title?: string) => void
-  insertImage: (src?: string, alt?: string, title?: string) => void
-  insertCodeBlock: (language?: string) => void
-}
-
-const editorController = inject<EditorController>('editorController')
+import { ref } from 'vue'
 
 // 标题下拉菜单状态
 const headingMenuOpen = ref(false)
@@ -42,12 +29,7 @@ const codeLanguage = ref('')
  * 应用格式
  */
 function applyFormat(format: string): void {
-  if (fileStore.editorMode === 'instant' && editorController) {
-    editorController.applyFormat(format)
-  } else {
-    // 源码模式：通过事件通知 SourceEditor
-    window.dispatchEvent(new CustomEvent('editor:format', { detail: format }))
-  }
+  window.dispatchEvent(new CustomEvent('editor:format', { detail: format }))
 }
 
 /**
@@ -55,11 +37,7 @@ function applyFormat(format: string): void {
  */
 function handleHeadingSelect(level: number): void {
   headingMenuOpen.value = false
-  if (fileStore.editorMode === 'instant' && editorController) {
-    editorController.setHeading(level)
-  } else {
-    window.dispatchEvent(new CustomEvent('editor:heading', { detail: level }))
-  }
+  window.dispatchEvent(new CustomEvent('editor:heading', { detail: level }))
 }
 
 /**
@@ -76,13 +54,9 @@ function insertLink(): void {
  */
 function confirmInsertLink(): void {
   if (linkHref.value.trim()) {
-    if (fileStore.editorMode === 'instant' && editorController) {
-      editorController.insertLink(linkHref.value.trim(), linkTitle.value.trim())
-    } else {
-      window.dispatchEvent(new CustomEvent('editor:link', {
-        detail: { href: linkHref.value.trim(), title: linkTitle.value.trim() }
-      }))
-    }
+    window.dispatchEvent(new CustomEvent('editor:link', {
+      detail: { href: linkHref.value.trim(), title: linkTitle.value.trim() }
+    }))
   }
   linkDialogOpen.value = false
 }
@@ -101,13 +75,9 @@ function insertImage(): void {
  */
 function confirmInsertImage(): void {
   if (imageSrc.value.trim()) {
-    if (fileStore.editorMode === 'instant' && editorController) {
-      editorController.insertImage(imageSrc.value.trim(), imageAlt.value.trim())
-    } else {
-      window.dispatchEvent(new CustomEvent('editor:image', {
-        detail: { src: imageSrc.value.trim(), alt: imageAlt.value.trim() }
-      }))
-    }
+    window.dispatchEvent(new CustomEvent('editor:image', {
+      detail: { src: imageSrc.value.trim(), alt: imageAlt.value.trim() }
+    }))
   }
   imageDialogOpen.value = false
 }
@@ -124,13 +94,9 @@ function insertCodeBlock(): void {
  * 确认插入代码块
  */
 function confirmInsertCodeBlock(): void {
-  if (fileStore.editorMode === 'instant' && editorController) {
-    editorController.insertCodeBlock(codeLanguage.value.trim())
-  } else {
-    window.dispatchEvent(new CustomEvent('editor:codeBlock', {
-      detail: { language: codeLanguage.value.trim() }
-    }))
-  }
+  window.dispatchEvent(new CustomEvent('editor:codeBlock', {
+    detail: { language: codeLanguage.value.trim() }
+  }))
   codeBlockDialogOpen.value = false
 }
 
@@ -157,13 +123,9 @@ async function selectImageFile(): Promise<void> {
         const reader = new FileReader()
         reader.onload = (event) => {
           const dataUrl = event.target?.result as string
-          if (fileStore.editorMode === 'instant' && editorController) {
-            editorController.insertImage(dataUrl, file.name)
-          } else {
-            window.dispatchEvent(new CustomEvent('editor:image', {
-              detail: { src: dataUrl, alt: file.name }
-            }))
-          }
+          window.dispatchEvent(new CustomEvent('editor:image', {
+            detail: { src: dataUrl, alt: file.name }
+          }))
           imageDialogOpen.value = false
         }
         reader.readAsDataURL(file)

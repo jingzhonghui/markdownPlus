@@ -12,7 +12,6 @@ import {
   undoInputRule
 } from 'prosemirror-inputrules'
 import { markdownSchema } from './schema'
-import { instantRenderKey, getSelectionBlockPos } from './instant/state'
 
 /**
  * 创建标题输入规则 (# 标题)
@@ -106,7 +105,6 @@ function inlineCodeRule(markType: any): InputRule {
   return new InputRule(
     /`([^`]+)`$/,
     (state, match, start, end) => {
-      if (isInSourceMode(state)) return null
       const { tr } = state
       const text = match[1]
       const from = start
@@ -129,7 +127,6 @@ function boldRule(markType: any): InputRule {
   return new InputRule(
     /\*\*([^*]+)\*\*$/,
     (state, match, start, end) => {
-      if (isInSourceMode(state)) return null
       const { tr } = state
       const text = match[1]
 
@@ -149,7 +146,6 @@ function italicRule(markType: any): InputRule {
   return new InputRule(
     /(?<!\*)\*([^*]+)\*(?!\*)$/,
     (state, match, start, end) => {
-      if (isInSourceMode(state)) return null
       const { tr } = state
       const text = match[1]
 
@@ -169,7 +165,6 @@ function strikethroughRule(markType: any): InputRule {
   return new InputRule(
     /~~([^~]+)~~$/,
     (state, match, start, end) => {
-      if (isInSourceMode(state)) return null
       const { tr } = state
       const text = match[1]
 
@@ -189,7 +184,6 @@ function linkRule(markType: any): InputRule {
   return new InputRule(
     /\[([^\]]+)\]\(([^)]+)\)$/,
     (state, match, start, end) => {
-      if (isInSourceMode(state)) return null
       const { tr } = state
       const text = match[1]
       const href = match[2]
@@ -201,18 +195,6 @@ function linkRule(markType: any): InputRule {
       return tr
     }
   )
-}
-
-/**
- * 检查当前光标所在块是否处于源码态
- * 在源码态下，行内标记输入规则不应触发
- */
-function isInSourceMode(state: EditorState): boolean {
-  const pluginState = instantRenderKey.getState(state)
-  if (!pluginState) return false
-  const blockPos = getSelectionBlockPos(state)
-  if (blockPos === null) return false
-  return pluginState.sourceBlocks.has(blockPos)
 }
 
 /**

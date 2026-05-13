@@ -25,10 +25,10 @@ const saveStatusClass = computed(() => {
 
 /**
  * 切换编辑模式
- * 顺序：所见即所得 -> 分屏预览 -> 源码编辑 -> 所见即所得
+ * 顺序：分屏预览 -> 源码编辑 -> 分屏预览
  */
 function toggleEditorMode(): void {
-  const modes: EditorMode[] = ['instant', 'split', 'source']
+  const modes: EditorMode[] = ['split', 'source']
   const currentIndex = modes.indexOf(fileStore.editorMode)
   const nextIndex = (currentIndex + 1) % modes.length
   fileStore.setEditorMode(modes[nextIndex])
@@ -39,7 +39,6 @@ function toggleEditorMode(): void {
  */
 const modeIcon = computed(() => {
   const icons: Record<EditorMode, string> = {
-    instant: 'instant',
     split: 'split',
     source: 'source'
   }
@@ -51,7 +50,6 @@ const modeIcon = computed(() => {
  */
 const modeTooltip = computed(() => {
   const tooltips: Record<EditorMode, string> = {
-    instant: '即时渲染',
     split: '分屏预览',
     source: '源码编辑'
   }
@@ -81,21 +79,9 @@ const modeTooltip = computed(() => {
         :title="modeTooltip"
         @click="toggleEditorMode"
       >
-        <!-- 即时渲染图标 -->
-        <svg
-          v-if="modeIcon === 'instant'"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-        >
-          <path
-            stroke-width="2"
-            d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
-          />
-        </svg>
         <!-- 分屏预览图标 -->
         <svg
-          v-else-if="modeIcon === 'split'"
+          v-if="modeIcon === 'split'"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -210,13 +196,6 @@ const modeTooltip = computed(() => {
 .mode-toggle-btn:hover {
   border-color: var(--color-border-hover);
   background-color: var(--color-bg-secondary);
-}
-
-/* 不同模式下的颜色标识 */
-.mode-toggle-btn.instant {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  background-color: var(--color-primary-light);
 }
 
 .mode-toggle-btn.split {

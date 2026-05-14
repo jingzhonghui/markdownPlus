@@ -233,9 +233,11 @@ onUnmounted(() => {
     <div class="header-left">
       <!-- Logo -->
       <div class="logo">
-        <div class="logo-icon">
-          M+
-        </div>
+        <img
+          src="../../assets/logo.svg"
+          alt="M+"
+          class="logo-icon"
+        >
         <span class="logo-text">Markdown+</span>
       </div>
 
@@ -557,14 +559,7 @@ onUnmounted(() => {
 .logo-icon {
   width: 32px;
   height: 32px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .logo-text {

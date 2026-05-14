@@ -9,10 +9,8 @@ import 'splitpanes/dist/splitpanes.css'
 
 const fileStore = useFileStore()
 
-/**
- * 是否显示预览面板
- */
 const showPreview = computed(() => fileStore.editorMode === 'split')
+const hasOpenFile = computed(() => fileStore.tabs.length > 0 && fileStore.activeTabId !== null)
 </script>
 
 <template>
@@ -20,23 +18,119 @@ const showPreview = computed(() => fileStore.editorMode === 'split')
     <!-- 标签栏 -->
     <TabBar />
 
-    <!-- 源码模式：仅显示编辑器 -->
-    <SourceEditor
-      v-if="!showPreview"
-    />
-
-    <!-- 分屏模式：可拖拽调整左右面板 -->
-    <Splitpanes
-      v-else
-      class="splitpanes-theme"
+    <!-- 无文件打开时：显示欢迎页 -->
+    <div
+      v-if="!hasOpenFile"
+      class="welcome-page"
     >
-      <Pane :min-size="20">
-        <SourceEditor />
-      </Pane>
-      <Pane :min-size="20">
-        <PreviewPanel />
-      </Pane>
-    </Splitpanes>
+      <div class="welcome-content">
+        <img
+          src="../../assets/logo.svg"
+          alt="M+"
+          class="welcome-logo"
+        >
+        <h1 class="welcome-title">Markdown+</h1>
+        <p class="welcome-subtitle">轻量级 Markdown 编辑器</p>
+
+        <div class="welcome-actions">
+          <button
+            class="welcome-btn primary"
+            @click="fileStore.newFile()"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            新建文件
+          </button>
+          <button
+            class="welcome-btn"
+            @click="fileStore.openFile()"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-width="2" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <path stroke-width="2" d="M14 2v6h6" />
+            </svg>
+            打开文件
+          </button>
+          <button
+            class="welcome-btn"
+            @click="fileStore.openFolder()"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            打开文件夹
+          </button>
+        </div>
+
+        <div class="welcome-shortcuts">
+          <h2 class="shortcuts-title">快捷键</h2>
+          <div class="shortcuts-grid">
+            <div class="shortcut-item">
+              <kbd>Ctrl+N</kbd>
+              <span>新建文件</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+O</kbd>
+              <span>打开文件</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+S</kbd>
+              <span>保存文件</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+Shift+S</kbd>
+              <span>另存为</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+B</kbd>
+              <span>粗体</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+I</kbd>
+              <span>斜体</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+K</kbd>
+              <span>插入链接</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+H</kbd>
+              <span>切换标题</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+F</kbd>
+              <span>查找</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+/</kbd>
+              <span>注释</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 有文件打开时：显示编辑器 -->
+    <template v-else>
+      <!-- 源码模式：仅显示编辑器 -->
+      <SourceEditor
+        v-if="!showPreview"
+      />
+
+      <!-- 分屏模式：可拖拽调整左右面板 -->
+      <Splitpanes
+        v-else
+        class="splitpanes-theme"
+      >
+        <Pane :min-size="20">
+          <SourceEditor />
+        </Pane>
+        <Pane :min-size="20">
+          <PreviewPanel />
+        </Pane>
+      </Splitpanes>
+    </template>
   </div>
 </template>
 
@@ -47,6 +141,126 @@ const showPreview = computed(() => fileStore.editorMode === 'split')
   flex-direction: column;
   overflow: hidden;
   background-color: var(--color-bg-primary);
+}
+
+/* 欢迎页 */
+.welcome-page {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.welcome-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 32px;
+  max-width: 520px;
+  width: 100%;
+}
+
+.welcome-logo {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+}
+
+.welcome-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.welcome-subtitle {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin: 8px 0 32px;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 40px;
+}
+
+.welcome-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.welcome-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.welcome-btn.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+.welcome-btn.primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.welcome-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.shortcuts-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 16px;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 32px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.shortcut-item kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.shortcut-item span {
+  font-size: 13px;
+  color: var(--color-text-secondary);
 }
 
 /* Splitpanes 主题适配 */

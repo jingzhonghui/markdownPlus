@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { IPC_CHANNELS } from './ipc/channels'
 import { registerFileHandlers } from './ipc/file-handlers'
@@ -9,12 +9,18 @@ import { registerMdxHandlers, cleanupAll, getCurrentDocument, isCloseConfirmed, 
  * 创建主窗口
  */
 function createWindow(): void {
+  // 开发模式用项目根目录，生产模式用 out 的上级目录
+  const iconPath = is.dev
+    ? resolve(__dirname, '../../resources/icon.png')
+    : join(__dirname, '../resources/icon.png')
+
   const mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     show: false,
     autoHideMenuBar: true,
     frame: false,
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/preload.cjs'),
       sandbox: false,

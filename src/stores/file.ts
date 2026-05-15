@@ -16,6 +16,16 @@ export interface FolderItem {
   isDirectory: boolean
 }
 
+/** 文件树节点 */
+export interface FileTreeNode {
+  name: string
+  path: string
+  isDirectory: boolean
+  isExpanded: boolean
+  isLoading: boolean
+  children: FileTreeNode[]
+}
+
 export interface TabInfo {
   id: string
   fileInfo: FileInfo | null
@@ -51,8 +61,9 @@ export const useFileStore = defineStore('file', () => {
 
   // 文件夹浏览状态
   const openedFolderPath = ref<string | null>(null)
-  const folderItems = ref<FolderItem[]>([])
-  const folderHistory = ref<string[]>([])
+  const folderItems = ref<FolderItem[]>([])  // 保留兼容
+  const folderHistory = ref<string[]>([])     // 保留兼容
+  const fileTree = ref<FileTreeNode[]>([])   // 树形结构
 
   // Getters
   const hasFile = computed(() => activeTab.value !== null && activeTab.value.document !== null)
@@ -924,8 +935,29 @@ export const useFileStore = defineStore('file', () => {
       }
 
       const dirPath = dialogResult.data[0]
-      await readFolder(dirPath)
-      return true
+      const success = await readFolder(dirPath)
+
+      // 初始化文件树
+      if (success) {
+        const folderName = dirPath.split(/[/\\]/).pop() || dirPath
+        fileTree.value = [{
+          name: folderName,
+          path: dirPath,
+          isDirectory: true,
+          isExpanded: true,
+          isLoading: false,
+          children: folderItems.value.map(item => ({
+            name: item.name,
+            path: item.path,
+            isDirectory: item.isDirectory,
+            isExpanded: false,
+            isLoading: false,
+            children: []
+          }))
+        }]
+      }
+
+      return success
     } catch (err) {
       error.value = err instanceof Error ? err.message : '打开文件夹失败'
       return false
@@ -951,16 +983,61 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
+  /** 加载指定路径的子文件夹内容 */
+  async function loadChildren(node: FileTreeNode): Promise<void> {
+    if (!node.isDirectory || node.isLoading) return
+
+    node.isLoading = true
+    try {
+      const result = await window.electronAPI?.readFolder(node.path)
+      if (result?.success && result.data) {
+        node.children = result.data.map((item: FolderItem) => ({
+          name: item.name,
+          path: item.path,
+          isDirectory: item.isDirectory,
+          isExpanded: false,
+          isLoading: false,
+          children: []
+        }))
+      }
+    } catch {
+      // 忽略错误
+    } finally {
+      node.isLoading = false
+    }
+  }
+
+  /** 展开节点（如未加载则先加载） */
+  async function expandNode(node: FileTreeNode): Promise<void> {
+    node.isExpanded = true
+    if (node.isDirectory && node.children.length === 0) {
+      await loadChildren(node)
+    }
+  }
+
+  /** 折叠节点 */
+  function collapseNode(node: FileTreeNode): void {
+    node.isExpanded = false
+  }
+
+  /** 切换展开/折叠状态 */
+  async function toggleNode(node: FileTreeNode): Promise<void> {
+    if (node.isExpanded) {
+      collapseNode(node)
+    } else {
+      await expandNode(node)
+    }
+  }
+
   function closeFolder(): void {
     openedFolderPath.value = null
     folderItems.value = []
     folderHistory.value = []
+    fileTree.value = []
   }
 
+  // 保留兼容的导航方法（内部自动转换为树操作）
   async function navigateToFolder(dirPath: string): Promise<boolean> {
-    if (openedFolderPath.value) {
-      folderHistory.value.push(openedFolderPath.value)
-    }
     return await readFolder(dirPath)
   }
 
@@ -1086,6 +1163,7 @@ export const useFileStore = defineStore('file', () => {
     // 文件夹浏览
     openedFolderPath,
     folderItems,
+    fileTree,
 
     // Getters
     hasFile,
@@ -1147,6 +1225,10 @@ export const useFileStore = defineStore('file', () => {
     closeFolder,
     navigateToFolder,
     navigateUp,
+    expandNode,
+    collapseNode,
+    toggleNode,
+    loadChildren,
 
     // 上下文菜单操作
     createFile,

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
-import { useFileStore } from '../../stores/file'
-import type { FolderItem } from '../../stores/file'
+import { useFileStore, type FileTreeNode } from '../../stores/file'
+import FileTreeItem from './FileTreeItem.vue'
 
 const fileStore = useFileStore()
 
 const emit = defineEmits<{
-  collapse: []
+  (e: 'collapse'): void
 }>()
 
 // ========== 右键菜单状态 ==========
@@ -55,24 +55,24 @@ function onEmptyContextMenu(event: MouseEvent): void {
   showContextMenu(event, items)
 }
 
-function onFileContextMenu(event: MouseEvent, item: FolderItem): void {
+function onFileContextMenu(event: MouseEvent, node: FileTreeNode): void {
   const items: ContextMenuItem[] = [
-    { label: '打开', action: () => onFileClick(item.path) },
-    { label: '重命名', action: () => promptRename(item) },
-    { label: '删除', action: () => promptDelete(item) },
-    { label: '复制路径', action: () => fileStore.copyPath(item.path) }
+    { label: '打开', action: () => fileStore.openFile(node.path) },
+    { label: '重命名', action: () => promptRename(node) },
+    { label: '删除', action: () => promptDelete(node) },
+    { label: '复制路径', action: () => fileStore.copyPath(node.path) }
   ]
   showContextMenu(event, items)
 }
 
-function onFolderContextMenu(event: MouseEvent, item: FolderItem): void {
+function onFolderContextMenu(event: MouseEvent, node: FileTreeNode): void {
   const items: ContextMenuItem[] = [
-    { label: '新建文件', action: () => promptCreateFile(item.path) },
-    { label: '新建文件夹', action: () => promptCreateFolder(item.path) },
-    { label: '刷新', action: () => fileStore.readFolder(fileStore.openedFolderPath!) },
-    { label: '重命名', action: () => promptRename(item) },
-    { label: '删除', action: () => promptDelete(item) },
-    { label: '复制路径', action: () => fileStore.copyPath(item.path) }
+    { label: '新建文件', action: () => promptCreateFile(node.path) },
+    { label: '新建文件夹', action: () => promptCreateFolder(node.path) },
+    { label: '刷新', action: () => fileStore.loadChildren(node) },
+    { label: '重命名', action: () => promptRename(node) },
+    { label: '删除', action: () => promptDelete(node) },
+    { label: '复制路径', action: () => fileStore.copyPath(node.path) }
   ]
   showContextMenu(event, items)
 }
@@ -123,16 +123,16 @@ async function promptCreateFolder(dirPath: string): Promise<void> {
   await fileStore.createFolder(dirPath, name)
 }
 
-async function promptRename(item: FolderItem): Promise<void> {
-  const name = await openInputDialog('重命名', item.name, '新名称')
-  if (!name || name === item.name) return
-  await fileStore.renameItem(item.path, name)
+async function promptRename(node: FileTreeNode): Promise<void> {
+  const name = await openInputDialog('重命名', node.name, '新名称')
+  if (!name || name === node.name) return
+  await fileStore.renameItem(node.path, name)
 }
 
-async function promptDelete(item: FolderItem): Promise<void> {
-  const type = item.isDirectory ? '文件夹' : '文件'
-  if (!window.confirm(`确定要删除${type} "${item.name}" 吗？\n此操作不可恢复。`)) return
-  await fileStore.deleteItem(item.path)
+async function promptDelete(node: FileTreeNode): Promise<void> {
+  const type = node.isDirectory ? '文件夹' : '文件'
+  if (!window.confirm(`确定要删除${type} "${node.name}" 吗？\n此操作不可恢复。`)) return
+  await fileStore.deleteItem(node.path)
 }
 
 // ========== 基础操作 ==========
@@ -148,22 +148,12 @@ async function openFolder(): Promise<void> {
   await fileStore.openFolder()
 }
 
-async function onFolderClick(dirPath: string): Promise<void> {
-  await fileStore.navigateToFolder(dirPath)
-}
-
-async function onFileClick(filePath: string): Promise<void> {
-  await fileStore.openFile(filePath)
-}
-
-function getFolderName(): string {
-  if (!fileStore.openedFolderPath) return ''
-  const parts = fileStore.openedFolderPath.split(/[/\\]/)
-  return parts[parts.length - 1] || fileStore.openedFolderPath
-}
-
-function isActiveFile(itemPath: string): boolean {
-  return fileStore.currentFile?.path === itemPath
+function handleNodeContextMenu(event: MouseEvent, node: FileTreeNode): void {
+  if (node.isDirectory) {
+    onFolderContextMenu(event, node)
+  } else {
+    onFileContextMenu(event, node)
+  }
 }
 
 onMounted(() => {
@@ -260,96 +250,18 @@ onUnmounted(() => {
     >
       <!-- 文件夹浏览 -->
       <div
-        v-if="fileStore.openedFolderPath"
+        v-if="fileStore.openedFolderPath && fileStore.fileTree.length > 0"
         class="file-section"
       >
-        <div class="section-title folder-title">
-          <span class="folder-name-text">{{ getFolderName() }}</span>
-          <div class="folder-title-actions">
-            <button
-              class="action-btn action-btn-sm"
-              title="返回上一级"
-              @click="fileStore.navigateUp()"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-width="2"
-                  d="M5 12h14M12 5l-7 7 7 7"
-                />
-              </svg>
-            </button>
-            <button
-              class="action-btn action-btn-sm"
-              title="关闭文件夹"
-              @click="fileStore.closeFolder()"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-width="2"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <!-- 文件夹内容列表 -->
-        <div
-          v-if="fileStore.folderItems.length === 0"
-          class="folder-empty"
-        >
-          文件夹为空
-        </div>
-        <div
-          v-for="item in fileStore.folderItems"
-          :key="item.path"
-          class="file-item"
-          :class="{
-            'is-directory': item.isDirectory,
-            'active': !item.isDirectory && isActiveFile(item.path)
-          }"
-          @click="item.isDirectory ? onFolderClick(item.path) : onFileClick(item.path)"
-          @contextmenu.prevent.stop="item.isDirectory ? onFolderContextMenu($event, item) : onFileContextMenu($event, item)"
-        >
-          <!-- 文件夹图标 -->
-          <svg
-            v-if="item.isDirectory"
-            class="file-icon folder-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <path
-              stroke-width="2"
-              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-            />
-          </svg>
-          <!-- 文件图标 -->
-          <svg
-            v-else
-            class="file-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <path
-              stroke-width="2"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
-          <span class="file-name">{{ item.name }}</span>
-          <span
-            v-if="!item.isDirectory && isActiveFile(item.path) && fileStore.isModified"
-            class="modified-indicator"
-          >●</span>
+        <!-- 树形文件列表 -->
+        <div class="tree-list">
+          <FileTreeItem
+            v-for="node in fileStore.fileTree"
+            :key="node.path"
+            :node="node"
+            :depth="0"
+            @context-menu="handleNodeContextMenu"
+          />
         </div>
       </div>
 

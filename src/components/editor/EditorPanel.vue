@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useFileStore } from '../../stores/file'
 import SourceEditor from './SourceEditor.vue'
 import PreviewPanel from './PreviewPanel.vue'
@@ -11,6 +11,33 @@ const fileStore = useFileStore()
 
 const showPreview = computed(() => fileStore.editorMode === 'split')
 const hasOpenFile = computed(() => fileStore.tabs.length > 0 && fileStore.activeTabId !== null)
+
+// 组件引用
+const sourceEditorRef = ref<InstanceType<typeof SourceEditor>>()
+const previewRef = ref<InstanceType<typeof PreviewPanel>>()
+
+// 滚动同步锁，防止循环同步
+let isSyncing = false
+
+/**
+ * 编辑器滚动回调
+ */
+function onEditorScroll(ratio: number): void {
+  if (isSyncing) return
+  isSyncing = true
+  previewRef.value?.scrollTo(ratio)
+  setTimeout(() => { isSyncing = false }, 50)
+}
+
+/**
+ * 预览区域滚动回调
+ */
+function onPreviewScroll(ratio: number): void {
+  if (isSyncing) return
+  isSyncing = true
+  sourceEditorRef.value?.scrollTo(ratio)
+  setTimeout(() => { isSyncing = false }, 50)
+}
 </script>
 
 <template>
@@ -124,10 +151,17 @@ const hasOpenFile = computed(() => fileStore.tabs.length > 0 && fileStore.active
         class="splitpanes-theme"
       >
         <Pane :min-size="20">
-          <SourceEditor />
+          <SourceEditor
+            ref="sourceEditorRef"
+            @scroll="onEditorScroll"
+          />
         </Pane>
         <Pane :min-size="20">
-          <PreviewPanel />
+          <PreviewPanel
+            ref="previewRef"
+            :enable-scroll-sync="true"
+            @scroll="onPreviewScroll"
+          />
         </Pane>
       </Splitpanes>
     </template>
@@ -272,6 +306,8 @@ const hasOpenFile = computed(() => fileStore.tabs.length > 0 && fileStore.active
 .splitpanes-theme :deep(.splitpanes__pane) {
   background-color: var(--color-bg-primary);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .splitpanes-theme :deep(.splitpanes__splitter) {

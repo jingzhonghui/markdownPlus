@@ -21,6 +21,7 @@ const props = defineProps<Props>()
 // Emits
 const emit = defineEmits<{
   (e: 'update:content', content: string): void
+  (e: 'scroll', ratio: number): void
 }>()
 
 // Store
@@ -595,18 +596,38 @@ function updateCursorPosition(state: EditorState): void {
  */
 function initEditor(): void {
   if (!editorRef.value) return
-  
+
   const startState = EditorState.create({
     doc: fileStore.fileContent,
     extensions: createExtensions()
   })
-  
+
   const view = new EditorView({
     state: startState,
     parent: editorRef.value
   })
-  
+
+  // 监听滚动事件
+  const scroller = view.scrollDOM
+  scroller.addEventListener('scroll', handleScroll)
+
   editorView.value = view
+}
+
+/**
+ * 处理滚动事件
+ */
+function handleScroll(): void {
+  if (isSyncing) return
+  const view = editorView.value
+  if (!view) return
+
+  const scroller = view.scrollDOM
+  const maxScroll = scroller.scrollHeight - scroller.clientHeight
+  if (maxScroll > 0) {
+    const ratio = scroller.scrollTop / maxScroll
+    emit('scroll', ratio)
+  }
 }
 
 /**
@@ -629,7 +650,11 @@ function toggleSearchPanel(): void {
  * 销毁编辑器
  */
 function destroyEditor(): void {
-  editorView.value?.destroy()
+  const view = editorView.value
+  if (view) {
+    view.scrollDOM.removeEventListener('scroll', handleScroll)
+    view.destroy()
+  }
   editorView.value = null
 }
 
@@ -747,7 +772,16 @@ watch(() => themeStore.systemPreference, updateTheme)
 defineExpose({
   toggleSearchPanel,
   focus: () => editorView.value?.focus(),
-  getView: () => editorView.value
+  getView: () => editorView.value,
+  scrollTo: (ratio: number) => {
+    const view = editorView.value
+    if (!view) return
+    const scroller = view.scrollDOM
+    const maxScroll = scroller.scrollHeight - scroller.clientHeight
+    if (maxScroll > 0) {
+      scroller.scrollTop = ratio * maxScroll
+    }
+  }
 })
 </script>
 

@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 // Emits
 const emit = defineEmits<{
-  (e: 'scroll', scrollTop: number, scrollHeight: number): void
+  (e: 'scroll', ratio: number): void
 }>()
 
 // Store
@@ -131,21 +131,23 @@ async function applyCodeHighlight(): Promise<void> {
  */
 function handleScroll(): void {
   if (!previewRef.value || !props.enableScrollSync) return
-  
+
   const container = previewRef.value.parentElement
   if (!container) return
-  
-  emit('scroll', container.scrollTop, container.scrollHeight)
+
+  const maxScroll = container.scrollHeight - container.clientHeight
+  const ratio = maxScroll > 0 ? container.scrollTop / maxScroll : 0
+  emit('scroll', ratio)
 }
 
 /**
- * 滚动到指定位置
+ * 滚动到指定比例位置 (0-1)
  */
-function scrollTo(position: number): void {
+function scrollTo(ratio: number): void {
   const container = previewRef.value?.parentElement
-  if (container) {
-    container.scrollTop = position
-  }
+  if (!container) return
+  const maxScroll = container.scrollHeight - container.clientHeight
+  container.scrollTop = ratio * maxScroll
 }
 
 /**
@@ -269,7 +271,7 @@ defineExpose({
 
 <style scoped>
 .preview-container {
-  flex: 1;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background-color: var(--color-bg-primary);

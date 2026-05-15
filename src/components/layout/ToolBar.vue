@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 // 标题下拉菜单状态
 const headingMenuOpen = ref(false)
@@ -21,9 +21,7 @@ const imageDialogOpen = ref(false)
 const imageSrc = ref('')
 const imageAlt = ref('')
 
-// 代码块对话框状态
-const codeBlockDialogOpen = ref(false)
-const codeLanguage = ref('')
+// 代码块对话框状态（已移除，改为直接插入）
 
 /**
  * 应用格式
@@ -83,30 +81,33 @@ function confirmInsertImage(): void {
 }
 
 /**
- * 显示插入代码块对话框
+ * 直接插入代码块（不弹窗）
  */
 function insertCodeBlock(): void {
-  codeBlockDialogOpen.value = true
-  codeLanguage.value = ''
-}
-
-/**
- * 确认插入代码块
- */
-function confirmInsertCodeBlock(): void {
   window.dispatchEvent(new CustomEvent('editor:codeBlock', {
-    detail: { language: codeLanguage.value.trim() }
+    detail: { language: '' }
   }))
-  codeBlockDialogOpen.value = false
 }
 
 /**
  * 插入表格
  */
 function insertTable(): void {
-  // TODO: 实现表格插入
-  console.log('Insert table')
+  window.dispatchEvent(new CustomEvent('editor:format', { detail: 'table' }))
 }
+
+/** 点击外部关闭标题菜单 */
+function onDocumentClick(): void {
+  headingMenuOpen.value = false
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick)
+})
 
 /**
  * 选择本地图片文件
@@ -218,7 +219,7 @@ async function selectImageFile(): Promise<void> {
         <button
           class="format-btn"
           title="标题"
-          @click="headingMenuOpen = !headingMenuOpen"
+          @click.stop="headingMenuOpen = !headingMenuOpen"
         >
           <svg
             viewBox="0 0 24 24"
@@ -481,42 +482,6 @@ async function selectImageFile(): Promise<void> {
       </div>
     </div>
 
-    <!-- 代码块对话框 -->
-    <div
-      v-if="codeBlockDialogOpen"
-      class="dialog-overlay"
-      @click="codeBlockDialogOpen = false"
-    >
-      <div
-        class="dialog"
-        @click.stop
-      >
-        <h3 class="dialog-title">
-          插入代码块
-        </h3>
-        <input
-          v-model="codeLanguage"
-          type="text"
-          placeholder="编程语言 (如: javascript, python, 可选)"
-          class="dialog-input"
-          @keydown.enter="confirmInsertCodeBlock"
-        >
-        <div class="dialog-actions">
-          <button
-            class="dialog-btn dialog-btn-cancel"
-            @click="codeBlockDialogOpen = false"
-          >
-            取消
-          </button>
-          <button
-            class="dialog-btn dialog-btn-confirm"
-            @click="confirmInsertCodeBlock"
-          >
-            确定
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 

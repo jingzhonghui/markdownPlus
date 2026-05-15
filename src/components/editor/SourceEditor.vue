@@ -724,6 +724,144 @@ function updateTheme(): void {
   })
 }
 
+// ========== 工具栏事件处理 ==========
+
+function handleFormatEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const format = (e as CustomEvent).detail as string
+  switch (format) {
+    case 'bold':
+      wrapSelection(view, '**', '**')
+      break
+    case 'italic':
+      wrapSelection(view, '*', '*')
+      break
+    case 'strikethrough':
+      wrapSelection(view, '~~', '~~')
+      break
+    case 'unorderedList':
+      prependLinePrefix(view, '- ')
+      break
+    case 'orderedList':
+      prependLinePrefix(view, '1. ')
+      break
+    case 'blockquote':
+      prependLinePrefix(view, '> ')
+      break
+    case 'table':
+      insertTable(view)
+      break
+  }
+  view.focus()
+}
+
+function handleHeadingEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const level = (e as CustomEvent).detail as number
+  const { from } = view.state.selection.main
+  const line = view.state.doc.lineAt(from)
+
+  // 移除已有标题标记
+  const existingMatch = line.text.match(/^(#{0,4})\s/)
+  const currentLevel = existingMatch ? existingMatch[1].length : 0
+
+  let newText: string
+  if (level === 0) {
+    newText = line.text.replace(/^#{1,4}\s+/, '')
+  } else if (currentLevel > 0) {
+    newText = line.text.replace(/^#{1,4}\s*/, '#'.repeat(level) + ' ')
+  } else {
+    newText = '#'.repeat(level) + ' ' + line.text
+  }
+
+  view.dispatch({ changes: { from: line.from, to: line.to, insert: newText } })
+  view.focus()
+}
+
+function handleLinkEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const { href, title } = (e as CustomEvent).detail as { href: string; title: string }
+  const { from, to } = view.state.selection.main
+  const selectedText = view.state.doc.sliceString(from, to)
+  const linkText = title || selectedText || '链接文本'
+  const insert = `[${linkText}](${href})`
+
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: from + 1, head: from + 1 + linkText.length }
+  })
+  view.focus()
+}
+
+function handleImageEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const { src, alt } = (e as CustomEvent).detail as { src: string; alt: string }
+  const { from } = view.state.selection.main
+  const altText = alt || '图片'
+  const insert = `![${altText}](${src})`
+
+  view.dispatch({
+    changes: { from, insert },
+    selection: { anchor: from + 2, head: from + 2 + altText.length }
+  })
+  view.focus()
+}
+
+function handleCodeBlockEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const { language } = (e as CustomEvent).detail as { language?: string }
+  const { from } = view.state.selection.main
+  const lang = language || ''
+  const insert = `\n\`\`\`${lang}\n\n\`\`\`\n`
+
+  view.dispatch({
+    changes: { from, insert },
+    selection: { anchor: from + 4 + lang.length + 1 }
+  })
+  view.focus()
+}
+
+/** 在当前行首插入前缀 */
+function prependLinePrefix(view: EditorView, prefix: string): void {
+  const { from } = view.state.selection.main
+  const line = view.state.doc.lineAt(from)
+
+  // 如果已有相同前缀则移除
+  if (line.text.startsWith(prefix)) {
+    const newText = line.text.slice(prefix.length)
+    view.dispatch({ changes: { from: line.from, to: line.to, insert: newText } })
+  } else {
+    // 移除其他列表前缀
+    const cleaned = line.text.replace(/^[-*]\s|\d+\.\s|>\s/, '')
+    view.dispatch({ changes: { from: line.from, to: line.to, insert: prefix + cleaned } })
+  }
+}
+
+/** 插入表格 */
+function insertTable(view: EditorView): void {
+  const { from } = view.state.selection.main
+  const table = [
+    '| 列1 | 列2 | 列3 |',
+    '| --- | --- | --- |',
+    '| 内容 | 内容 | 内容 |'
+  ].join('\n')
+
+  view.dispatch({
+    changes: { from, insert: '\n' + table + '\n' },
+    selection: { anchor: from + 3 }
+  })
+}
+
 // Lifecycle
 onMounted(() => {
   initEditor()
@@ -735,6 +873,13 @@ onMounted(() => {
     editorEl.addEventListener('drop', handleDrop)
     editorEl.addEventListener('paste', handlePaste)
   }
+
+  // 工具栏事件监听
+  window.addEventListener('editor:format', handleFormatEvent)
+  window.addEventListener('editor:heading', handleHeadingEvent)
+  window.addEventListener('editor:link', handleLinkEvent)
+  window.addEventListener('editor:image', handleImageEvent)
+  window.addEventListener('editor:codeBlock', handleCodeBlockEvent)
 })
 
 onUnmounted(() => {
@@ -745,6 +890,12 @@ onUnmounted(() => {
     editorEl.removeEventListener('drop', handleDrop)
     editorEl.removeEventListener('paste', handlePaste)
   }
+
+  window.removeEventListener('editor:format', handleFormatEvent)
+  window.removeEventListener('editor:heading', handleHeadingEvent)
+  window.removeEventListener('editor:link', handleLinkEvent)
+  window.removeEventListener('editor:image', handleImageEvent)
+  window.removeEventListener('editor:codeBlock', handleCodeBlockEvent)
 
   destroyEditor()
 })

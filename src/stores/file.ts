@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type { MdxDocument, MdxImageAsset } from '../types/mdx'
+import { loadSessionState, saveSessionState } from './session'
 
 export type EditorMode = 'split' | 'source'
 
@@ -52,6 +53,7 @@ export const useFileStore = defineStore('file', () => {
 
   // 编辑器状态
   const editorMode = ref<EditorMode>('split')
+  const sidebarCollapsed = ref(false)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const recentFiles = ref<string[]>([])
@@ -106,6 +108,7 @@ export const useFileStore = defineStore('file', () => {
   /** 激活指定 tab */
   function setActiveTab(tabId: string): void {
     activeTabId.value = tabId
+    persistSession()
   }
 
   /** 查找已打开文件的 tab */
@@ -170,6 +173,7 @@ export const useFileStore = defineStore('file', () => {
 
     // 从 tabs 中移除
     tabs.value.splice(index, 1)
+    persistSession()
 
     // 如果关闭的是当前激活的 tab，切换到邻居
     if (activeTabId.value === tabId) {
@@ -248,6 +252,67 @@ export const useFileStore = defineStore('file', () => {
 
   function setEditorMode(mode: EditorMode): void {
     editorMode.value = mode
+    persistSession()
+  }
+
+  function toggleSidebar(): void {
+    sidebarCollapsed.value = !sidebarCollapsed.value
+    persistSession()
+  }
+
+  // ================ 会话持久化 ================
+
+  function persistSession(): void {
+    saveSessionState({
+      openedFolderPath: openedFolderPath.value,
+      openFilePaths: tabs.value
+        .map((t) => t.fileInfo?.path)
+        .filter((p): p is string => !!p),
+      activeFilePath: activeTab.value?.fileInfo?.path ?? null,
+      sidebarCollapsed: sidebarCollapsed.value,
+      editorMode: editorMode.value
+    })
+  }
+
+  async function restoreSession(): Promise<void> {
+    const state = loadSessionState()
+    if (!state) return
+
+    editorMode.value = state.editorMode
+    sidebarCollapsed.value = state.sidebarCollapsed
+
+    if (state.openedFolderPath) {
+      const success = await readFolder(state.openedFolderPath)
+      if (success) {
+        const folderName = state.openedFolderPath.split(/[/\\]/).pop() || state.openedFolderPath
+        fileTree.value = [{
+          name: folderName,
+          path: state.openedFolderPath,
+          isDirectory: true,
+          isExpanded: true,
+          isLoading: false,
+          children: folderItems.value.map(item => ({
+            name: item.name,
+            path: item.path,
+            isDirectory: item.isDirectory,
+            isExpanded: false,
+            isLoading: false,
+            children: []
+          }))
+        }]
+      }
+    }
+
+    for (const filePath of state.openFilePaths) {
+      await openFile(filePath)
+    }
+
+    if (state.activeFilePath) {
+      const tab = findTabByPath(state.activeFilePath)
+      if (tab) {
+        activeTabId.value = tab.id
+      }
+    }
   }
 
   function setCursorPosition(line: number, column: number): void {
@@ -311,6 +376,7 @@ export const useFileStore = defineStore('file', () => {
 
   async function init(): Promise<void> {
     await loadRecentFiles()
+    await restoreSession()
   }
 
   async function newFile(): Promise<boolean> {
@@ -399,6 +465,7 @@ export const useFileStore = defineStore('file', () => {
         activeTabId.value = tab.id
 
         await loadRecentFiles()
+        persistSession()
         return true
       } else if (result.error === '用户取消') {
         return false
@@ -955,6 +1022,7 @@ export const useFileStore = defineStore('file', () => {
             children: []
           }))
         }]
+        persistSession()
       }
 
       return success
@@ -1034,6 +1102,7 @@ export const useFileStore = defineStore('file', () => {
     folderItems.value = []
     folderHistory.value = []
     fileTree.value = []
+    persistSession()
   }
 
   // 保留兼容的导航方法（内部自动转换为树操作）
@@ -1153,6 +1222,7 @@ export const useFileStore = defineStore('file', () => {
 
     // 编辑器状态
     editorMode,
+    sidebarCollapsed,
     isLoading,
     error,
     recentFiles,
@@ -1190,6 +1260,7 @@ export const useFileStore = defineStore('file', () => {
 
     // 编辑器操作
     setEditorMode,
+    toggleSidebar,
     setCursorPosition,
     setImageCompressSettings,
 

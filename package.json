@@ -38,6 +38,7 @@
     "adm-zip": "^0.5.16",
     "archiver": "^7.0.1",
     "electron-updater": "^6.3.9",
+    "katex": "^0.16.46",
     "markdown-it": "^14.1.1",
     "prosemirror-commands": "^1.7.1",
     "prosemirror-dropcursor": "^1.8.2",

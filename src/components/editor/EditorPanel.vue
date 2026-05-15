@@ -56,16 +56,27 @@ function onPreviewScroll(ratio: number): void {
           alt="M+"
           class="welcome-logo"
         >
-        <h1 class="welcome-title">Markdown+</h1>
-        <p class="welcome-subtitle">轻量级 Markdown 编辑器</p>
+        <h1 class="welcome-title">
+          Markdown+
+        </h1>
+        <p class="welcome-subtitle">
+          轻量级 Markdown 编辑器
+        </p>
 
         <div class="welcome-actions">
           <button
             class="welcome-btn primary"
             @click="fileStore.newFile()"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-width="2" d="M12 4v16m8-8H4" />
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                stroke-width="2"
+                d="M12 4v16m8-8H4"
+              />
             </svg>
             新建文件
           </button>
@@ -73,9 +84,19 @@ function onPreviewScroll(ratio: number): void {
             class="welcome-btn"
             @click="fileStore.openFile()"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-width="2" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-              <path stroke-width="2" d="M14 2v6h6" />
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                stroke-width="2"
+                d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+              />
+              <path
+                stroke-width="2"
+                d="M14 2v6h6"
+              />
             </svg>
             打开文件
           </button>
@@ -83,15 +104,24 @@ function onPreviewScroll(ratio: number): void {
             class="welcome-btn"
             @click="fileStore.openFolder()"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                stroke-width="2"
+                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+              />
             </svg>
             打开文件夹
           </button>
         </div>
 
         <div class="welcome-shortcuts">
-          <h2 class="shortcuts-title">快捷键</h2>
+          <h2 class="shortcuts-title">
+            快捷键
+          </h2>
           <div class="shortcuts-grid">
             <div class="shortcut-item">
               <kbd>Ctrl+N</kbd>

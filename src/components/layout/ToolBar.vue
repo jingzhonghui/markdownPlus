@@ -481,7 +481,6 @@ async function selectImageFile(): Promise<void> {
         </div>
       </div>
     </div>
-
   </div>
 </template>
 

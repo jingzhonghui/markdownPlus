@@ -691,6 +691,80 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
+  async function importFolder(): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      if (!window.electronAPI) {
+        error.value = 'Electron API 不可用'
+        return false
+      }
+
+      // 若已打开文件夹，将其作为默认目标文件夹
+      const targetFolder = openedFolderPath.value || undefined
+      const result = await window.electronAPI.importFolder(undefined, targetFolder)
+
+      if (result.success && result.data) {
+        const data = result.data as {
+          imported: Array<{ source: string; target: string }>
+          failed: Array<{ source: string; error: string }>
+          sourceDir: string
+          targetDir: string
+        }
+
+        // 刷新文件夹视图以显示新导入的文件
+        if (openedFolderPath.value && openedFolderPath.value === data.targetDir) {
+          // 目标文件夹就是当前打开的文件夹，直接刷新
+          await readFolder(openedFolderPath.value)
+        } else if (data.targetDir) {
+          // 未打开文件夹或打开了其他文件夹，自动打开目标文件夹
+          const success = await readFolder(data.targetDir)
+          if (success) {
+            const folderName = data.targetDir.split(/[/\\]/).pop() || data.targetDir
+            fileTree.value = [{
+              name: folderName,
+              path: data.targetDir,
+              isDirectory: true,
+              isExpanded: true,
+              isLoading: false,
+              children: folderItems.value.map((item: FolderItem) => ({
+                name: item.name,
+                path: item.path,
+                isDirectory: item.isDirectory,
+                isExpanded: false,
+                isLoading: false,
+                children: []
+              }))
+            }]
+            persistSession()
+          }
+        }
+
+        // 显示导入结果提示
+        const importedCount = data.imported.length
+        const failedCount = data.failed.length
+        if (failedCount > 0) {
+          error.value = `导入完成：成功 ${importedCount} 个，失败 ${failedCount} 个`
+        } else {
+          console.log(`批量导入完成：${importedCount} 个文件`)
+        }
+
+        return true
+      } else if (result.error === '用户取消') {
+        return false
+      } else {
+        error.value = result.error || '批量导入失败'
+        return false
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '批量导入失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function exportMarkdown(): Promise<boolean> {
     isLoading.value = true
     error.value = null
@@ -1042,6 +1116,19 @@ export const useFileStore = defineStore('file', () => {
       if (result.success && result.data) {
         openedFolderPath.value = dirPath
         folderItems.value = result.data
+
+        // 同步更新 fileTree 根节点的子节点，使侧边栏文件树即时刷新
+        if (fileTree.value.length > 0 && fileTree.value[0].path === dirPath) {
+          fileTree.value[0].children = result.data.map((item: FolderItem) => ({
+            name: item.name,
+            path: item.path,
+            isDirectory: item.isDirectory,
+            isExpanded: false,
+            isLoading: false,
+            children: []
+          }))
+        }
+
         return true
       }
       return false
@@ -1274,6 +1361,7 @@ export const useFileStore = defineStore('file', () => {
     confirmSaveDialog,
     confirmSaveBeforeAction,
     importMarkdown,
+    importFolder,
     exportMarkdown,
 
     // 资源管理

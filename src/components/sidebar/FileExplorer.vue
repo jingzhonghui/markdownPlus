@@ -324,7 +324,9 @@ onUnmounted(() => {
           class="dialog"
           @click.stop
         >
-          <h3 class="dialog-title">{{ inputDialogTitle }}</h3>
+          <h3 class="dialog-title">
+            {{ inputDialogTitle }}
+          </h3>
           <input
             ref="inputRef"
             v-model="inputValue"

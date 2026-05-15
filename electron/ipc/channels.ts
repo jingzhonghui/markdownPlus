@@ -20,6 +20,7 @@ export const IPC_CHANNELS = {
     READ: 'mdx:read',
     WRITE: 'mdx:write',
     IMPORT_MD: 'mdx:importMd',
+    IMPORT_FOLDER: 'mdx:importFolder',
     EXPORT_MD: 'mdx:exportMd',
     ADD_IMAGE: 'mdx:addImage',
     GET_IMAGE: 'mdx:getImage',

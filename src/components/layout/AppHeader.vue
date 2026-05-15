@@ -113,6 +113,18 @@ async function importMarkdown(): Promise<void> {
 }
 
 /**
+ * 从文件夹批量导入 Markdown
+ */
+async function importFolder(): Promise<void> {
+  if (!await fileStore.confirmSaveBeforeAction()) return
+  const success = await fileStore.importFolder()
+  if (success) {
+    console.log('批量导入成功')
+  }
+  showFileMenu.value = false
+}
+
+/**
  * 导出 Markdown
  */
 async function exportMarkdown(): Promise<void> {
@@ -364,6 +376,12 @@ onUnmounted(() => {
               @click="importMarkdown"
             >
               <span class="item-label">导入 Markdown</span>
+            </div>
+            <div
+              class="menu-item"
+              @click="importFolder"
+            >
+              <span class="item-label">从文件夹导入</span>
             </div>
             <div
               class="menu-item"

@@ -70,7 +70,10 @@ function onExpandClick(): void {
           <path d="M9 18l6-6-6-6" />
         </svg>
       </span>
-      <span v-else class="expand-icon-placeholder" />
+      <span
+        v-else
+        class="expand-icon-placeholder"
+      />
 
       <!-- 文件夹/文件图标 -->
       <span class="node-icon">
@@ -100,16 +103,25 @@ function onExpandClick(): void {
       <span class="node-name">{{ node.name }}</span>
 
       <!-- 加载中指示器 -->
-      <span v-if="node.isLoading" class="loading-indicator">
+      <span
+        v-if="node.isLoading"
+        class="loading-indicator"
+      >
         <span class="loading-dot" />
       </span>
 
       <!-- 修改标记 -->
-      <span v-if="isModifiedFile(node)" class="modified-indicator">●</span>
+      <span
+        v-if="isModifiedFile(node)"
+        class="modified-indicator"
+      >●</span>
     </div>
 
     <!-- 递归渲染子节点 -->
-    <div v-if="node.isExpanded && node.children.length > 0" class="tree-children">
+    <div
+      v-if="node.isExpanded && node.children.length > 0"
+      class="tree-children"
+    >
       <FileTreeItem
         v-for="child in node.children"
         :key="child.path"

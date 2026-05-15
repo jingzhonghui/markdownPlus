@@ -253,6 +253,114 @@ export function registerMdxHandlers(): void {
     return saveMdx(filePath, document)
   })
 
+  // 从文件夹批量导入 Markdown
+  ipcMain.handle(IPC_CHANNELS.MDX.IMPORT_FOLDER, async (_, sourceFolder?: string, targetFolder?: string) => {
+    try {
+      let sourceDir = sourceFolder
+      let targetDir = targetFolder
+
+      // 选择源文件夹
+      if (!sourceDir) {
+        const { dialog } = await import('electron')
+        const window = BrowserWindow.getFocusedWindow()
+        const result = await dialog.showOpenDialog(window!, {
+          properties: ['openDirectory'],
+          title: '选择要导入的 Markdown 文件夹'
+        })
+        if (result.canceled || result.filePaths.length === 0) {
+          return { success: false, error: '用户取消' }
+        }
+        sourceDir = result.filePaths[0]
+      }
+
+      // 选择目标文件夹
+      if (!targetDir) {
+        const { dialog } = await import('electron')
+        const window = BrowserWindow.getFocusedWindow()
+        const result = await dialog.showOpenDialog(window!, {
+          properties: ['openDirectory'],
+          title: '选择保存 .mdx 文件的目标文件夹'
+        })
+        if (result.canceled || result.filePaths.length === 0) {
+          return { success: false, error: '用户取消' }
+        }
+        targetDir = result.filePaths[0]
+      }
+
+      // 递归扫描所有 .md 文件
+      const fs = await import('fs')
+      const path = await import('path')
+
+      function findMarkdownFiles(dir: string, baseDir: string): Array<{ relativePath: string; fullPath: string }> {
+        const results: Array<{ relativePath: string; fullPath: string }> = []
+        const entries = fs.readdirSync(dir, { withFileTypes: true })
+
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name)
+          if (entry.isDirectory()) {
+            results.push(...findMarkdownFiles(fullPath, baseDir))
+          } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+            const relativePath = path.relative(baseDir, fullPath)
+            results.push({ relativePath, fullPath })
+          }
+        }
+
+        return results
+      }
+
+      const mdFiles = findMarkdownFiles(sourceDir, sourceDir)
+
+      if (mdFiles.length === 0) {
+        return { success: false, error: '所选文件夹中没有找到 Markdown 文件' }
+      }
+
+      const imported: Array<{ source: string; target: string }> = []
+      const failed: Array<{ source: string; error: string }> = []
+
+      for (const { relativePath, fullPath } of mdFiles) {
+        // 计算目标路径：保持相对目录结构，将 .md 替换为 .mdx
+        const relativeDir = path.dirname(relativePath)
+        const baseName = path.basename(relativePath, '.md')
+        const targetSubDir = path.join(targetDir, relativeDir)
+        let targetFilePath = path.join(targetSubDir, `${baseName}.mdx`)
+
+        // 确保目标子目录存在
+        fs.mkdirSync(targetSubDir, { recursive: true })
+
+        // 处理同名冲突
+        if (fs.existsSync(targetFilePath)) {
+          let counter = 1
+          while (fs.existsSync(path.join(targetSubDir, `${baseName}_${counter}.mdx`))) {
+            counter++
+          }
+          targetFilePath = path.join(targetSubDir, `${baseName}_${counter}.mdx`)
+        }
+
+        // 导入并保存为 .mdx
+        const importResult = await importAndSaveAsMdx(targetFilePath, fullPath)
+
+        if (importResult.success) {
+          imported.push({ source: fullPath, target: targetFilePath })
+        } else {
+          failed.push({ source: fullPath, error: importResult.error || '导入失败' })
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          imported,
+          failed,
+          sourceDir,
+          targetDir
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: `批量导入失败: ${errorMessage}` }
+    }
+  })
+
   // 导入 Markdown
   ipcMain.handle(IPC_CHANNELS.MDX.IMPORT_MD, async (_, mdFilePath?: string, targetFolder?: string) => {
     try {

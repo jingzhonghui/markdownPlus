@@ -9,7 +9,7 @@ import * as path from 'path'
 import { IPC_CHANNELS } from './channels'
 import type { MdxDocument, MdxResult } from '../mdx/schema'
 import { createMdxDocument } from '../mdx/schema'
-import { openMdx, cleanupTempDir, calculateChecksum } from '../mdx/reader'
+import { openMdx, cleanupTempDir, cleanupAllTempDirs, calculateChecksum } from '../mdx/reader'
 import { saveMdx, saveAsMdx, createMdx, validateFilePath } from '../mdx/writer'
 import { importFromMarkdown, importAndSaveAsMdx } from '../mdx/import'
 import { exportMdxFile, exportToMarkdown } from '../mdx/export'
@@ -37,11 +37,6 @@ export function registerMdxHandlers(): void {
   // 创建新文件
   ipcMain.handle(IPC_CHANNELS.FILE.NEW, async () => {
     try {
-      // 清理之前的临时目录
-      if (currentDoc.tempDir) {
-        cleanupTempDir(currentDoc.tempDir)
-      }
-
       // 创建新的空白文档
       currentDoc.document = createMdxDocument('未命名文档', '')
       currentDoc.filePath = null
@@ -84,12 +79,8 @@ export function registerMdxHandlers(): void {
         targetPath = result.filePaths[0]
       }
 
-      // 清理之前的临时目录
-      if (currentDoc.tempDir) {
-        cleanupTempDir(currentDoc.tempDir)
-      }
-
       // 打开 MDX 文件
+      // createTempDirForFile 会自动清理并重建该文件对应的临时目录
       const result = openMdx(targetPath)
 
       if (!result.success || !result.data) {
@@ -217,10 +208,7 @@ export function registerMdxHandlers(): void {
         // 添加到最近文件列表
         addRecent(targetPath)
 
-        // 清理旧临时目录，打开新的
-        if (currentDoc.tempDir) {
-          cleanupTempDir(currentDoc.tempDir)
-        }
+        // 重新打开以更新临时目录（createTempDirForFile 会自动清理并重建）
         const openResult = openMdx(targetPath)
         if (openResult.success && openResult.data) {
           currentDoc.tempDir = openResult.data.tempDir
@@ -266,10 +254,9 @@ export function registerMdxHandlers(): void {
   })
 
   // 导入 Markdown
-  ipcMain.handle(IPC_CHANNELS.MDX.IMPORT_MD, async (_, mdFilePath?: string, targetPath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.MDX.IMPORT_MD, async (_, mdFilePath?: string, targetFolder?: string) => {
     try {
       let sourcePath = mdFilePath
-      let savePath = targetPath
 
       // 如果没有提供源文件路径，显示打开对话框
       if (!sourcePath) {
@@ -289,8 +276,26 @@ export function registerMdxHandlers(): void {
         sourcePath = result.filePaths[0]
       }
 
-      // 如果没有提供目标路径，显示保存对话框
-      if (!savePath) {
+      // 确定保存路径
+      let savePath: string
+
+      if (targetFolder) {
+        // 已打开文件夹：自动生成保存路径，跳过保存对话框
+        const fs = await import('fs')
+        const baseName = path.basename(sourcePath!, '.md')
+        let candidatePath = path.join(targetFolder, `${baseName}.mdx`)
+
+        // 处理同名冲突
+        if (fs.existsSync(candidatePath)) {
+          let counter = 1
+          while (fs.existsSync(path.join(targetFolder, `${baseName}_${counter}.mdx`))) {
+            counter++
+          }
+          candidatePath = path.join(targetFolder, `${baseName}_${counter}.mdx`)
+        }
+        savePath = candidatePath
+      } else {
+        // 未打开文件夹：显示保存对话框让用户选择
         const { dialog } = await import('electron')
         const window = BrowserWindow.getFocusedWindow()
         const defaultName = sourcePath!.split(/[/\\]/).pop()?.replace('.md', '.mdx') || '未命名文档.mdx'
@@ -311,8 +316,27 @@ export function registerMdxHandlers(): void {
       }
 
       // 导入并保存
-      const result = await importAndSaveAsMdx(savePath, sourcePath)
-      return result
+      const importResult = await importAndSaveAsMdx(savePath, sourcePath)
+
+      if (importResult.success && importResult.data) {
+        // 更新当前文档状态
+        currentDoc.document = importResult.data.document
+        currentDoc.filePath = savePath
+        currentDoc.tempDir = importResult.data.tempDir
+        currentDoc.isModified = false
+
+        addRecent(savePath)
+
+        return {
+          success: true,
+          data: {
+            document: importResult.data.document,
+            filePath: savePath
+          }
+        }
+      }
+
+      return importResult
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
       return { success: false, error: errorMessage }
@@ -647,9 +671,9 @@ export function isCloseConfirmed(): boolean {
  * 清理所有临时资源
  */
 export function cleanupAll(): void {
-  if (currentDoc.tempDir) {
-    cleanupTempDir(currentDoc.tempDir)
-  }
+  // 清理所有临时目录
+  cleanupAllTempDirs()
+
   currentDoc.document = null
   currentDoc.filePath = null
   currentDoc.tempDir = null

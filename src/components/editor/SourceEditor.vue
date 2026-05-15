@@ -762,7 +762,7 @@ defineExpose({
 
 <style scoped>
 .source-container {
-  flex: 1;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -771,7 +771,7 @@ defineExpose({
 
 .codemirror-wrapper {
   flex: 1;
-  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -781,6 +781,7 @@ defineExpose({
 
 .codemirror-wrapper :deep(.cm-scroller) {
   font-family: var(--font-mono);
+  overflow: auto;
 }
 
 /* 自动补全面板样式 */

@@ -567,7 +567,9 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
 
-      const result = await window.electronAPI.importMd()
+      // 若已打开文件夹，传入文件夹路径，主进程将自动保存到该文件夹
+      const targetFolder = openedFolderPath.value || undefined
+      const result = await window.electronAPI.importMd(undefined, targetFolder)
 
       if (result.success && result.data) {
         const doc = result.data.document as MdxDocument
@@ -590,6 +592,12 @@ export const useFileStore = defineStore('file', () => {
         activeTabId.value = tab.id
 
         await loadRecentFiles()
+
+        // 刷新文件夹视图以显示新导入的文件
+        if (openedFolderPath.value) {
+          await readFolder(openedFolderPath.value)
+        }
+
         return true
       } else if (result.error === '用户取消') {
         return false

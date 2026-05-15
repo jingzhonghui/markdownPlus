@@ -31,7 +31,7 @@ function getTempRoot(): string {
 }
 
 /**
- * 生成唯一的临时目录名
+ * 生成唯一的临时目录名（通用，用于保存等临时操作）
  */
 function generateTempDirName(): string {
   const timestamp = Date.now()
@@ -40,7 +40,16 @@ function generateTempDirName(): string {
 }
 
 /**
- * 创建临时目录
+ * 基于文件路径生成确定性临时目录名
+ * 同一文件路径始终对应同一个目录名
+ */
+function generateTempDirNameForFile(filePath: string): string {
+  const hash = crypto.createHash('sha256').update(filePath).digest('hex').substring(0, 16)
+  return `${TEMP_PREFIX}${hash}`
+}
+
+/**
+ * 创建临时目录（通用）
  * @returns 临时目录路径
  */
 export function createTempDir(): string {
@@ -50,12 +59,48 @@ export function createTempDir(): string {
 }
 
 /**
- * 清理临时目录
+ * 为指定文件创建或重建临时目录
+ * 同一文件路径复用同一目录，避免产生重复的临时目录
+ * @param filePath 文件绝对路径
+ * @returns 临时目录路径
+ */
+export function createTempDirForFile(filePath: string): string {
+  const dirName = generateTempDirNameForFile(filePath)
+  const tempDir = path.join(getTempRoot(), dirName)
+
+  // 若已存在则先清理，确保解压内容是最新的
+  if (fs.existsSync(tempDir)) {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+
+  fs.mkdirSync(tempDir, { recursive: true })
+  return tempDir
+}
+
+/**
+ * 清理单个临时目录
  * @param tempDir 临时目录路径
  */
 export function cleanupTempDir(tempDir: string): void {
   if (fs.existsSync(tempDir)) {
     fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
+/**
+ * 清理所有临时目录
+ * 在应用退出时调用，删除 markdown-plus 临时根目录下的全部内容
+ */
+export function cleanupAllTempDirs(): void {
+  const root = getTempRoot()
+  if (!fs.existsSync(root)) return
+
+  const entries = fs.readdirSync(root)
+  for (const entry of entries) {
+    if (entry.startsWith(TEMP_PREFIX)) {
+      const dirPath = path.join(root, entry)
+      fs.rmSync(dirPath, { recursive: true, force: true })
+    }
   }
 }
 
@@ -195,8 +240,8 @@ export function openMdx(filePath: string): MdxResult<{ document: MdxDocument; te
       return { success: false, error: '文件扩展名必须是 .mdx' }
     }
 
-    // 创建临时目录
-    const tempDir = createTempDir()
+    // 创建基于文件路径的确定性临时目录
+    const tempDir = createTempDirForFile(filePath)
 
     try {
       // 解压 ZIP 文件

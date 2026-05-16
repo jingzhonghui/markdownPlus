@@ -27,6 +27,64 @@ import type { IRPluginState } from '../../utils/prosemirror'
 import { TextSelection } from 'prosemirror-state'
 import { wrapIn, setBlockType } from 'prosemirror-commands'
 import { wrapInList } from 'prosemirror-schema-list'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
+import type { NodeView } from 'prosemirror-view'
+
+class MathInlineView implements NodeView {
+  dom: HTMLSpanElement
+  private node
+  constructor(node: any) {
+    this.node = node
+    this.dom = document.createElement('span')
+    this.dom.className = 'math-inline'
+    this.renderMath()
+  }
+  update(node: any) {
+    if (node.type.name !== 'math_inline') return false
+    this.node = node
+    this.renderMath()
+    return true
+  }
+  private renderMath() {
+    try {
+      this.dom.innerHTML = katex.renderToString(this.node.attrs.source || '', { displayMode: false, throwOnError: false })
+    } catch {
+      this.dom.textContent = '$' + (this.node.attrs.source || '') + '$'
+    }
+  }
+  selectNode() { this.dom.classList.add('ProseMirror-selectednode') }
+  deselectNode() { this.dom.classList.remove('ProseMirror-selectednode') }
+  destroy() {}
+}
+
+class MathBlockView implements NodeView {
+  dom: HTMLDivElement
+  private node
+  constructor(node: any) {
+    this.node = node
+    this.dom = document.createElement('div')
+    this.dom.className = 'math-block'
+    this.dom.setAttribute('data-type', 'math_block')
+    this.renderMath()
+  }
+  update(node: any) {
+    if (node.type.name !== 'math_block') return false
+    this.node = node
+    this.renderMath()
+    return true
+  }
+  private renderMath() {
+    try {
+      this.dom.innerHTML = katex.renderToString(this.node.attrs.source || '', { displayMode: true, throwOnError: false })
+    } catch {
+      this.dom.textContent = '$$\n' + (this.node.attrs.source || '') + '\n$$'
+    }
+  }
+  selectNode() { this.dom.classList.add('ProseMirror-selectednode') }
+  deselectNode() { this.dom.classList.remove('ProseMirror-selectednode') }
+  destroy() {}
+}
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
@@ -70,11 +128,19 @@ function initEditor(): void {
     state,
     dispatchTransaction: (tr) => {
       const view = viewRef.value
-      if (!view) return
-      view.updateState(view.state.apply(tr))
+      if (!view || isUpdating.value) return
+      try {
+        view.updateState(view.state.apply(tr))
+      } catch {
+        return
+      }
       syncShowMarkers()
     },
     attributes: { class: 'ir-editor' },
+    nodeViews: {
+      math_inline: (node) => new MathInlineView(node),
+      math_block: (node) => new MathBlockView(node),
+    },
   })
 }
 

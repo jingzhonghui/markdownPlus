@@ -190,7 +190,7 @@ const nodes: Record<string, NodeSpec> = {
    * 表格行
    */
   table_row: {
-    content: 'table_cell*',
+    content: '(table_cell | table_header)*',
     parseDOM: [{ tag: 'tr' }],
     toDOM(): DOMOutputSpec {
       return ['tr', 0]
@@ -236,6 +236,61 @@ const nodes: Record<string, NodeSpec> = {
       const attrs: Record<string, string> = {}
       if (node.attrs.align) attrs.align = node.attrs.align as string
       return ['th', attrs, 0]
+    }
+  },
+
+  /**
+   * 行内数学公式（KaTeX）— 叶子节点，公式源码存于 source 属性
+   */
+  math_inline: {
+    group: 'inline',
+    inline: true,
+    atom: true,
+    attrs: { source: { default: '' } },
+    parseDOM: [
+      {
+        tag: 'span[data-type="math_inline"]',
+        getAttrs(dom: HTMLElement) {
+          return { source: dom.getAttribute('data-source') || '' }
+        }
+      }
+    ],
+    toDOM(node): DOMOutputSpec {
+      return [
+        'span',
+        {
+          'data-type': 'math_inline',
+          'data-source': node.attrs.source as string,
+          class: 'math-inline'
+        }
+      ]
+    }
+  },
+
+  /**
+   * 块级数学公式（KaTeX）— 叶子节点，公式源码存于 source 属性
+   */
+  math_block: {
+    group: 'block',
+    atom: true,
+    attrs: { source: { default: '' } },
+    parseDOM: [
+      {
+        tag: 'div[data-type="math_block"]',
+        getAttrs(dom: HTMLElement) {
+          return { source: dom.getAttribute('data-source') || '' }
+        }
+      }
+    ],
+    toDOM(node): DOMOutputSpec {
+      return [
+        'div',
+        {
+          'data-type': 'math_block',
+          'data-source': node.attrs.source as string,
+          class: 'math-block'
+        }
+      ]
     }
   },
 

@@ -43,6 +43,10 @@ export {
   baseKeymap
 } from './plugins'
 
+// IR 模式插件
+export { createIRPlugin, irPluginKey } from './ir-plugin'
+export type { IRPluginState } from './ir-plugin'
+
 // ProseMirror 核心类型重导出
 export type { EditorState, Transaction, Selection } from 'prosemirror-state'
 export type { Node as ProseMirrorNode } from 'prosemirror-model'

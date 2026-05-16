@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import type { MdxDocument, MdxImageAsset } from '../types/mdx'
 import { loadSessionState, saveSessionState } from './session'
 
-export type EditorMode = 'split' | 'source'
+export type EditorMode = 'split' | 'source' | 'ir'
 
 export interface FileInfo {
   path: string
@@ -52,7 +52,11 @@ export const useFileStore = defineStore('file', () => {
   const fileContent = computed<string>(() => activeTab.value?.content ?? '')
 
   // 编辑器状态
-  const editorMode = ref<EditorMode>('split')
+  const editorMode = ref<EditorMode>('ir')
+  const sessionEditorMode = loadSessionState()?.editorMode
+  if (sessionEditorMode === 'ir' || sessionEditorMode === 'source') {
+    editorMode.value = sessionEditorMode
+  }
   const sidebarCollapsed = ref(false)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
@@ -63,9 +67,9 @@ export const useFileStore = defineStore('file', () => {
 
   // 文件夹浏览状态
   const openedFolderPath = ref<string | null>(null)
-  const folderItems = ref<FolderItem[]>([])  // 保留兼容
-  const folderHistory = ref<string[]>([])     // 保留兼容
-  const fileTree = ref<FileTreeNode[]>([])   // 树形结构
+  const folderItems = ref<FolderItem[]>([]) // 保留兼容
+  const folderHistory = ref<string[]>([]) // 保留兼容
+  const fileTree = ref<FileTreeNode[]>([]) // 树形结构
 
   // Getters
   const hasFile = computed(() => activeTab.value !== null && activeTab.value.document !== null)
@@ -265,9 +269,7 @@ export const useFileStore = defineStore('file', () => {
   function persistSession(): void {
     saveSessionState({
       openedFolderPath: openedFolderPath.value,
-      openFilePaths: tabs.value
-        .map((t) => t.fileInfo?.path)
-        .filter((p): p is string => !!p),
+      openFilePaths: tabs.value.map((t) => t.fileInfo?.path).filter((p): p is string => !!p),
       activeFilePath: activeTab.value?.fileInfo?.path ?? null,
       sidebarCollapsed: sidebarCollapsed.value,
       editorMode: editorMode.value
@@ -285,21 +287,23 @@ export const useFileStore = defineStore('file', () => {
       const success = await readFolder(state.openedFolderPath)
       if (success) {
         const folderName = state.openedFolderPath.split(/[/\\]/).pop() || state.openedFolderPath
-        fileTree.value = [{
-          name: folderName,
-          path: state.openedFolderPath,
-          isDirectory: true,
-          isExpanded: true,
-          isLoading: false,
-          children: folderItems.value.map(item => ({
-            name: item.name,
-            path: item.path,
-            isDirectory: item.isDirectory,
-            isExpanded: false,
+        fileTree.value = [
+          {
+            name: folderName,
+            path: state.openedFolderPath,
+            isDirectory: true,
+            isExpanded: true,
             isLoading: false,
-            children: []
-          }))
-        }]
+            children: folderItems.value.map((item) => ({
+              name: item.name,
+              path: item.path,
+              isDirectory: item.isDirectory,
+              isExpanded: false,
+              isLoading: false,
+              children: []
+            }))
+          }
+        ]
       }
     }
 
@@ -722,21 +726,23 @@ export const useFileStore = defineStore('file', () => {
           const success = await readFolder(data.targetDir)
           if (success) {
             const folderName = data.targetDir.split(/[/\\]/).pop() || data.targetDir
-            fileTree.value = [{
-              name: folderName,
-              path: data.targetDir,
-              isDirectory: true,
-              isExpanded: true,
-              isLoading: false,
-              children: folderItems.value.map((item: FolderItem) => ({
-                name: item.name,
-                path: item.path,
-                isDirectory: item.isDirectory,
-                isExpanded: false,
+            fileTree.value = [
+              {
+                name: folderName,
+                path: data.targetDir,
+                isDirectory: true,
+                isExpanded: true,
                 isLoading: false,
-                children: []
-              }))
-            }]
+                children: folderItems.value.map((item: FolderItem) => ({
+                  name: item.name,
+                  path: item.path,
+                  isDirectory: item.isDirectory,
+                  isExpanded: false,
+                  isLoading: false,
+                  children: []
+                }))
+              }
+            ]
             persistSession()
           }
         }
@@ -1081,21 +1087,23 @@ export const useFileStore = defineStore('file', () => {
       // 初始化文件树
       if (success) {
         const folderName = dirPath.split(/[/\\]/).pop() || dirPath
-        fileTree.value = [{
-          name: folderName,
-          path: dirPath,
-          isDirectory: true,
-          isExpanded: true,
-          isLoading: false,
-          children: folderItems.value.map(item => ({
-            name: item.name,
-            path: item.path,
-            isDirectory: item.isDirectory,
-            isExpanded: false,
+        fileTree.value = [
+          {
+            name: folderName,
+            path: dirPath,
+            isDirectory: true,
+            isExpanded: true,
             isLoading: false,
-            children: []
-          }))
-        }]
+            children: folderItems.value.map((item) => ({
+              name: item.name,
+              path: item.path,
+              isDirectory: item.isDirectory,
+              isExpanded: false,
+              isLoading: false,
+              children: []
+            }))
+          }
+        ]
         persistSession()
       }
 

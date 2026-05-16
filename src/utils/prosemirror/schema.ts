@@ -82,9 +82,9 @@ const nodes: Record<string, NodeSpec> = {
     ],
     toDOM(node): DOMOutputSpec {
       const { language } = node.attrs
-      return language
-        ? ['pre', ['code', { class: 'language-' + language }, 0]]
-        : ['pre', ['code', 0]]
+      const attrs: Record<string, string> = {}
+      if (language) attrs['data-lang'] = language
+      return ['pre', attrs, ['code', { class: language ? 'language-' + language : '' }, 0]]
     }
   },
 
@@ -105,9 +105,7 @@ const nodes: Record<string, NodeSpec> = {
       }
     ],
     toDOM(node): DOMOutputSpec {
-      return node.attrs.order === 1
-        ? ['ol', 0]
-        : ['ol', { start: node.attrs.order }, 0]
+      return node.attrs.order === 1 ? ['ol', 0] : ['ol', { start: node.attrs.order }, 0]
     }
   },
 
@@ -164,7 +162,14 @@ const nodes: Record<string, NodeSpec> = {
       }
     ],
     toDOM(node): DOMOutputSpec {
-      return ['li', { 'data-type': 'task_item' }, 0]
+      return [
+        'li',
+        {
+          'data-type': 'task_item',
+          'data-checked': node.attrs.checked ? 'true' : 'false'
+        },
+        0
+      ]
     }
   },
 
@@ -316,10 +321,13 @@ const marks: Record<string, MarkSpec> = {
       { tag: 'strong' },
       { tag: 'b', getAttrs: (node: HTMLElement) => node.style.fontWeight !== 'normal' && null },
       { style: 'font-weight=400', clearMark: (m) => m.type.name === 'bold' },
-      { style: 'font-weight', getAttrs: (value: string) => /^(bold(er)?|[5-9]\d{2,})$/.test(value) && null }
+      {
+        style: 'font-weight',
+        getAttrs: (value: string) => /^(bold(er)?|[5-9]\d{2,})$/.test(value) && null
+      }
     ],
     toDOM(): DOMOutputSpec {
-      return ['strong', 0]
+      return ['strong', { 'data-mark': 'bold' }, 0]
     }
   },
 
@@ -329,12 +337,12 @@ const marks: Record<string, MarkSpec> = {
   italic: {
     parseDOM: [
       { tag: 'em' },
-      { tag: 'i', getAttrs: (node: HTMLElement) => node.style.fontStyle !== 'normal' && null },
+      { tag: 'i', getAttrs: (node: HTMLElement) => node.style.fontWeight !== 'normal' && null },
       { style: 'font-style=italic' },
       { style: 'font-style=normal', clearMark: (m) => m.type.name === 'italic' }
     ],
     toDOM(): DOMOutputSpec {
-      return ['em', 0]
+      return ['em', { 'data-mark': 'italic' }, 0]
     }
   },
 
@@ -349,7 +357,7 @@ const marks: Record<string, MarkSpec> = {
       { style: 'text-decoration=line-through' }
     ],
     toDOM(): DOMOutputSpec {
-      return ['s', 0]
+      return ['s', { 'data-mark': 'strikethrough' }, 0]
     }
   },
 
@@ -359,7 +367,7 @@ const marks: Record<string, MarkSpec> = {
   code: {
     parseDOM: [{ tag: 'code' }],
     toDOM(): DOMOutputSpec {
-      return ['code', 0]
+      return ['code', { 'data-mark': 'code' }, 0]
     }
   },
 

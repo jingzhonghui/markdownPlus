@@ -38,6 +38,7 @@ class MathInlineView implements NodeView {
     this.node = node
     this.dom = document.createElement('span')
     this.dom.className = 'math-inline'
+    this.dom.contentEditable = 'false'
     this.renderMath()
   }
   update(node: any) {
@@ -55,6 +56,8 @@ class MathInlineView implements NodeView {
   }
   selectNode() { this.dom.classList.add('ProseMirror-selectednode') }
   deselectNode() { this.dom.classList.remove('ProseMirror-selectednode') }
+  stopEvent(): boolean { return true }
+  ignoreMutation(): boolean { return true }
   destroy() {}
 }
 
@@ -66,6 +69,7 @@ class MathBlockView implements NodeView {
     this.dom = document.createElement('div')
     this.dom.className = 'math-block'
     this.dom.setAttribute('data-type', 'math_block')
+    this.dom.contentEditable = 'false'
     this.renderMath()
   }
   update(node: any) {
@@ -83,6 +87,8 @@ class MathBlockView implements NodeView {
   }
   selectNode() { this.dom.classList.add('ProseMirror-selectednode') }
   deselectNode() { this.dom.classList.remove('ProseMirror-selectednode') }
+  stopEvent(): boolean { return true }
+  ignoreMutation(): boolean { return true }
   destroy() {}
 }
 
@@ -91,7 +97,6 @@ const themeStore = useThemeStore()
 const { fileContent } = storeToRefs(fileStore)
 const editorRef = ref<HTMLDivElement>()
 const viewRef = ref<EditorView | null>(null)
-const isUpdating = ref(false)
 const isDragging = ref(false)
 const showMarkers = ref(false)
 const imageCache = new Map<string, string>()
@@ -128,12 +133,8 @@ function initEditor(): void {
     state,
     dispatchTransaction: (tr) => {
       const view = viewRef.value
-      if (!view || isUpdating.value) return
-      try {
-        view.updateState(view.state.apply(tr))
-      } catch {
-        return
-      }
+      if (!view) return
+      view.updateState(view.state.apply(tr))
       syncShowMarkers()
     },
     attributes: { class: 'ir-editor' },
@@ -233,26 +234,27 @@ watch(fileContent, (newContent) => {
   const currentMarkdown = serializeMarkdown(view.state.doc).replace(/\n+$/, '')
   const normalizedNewContent = (newContent || '').replace(/\n+$/, '')
   if (currentMarkdown === normalizedNewContent) return
-  isUpdating.value = true
+
   const { selection } = view.state
   const anchorPos = selection.anchor
   const headPos = selection.head
-  const newState = createEditorState(newContent || '')
-  view.updateState(newState)
-  syncShowMarkers()
-  const newDocLength = newState.doc.content.size
+  const newDoc = parseMarkdown(newContent || '')
+  const newDocLength = newDoc.content.size
   const safeAnchor = Math.min(anchorPos, newDocLength)
   const safeHead = Math.min(headPos, newDocLength)
-  try {
-    view.dispatch(
-      view.state.tr.setSelection(
-        safeAnchor <= safeHead
-          ? TextSelection.create(view.state.doc, safeAnchor, safeHead)
-          : TextSelection.create(view.state.doc, safeHead, safeAnchor)
-      )
+
+  const tr = view.state.tr
+    .replaceWith(0, view.state.doc.content.size, newDoc.content)
+    .setMeta('addToHistory', false)
+    .setSelection(
+      safeAnchor <= safeHead
+        ? TextSelection.create(newDoc, safeAnchor, safeHead)
+        : TextSelection.create(newDoc, safeHead, safeAnchor)
     )
-  } catch { /* ignore */ }
-  nextTick(() => { isUpdating.value = false; loadEditorImages() })
+
+  view.dispatch(tr)
+  syncShowMarkers()
+  nextTick(() => loadEditorImages())
 })
 
 watch(() => themeStore.currentTheme, () => {

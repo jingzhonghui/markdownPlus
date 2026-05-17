@@ -46,10 +46,22 @@ export const useFileStore = defineStore('file', () => {
   let tabIdCounter = 0
 
   // 向后兼容的代理 computed（从 activeTab 读取）
+  // 注意：Vue computed 对对象引用做缓存，直接修改 tab 属性不会触发下游更新。
+  // 使用 stateVersion 强制在属性变更时重新计算。
   const activeTab = computed(() => tabs.value.find((t) => t.id === activeTabId.value) ?? null)
-  const currentFile = computed<FileInfo | null>(() => activeTab.value?.fileInfo ?? null)
-  const document = computed<MdxDocument | null>(() => activeTab.value?.document ?? null)
-  const fileContent = computed<string>(() => activeTab.value?.content ?? '')
+  const stateVersion = ref(0)
+  const currentFile = computed<FileInfo | null>(() => {
+    stateVersion.value
+    return activeTab.value?.fileInfo ?? null
+  })
+  const document = computed<MdxDocument | null>(() => {
+    stateVersion.value
+    return activeTab.value?.document ?? null
+  })
+  const fileContent = computed<string>(() => {
+    stateVersion.value
+    return activeTab.value?.content ?? ''
+  })
 
   // 编辑器状态
   const editorMode = ref<EditorMode>('ir')
@@ -72,13 +84,21 @@ export const useFileStore = defineStore('file', () => {
   const fileTree = ref<FileTreeNode[]>([]) // 树形结构
 
   // Getters
-  const hasFile = computed(() => activeTab.value !== null && activeTab.value.document !== null)
-  const isModified = computed(() => activeTab.value?.fileInfo?.modified ?? false)
+  const hasFile = computed(() => {
+    stateVersion.value
+    return activeTab.value !== null && activeTab.value.document !== null
+  })
+  const isModified = computed(() => {
+    stateVersion.value
+    return activeTab.value?.fileInfo?.modified ?? false
+  })
   const isDirty = computed(() => {
+    stateVersion.value
     if (!activeTab.value?.document) return false
-    return isModified.value || !activeTab.value?.fileInfo?.path
+    return (activeTab.value?.fileInfo?.modified ?? false) || !activeTab.value?.fileInfo?.path
   })
   const fileName = computed(() => {
+    stateVersion.value
     const tab = activeTab.value
     if (!tab) return '未命名.mdx'
     if (tab.document?.metadata.title && tab.document.metadata.title !== '未命名文档') {
@@ -87,10 +107,12 @@ export const useFileStore = defineStore('file', () => {
     return tab.fileInfo?.name ?? '未命名.mdx'
   })
   const displayTitle = computed(() => {
+    stateVersion.value
     const name = fileName.value.replace('.mdx', '')
     return isModified.value ? `${name} *` : name
   })
   const imageAssets = computed(() => {
+    stateVersion.value
     return activeTab.value?.document?.assets.images || []
   })
   const hasMultipleTabs = computed(() => tabs.value.length > 1)
@@ -199,6 +221,7 @@ export const useFileStore = defineStore('file', () => {
     if (!tab) return
     tab.fileInfo = file
     if (!file) tab.content = ''
+    stateVersion.value++
     error.value = null
   }
 
@@ -215,10 +238,12 @@ export const useFileStore = defineStore('file', () => {
           modified: false
         }
       }
+      stateVersion.value++
       updateWordCount()
     } else {
       tab.content = ''
       tab.fileInfo = null
+      stateVersion.value++
     }
   }
 
@@ -229,6 +254,7 @@ export const useFileStore = defineStore('file', () => {
     if (tab.document) {
       tab.document.content = content
     }
+    stateVersion.value++
     updateWordCount()
   }
 
@@ -242,6 +268,7 @@ export const useFileStore = defineStore('file', () => {
     if (tab.fileInfo) {
       tab.fileInfo.modified = true
     }
+    stateVersion.value++
     updateWordCount()
   }
 
@@ -250,6 +277,7 @@ export const useFileStore = defineStore('file', () => {
     if (tab?.fileInfo) {
       tab.fileInfo.modified = false
     }
+    stateVersion.value++
   }
 
   // ================ 其余状态操作 ================
@@ -1053,6 +1081,7 @@ export const useFileStore = defineStore('file', () => {
       if (tab.fileInfo) {
         tab.fileInfo.modified = true
       }
+      stateVersion.value++
 
       return { success: true }
     } catch (err) {

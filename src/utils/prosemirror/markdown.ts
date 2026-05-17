@@ -77,7 +77,7 @@ function createMarkdownIt(): MarkdownIt {
 function createTokens(schema: Schema): Record<string, any> {
   // 辅助函数：获取 token 属性
   const getAttr = (tok: Token, name: string): string | null => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     return (
       (tok as any).attrGet?.(name) ??
       tok.attrs?.find((a: [string, string]) => a[0] === name)?.[1] ??

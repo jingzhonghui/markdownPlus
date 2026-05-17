@@ -101,6 +101,9 @@ const isDragging = ref(false)
 const showMarkers = ref(false)
 const imageCache = new Map<string, string>()
 
+// 记录 IR 编辑器最后一次序列化的内容，用于 watch 中识别自身更新
+let lastSerializedContent = ''
+
 function createEditorState(content: string): EditorState {
   const doc = parseMarkdown(content || '')
   const plugins = [
@@ -110,6 +113,7 @@ function createEditorState(content: string): EditorState {
       const markdown = serializeMarkdown(state.doc)
       const currentContent = (fileStore.fileContent || '').replace(/\n+$/, '')
       const newMarkdown = markdown.replace(/\n+$/, '')
+      lastSerializedContent = newMarkdown
       if (currentContent !== newMarkdown) {
         fileStore.updateContent(markdown)
       }
@@ -128,13 +132,13 @@ function syncShowMarkers(): void {
 
 function initEditor(): void {
   if (!editorRef.value) return
-  const state = createEditorState(fileStore.fileContent)
+  const content = fileStore.fileContent
+  lastSerializedContent = content.replace(/\n+$/, '')
+  const state = createEditorState(content)
   viewRef.value = new EditorView(editorRef.value, {
     state,
-    dispatchTransaction: (tr) => {
-      const view = viewRef.value
-      if (!view) return
-      view.updateState(view.state.apply(tr))
+    dispatchTransaction(tr) {
+      this.updateState(this.state.apply(tr))
       syncShowMarkers()
     },
     attributes: { class: 'ir-editor' },
@@ -234,6 +238,8 @@ watch(fileContent, (newContent) => {
   const currentMarkdown = serializeMarkdown(view.state.doc).replace(/\n+$/, '')
   const normalizedNewContent = (newContent || '').replace(/\n+$/, '')
   if (currentMarkdown === normalizedNewContent) return
+  // 如果是 IR 编辑器自己产生的更新，跳过回写
+  if (normalizedNewContent === lastSerializedContent) return
 
   const { selection } = view.state
   const anchorPos = selection.anchor
@@ -252,9 +258,12 @@ watch(fileContent, (newContent) => {
         : TextSelection.create(newDoc, safeHead, safeAnchor)
     )
 
-  view.dispatch(tr)
-  syncShowMarkers()
-  nextTick(() => loadEditorImages())
+  // 防御：如果 state 在此期间被改变，跳过 dispatch 避免 mismatched transaction
+  if (tr.doc === view.state.doc) {
+    view.dispatch(tr)
+    syncShowMarkers()
+    nextTick(() => loadEditorImages())
+  }
 })
 
 watch(() => themeStore.currentTheme, () => {
@@ -304,8 +313,14 @@ defineExpose({
 </script>
 
 <template>
-  <div class="ir-container" :class="{ dragging: isDragging, 'ir-show-markers': showMarkers }">
-    <div ref="editorRef" class="ir-editor-wrapper" />
+  <div
+    class="ir-container"
+    :class="{ dragging: isDragging, 'ir-show-markers': showMarkers }"
+  >
+    <div
+      ref="editorRef"
+      class="ir-editor-wrapper"
+    />
   </div>
 </template>
 

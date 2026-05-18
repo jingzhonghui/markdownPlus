@@ -198,6 +198,10 @@ function createMarkdownParser(schema: Schema): MarkdownParser {
  */
 function createMarkdownSerializer(schema: Schema): MarkdownSerializer {
   const nodes: Record<string, (state: MarkdownSerializerState, node: ProseMirrorNode) => void> = {
+    text(state, node) {
+      state.text(node.text || '', false)
+    },
+
     paragraph(state, node) {
       state.renderInline(node)
       state.closeBlock(node)

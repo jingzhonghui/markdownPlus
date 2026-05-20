@@ -20,6 +20,7 @@ import {
   taskListClickPlugin,
   toggleHeading,
   insertImage,
+  insertLink,
   createIRPlugin,
   irPluginKey,
 } from '../../utils/prosemirror'
@@ -267,6 +268,118 @@ watch(() => fileStore.currentFile?.path, (newPath, oldPath) => {
   if (newPath !== oldPath) { imageCache.clear(); nextTick(() => loadEditorImages()) }
 })
 
+// ========== 工具栏事件处理 ==========
+
+/** 手动 toggle mark，有选区时直接 addMark，无选区时 addStoredMark */
+function toggleMarkInView(view: EditorView, markType: import('prosemirror-model').MarkType): void {
+  const { from, to } = view.state.selection
+  if (from === to) {
+    const tr = view.state.tr.addStoredMark(markType.create())
+    view.updateState(view.state.apply(tr))
+    syncShowMarkers()
+  } else {
+    const text = view.state.doc.textBetween(from, to)
+    const mark = markType.create()
+    const markedText = view.state.schema.text(text, [mark])
+    const tr = view.state.tr.replaceWith(from, to, markedText)
+    view.updateState(view.state.apply(tr))
+    syncShowMarkers()
+  }
+  view.focus()
+}
+
+function applyAndSync(view: EditorView, tr: any): void {
+  view.updateState(view.state.apply(tr))
+  syncShowMarkers()
+}
+
+function insertTableNode(): void {
+  const view = viewRef.value
+  if (!view) return
+  const { schema } = view.state
+  const createCell = (isHeader: boolean) => {
+    const type = isHeader ? schema.nodes.table_header : schema.nodes.table_cell
+    return type.createAndFill()!
+  }
+  const headerRow = schema.nodes.table_row.create(null, [
+    createCell(true), createCell(true), createCell(true)
+  ])
+  const dataRow = schema.nodes.table_row.create(null, [
+    createCell(false), createCell(false), createCell(false)
+  ])
+  const tableNode = schema.nodes.table.create(null, [headerRow, dataRow, dataRow])
+  const tr = view.state.tr.replaceSelectionWith(tableNode)
+  applyAndSync(view, tr)
+  view.focus()
+}
+
+function handleFormatEvent(e: Event): void {
+  const view = viewRef.value
+  if (!view) return
+  const { marks, nodes } = view.state.schema
+const format = (e as CustomEvent).detail as string
+  switch (format) {
+    case 'bold':
+      toggleMarkInView(view, marks.bold)
+      return
+    case 'italic':
+      toggleMarkInView(view, marks.italic)
+      return
+    case 'strikethrough':
+      toggleMarkInView(view, marks.strikethrough)
+      return
+    case 'unorderedList':
+      wrapInList(nodes.bullet_list)(view.state, (tr) => applyAndSync(view, tr))
+      break
+    case 'orderedList':
+      wrapInList(nodes.ordered_list)(view.state, (tr) => applyAndSync(view, tr))
+      break
+    case 'blockquote':
+      wrapIn(nodes.blockquote)(view.state, (tr) => applyAndSync(view, tr))
+      break
+    case 'table':
+      insertTableNode()
+      return
+  }
+  view.focus()
+}
+
+function handleHeadingEvent(e: Event): void {
+  const view = viewRef.value
+  if (!view) return
+  const level = (e as CustomEvent).detail as number
+  if (level === 0) {
+    setBlockType(view.state.schema.nodes.paragraph)(view.state, (tr) => applyAndSync(view, tr))
+  } else {
+    toggleHeading(level)(view.state, (tr) => applyAndSync(view, tr))
+  }
+  view.focus()
+}
+
+function handleLinkEvent(e: Event): void {
+  const view = viewRef.value
+  if (!view) return
+  const { href, title } = (e as CustomEvent).detail as { href: string; title: string }
+  insertLink(href, title)(view.state, (tr) => applyAndSync(view, tr))
+  view.focus()
+}
+
+function handleImageEvent(e: Event): void {
+  const view = viewRef.value
+  if (!view) return
+  const { src, alt } = (e as CustomEvent).detail as { src: string; alt: string }
+  insertImage(src, alt)(view.state, (tr) => applyAndSync(view, tr))
+  view.focus()
+}
+
+function handleCodeBlockEvent(e: Event): void {
+  const view = viewRef.value
+  if (!view) return
+  const { language } = (e as CustomEvent).detail as { language?: string }
+  setBlockType(view.state.schema.nodes.code_block, { language: language || '' })(view.state, (tr) => applyAndSync(view, tr))
+  view.focus()
+}
+
 onMounted(() => {
   initEditor()
   const el = editorRef.value
@@ -276,6 +389,11 @@ onMounted(() => {
     el.addEventListener('drop', handleDrop)
     el.addEventListener('paste', handlePaste)
   }
+  window.addEventListener('editor:format', handleFormatEvent)
+  window.addEventListener('editor:heading', handleHeadingEvent)
+  window.addEventListener('editor:link', handleLinkEvent)
+  window.addEventListener('editor:image', handleImageEvent)
+  window.addEventListener('editor:codeBlock', handleCodeBlockEvent)
   nextTick(() => { loadEditorImages(); viewRef.value?.focus() })
 })
 
@@ -294,6 +412,11 @@ onUnmounted(() => {
     el.removeEventListener('drop', handleDrop)
     el.removeEventListener('paste', handlePaste)
   }
+  window.removeEventListener('editor:format', handleFormatEvent)
+  window.removeEventListener('editor:heading', handleHeadingEvent)
+  window.removeEventListener('editor:link', handleLinkEvent)
+  window.removeEventListener('editor:image', handleImageEvent)
+  window.removeEventListener('editor:codeBlock', handleCodeBlockEvent)
   viewRef.value?.destroy()
 })
 

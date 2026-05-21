@@ -32,6 +32,7 @@ export {
   createDocumentChangePlugin,
   createImageClickPlugin,
   createDragDropPlugin,
+  createPastePlugin,
   createPlaceholderPlugin,
   selectionPlugin,
   taskListClickPlugin,

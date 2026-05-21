@@ -23,6 +23,7 @@ import {
   insertLink,
   createIRPlugin,
   irPluginKey,
+  createPastePlugin,
 } from '../../utils/prosemirror'
 import type { IRPluginState } from '../../utils/prosemirror'
 import { TextSelection } from 'prosemirror-state'
@@ -107,6 +108,10 @@ function createEditorState(content: string): EditorState {
   const plugins = [
     ...createPlugins(markdownSchema),
     taskListClickPlugin,
+    createPastePlugin((view, file) => {
+      // 异步处理图片插入，使用最新的 view 状态
+      handlePasteImage(view, file)
+    }),
     createDocumentChangePlugin((state) => {
       const markdown = serializeMarkdown(state.doc)
       const currentContent = (fileStore.fileContent || '').replace(/\n+$/, '')
@@ -118,6 +123,21 @@ function createEditorState(content: string): EditorState {
     createIRPlugin(),
   ]
   return EditorState.create({ doc, plugins })
+}
+
+async function handlePasteImage(view: EditorView, file: File): Promise<void> {
+  const result = await fileStore.addImage(file)
+  if (result.success && result.path) {
+    // 使用 view.state 和 view.dispatch 来确保状态一致性
+    const { state } = view
+    const tr = state.tr
+    const imageNode = state.schema.nodes.image.create({ src: result.path, alt: file.name })
+    tr.replaceSelectionWith(imageNode)
+    view.dispatch(tr)
+    view.focus()
+    // 加载并渲染图片
+    await nextTick(() => loadEditorImages())
+  }
 }
 
 function syncShowMarkers(): void {
@@ -185,23 +205,22 @@ async function handleDrop(e: DragEvent): Promise<void> {
   const url = e.dataTransfer.getData('text/uri-list')
   if (url && isImageUrl(url)) insertImage(url)
 }
+// 注意：粘贴图片处理已移至 ProseMirror 插件 createPastePlugin
+// 保留此函数是为了防止其他组件依赖，但实际处理在插件中完成
 async function handlePaste(e: ClipboardEvent): Promise<void> {
-  if (!e.clipboardData) return
-  for (const file of Array.from(e.clipboardData.files)) {
-    if (file.type.startsWith('image/')) {
-      e.preventDefault()
-      await insertImageFromFile(file)
-      return
-    }
-  }
+  // ProseMirror 插件会处理图片粘贴，这里不再重复处理
+  // 这样可以避免事务冲突
 }
 async function insertImageFromFile(file: File): Promise<void> {
   const result = await fileStore.addImage(file)
   if (result.success && result.path) {
     const view = viewRef.value
     if (!view) return
-    const { state, dispatch } = view
-    insertImage(result.path, file.name)(state, dispatch)
+    // 使用 view.state 创建事务，确保状态一致性
+    const tr = view.state.tr
+    const imageNode = view.state.schema.nodes.image.create({ src: result.path, alt: file.name })
+    tr.replaceSelectionWith(imageNode)
+    view.dispatch(tr)
     view.focus()
   }
 }

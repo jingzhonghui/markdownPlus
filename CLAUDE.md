@@ -139,3 +139,4 @@ document.mdx
 ### IPC 通信模式
 
 所有 IPC handler 统一返回 `{ success: boolean, data?: any, error?: string }` 格式。通道常量集中定义在 `electron/ipc/channels.ts` 中作为单一来源，preload 和主进程共享。
+

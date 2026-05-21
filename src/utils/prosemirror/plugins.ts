@@ -166,6 +166,75 @@ export function createDragDropPlugin(
 }
 
 /**
+ * 粘贴插件配置
+ * 处理粘贴图片 - 返回文件信息，由外部处理插入
+ */
+export function createPastePlugin(
+  onPasteImage: (view: import('prosemirror-view').EditorView, file: File) => void
+): Plugin {
+  return new Plugin({
+    props: {
+      handleDOMEvents: {
+        paste: (view, event) => {
+          const clipboardData = (event as ClipboardEvent).clipboardData
+          if (!clipboardData) return false
+
+          // 优先处理图片文件
+          const files = Array.from(clipboardData.files)
+          for (const file of files) {
+            if (file.type.startsWith('image/')) {
+              event.preventDefault()
+              onPasteImage(view, file)
+              return true
+            }
+          }
+
+          // 尝试从 clipboardData.items 获取（某些截图工具）
+          const items = Array.from(clipboardData.items)
+          for (const item of items) {
+            if (item.type.startsWith('image/')) {
+              const blob = item.getAsFile()
+              if (blob) {
+                event.preventDefault()
+                const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: item.type })
+                onPasteImage(view, file)
+                return true
+              }
+            }
+          }
+
+          // 尝试从 HTML 内容中提取 base64 图片
+          const html = clipboardData.getData('text/html')
+          if (html) {
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(html, 'text/html')
+            const images = doc.querySelectorAll('img')
+
+            for (const img of Array.from(images)) {
+              const src = img.getAttribute('src')
+              if (src && src.startsWith('data:')) {
+                event.preventDefault()
+                // 将 base64 转换为文件
+                fetch(src)
+                  .then(response => response.blob())
+                  .then(blob => {
+                    const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: blob.type })
+                    onPasteImage(view, file)
+                  })
+                  .catch(err => console.error('Failed to process base64 image:', err))
+                return true
+              }
+            }
+          }
+
+          return false
+        }
+      }
+    }
+  })
+}
+
+/**
  * 占位符插件
  * 空编辑器时显示提示文字
  */

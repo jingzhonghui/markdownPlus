@@ -103,6 +103,9 @@ const isDragging = ref(false)
 const showMarkers = ref(false)
 const imageCache = new Map<string, string>()
 
+// 标记是否正在从 store 同步内容到编辑器（避免 createDocumentChangePlugin 回写 store 造成循环）
+let isUpdatingFromStore = false
+
 function createEditorState(content: string): EditorState {
   const doc = parseMarkdown(content || '')
   const plugins = [
@@ -113,6 +116,7 @@ function createEditorState(content: string): EditorState {
       handlePasteImage(view, file)
     }),
     createDocumentChangePlugin((state) => {
+      if (isUpdatingFromStore) return
       const markdown = serializeMarkdown(state.doc)
       const currentContent = (fileStore.fileContent || '').replace(/\n+$/, '')
       const newMarkdown = markdown.replace(/\n+$/, '')
@@ -254,29 +258,18 @@ watch(fileContent, (newContent) => {
   const normalizedNewContent = (newContent || '').replace(/\n+$/, '')
   if (currentMarkdown === normalizedNewContent) return
 
-  const { selection } = view.state
-  const anchorPos = selection.anchor
-  const headPos = selection.head
-  const newDoc = parseMarkdown(newContent || '')
-  const newDocLength = newDoc.content.size
-  const safeAnchor = Math.min(anchorPos, newDocLength)
-  const safeHead = Math.min(headPos, newDocLength)
-
-  const tr = view.state.tr
-    .replaceWith(0, view.state.doc.content.size, newDoc.content)
-    .setMeta('addToHistory', false)
-    .setSelection(
-      safeAnchor <= safeHead
-        ? TextSelection.create(newDoc, safeAnchor, safeHead)
-        : TextSelection.create(newDoc, safeHead, safeAnchor)
-    )
-
-  // 防御：如果 state 在此期间被改变，跳过 dispatch 避免 mismatched transaction
-  if (tr.doc === view.state.doc) {
-    view.dispatch(tr)
-    syncShowMarkers()
-    nextTick(() => loadEditorImages())
-  }
+  // 从 store 同步内容到编辑器：直接用 updateState 替换整个 state
+  // 避免 dispatch transaction 时和当前 state 不匹配，同时阻止
+  // createDocumentChangePlugin 回写 store 造成双向循环
+  isUpdatingFromStore = true
+  const newState = EditorState.create({
+    doc: parseMarkdown(newContent || ''),
+    plugins: view.state.plugins
+  })
+  view.updateState(newState)
+  isUpdatingFromStore = false
+  syncShowMarkers()
+  nextTick(() => loadEditorImages())
 })
 
 watch(() => themeStore.currentTheme, () => {
@@ -421,7 +414,7 @@ onUnmounted(() => {
   const view = viewRef.value
   if (view) {
     const markdown = serializeMarkdown(view.state.doc)
-    fileStore.updateContent(markdown)
+    fileStore.setContent(markdown)
   }
 
   const el = editorRef.value

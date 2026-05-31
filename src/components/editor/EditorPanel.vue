@@ -175,7 +175,6 @@ function onPreviewScroll(ratio: number): void {
       <!-- 即时渲染模式 -->
       <IrEditor
         v-if="isIrMode"
-        :key="fileStore.activeTabId"
       />
 
       <!-- 源码模式：仅显示编辑器 -->

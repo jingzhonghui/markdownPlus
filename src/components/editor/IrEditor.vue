@@ -309,15 +309,15 @@ function insertTableNode(): void {
   const view = viewRef.value
   if (!view) return
   const { schema } = view.state
-  const createCell = (isHeader: boolean) => {
+  const createCell = (isHeader: boolean, text: string) => {
     const type = isHeader ? schema.nodes.table_header : schema.nodes.table_cell
-    return type.createAndFill()!
+    return type.create({}, schema.text(text))
   }
   const headerRow = schema.nodes.table_row.create(null, [
-    createCell(true), createCell(true), createCell(true)
+    createCell(true, '列1'), createCell(true, '列2'), createCell(true, '列3'),
   ])
   const dataRow = schema.nodes.table_row.create(null, [
-    createCell(false), createCell(false), createCell(false)
+    createCell(false, '内容'), createCell(false, '内容'), createCell(false, '内容'),
   ])
   const tableNode = schema.nodes.table.create(null, [headerRow, dataRow, dataRow])
   const tr = view.state.tr.replaceSelectionWith(tableNode)
@@ -605,22 +605,6 @@ defineExpose({
   border: none;
   border-top: 2px solid var(--color-border);
   margin: 1.5em 0;
-  position: relative;
-  height: 2em;
-}
-.ir-editor-wrapper :deep(.ProseMirror hr::before) {
-  content: '---';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--color-bg-primary);
-  padding: 0 8px;
-  opacity: 0.4;
-  font-family: var(--font-mono);
-  font-size: 0.85em;
-  user-select: none;
-  pointer-events: none;
 }
 .ir-editor-wrapper :deep(.ProseMirror table) { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
 .ir-editor-wrapper :deep(.ProseMirror th),

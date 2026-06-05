@@ -254,12 +254,12 @@ function createMarkdownSerializer(schema: Schema): MarkdownSerializer {
     },
 
     table(state, node) {
-      node.content.forEach((row, _, i) => {
-        state.renderContent(row)
+      node.forEach((row, _, i) => {
+        state.render(row, node, i)
         // 首行若是表头，追加 GFM 分隔行
         if (i === 0 && row.firstChild?.type.name === 'table_header') {
           const aligns: string[] = []
-          row.content.forEach((cell) => {
+          row.forEach((cell) => {
             const a = cell.attrs.align as string | null
             if (a === 'center') aligns.push(':---:')
             else if (a === 'right') aligns.push('---:')
@@ -276,8 +276,10 @@ function createMarkdownSerializer(schema: Schema): MarkdownSerializer {
 
     table_row(state, node) {
       state.write('| ')
-      state.renderContent(node)
-      state.write(' |')
+      node.forEach((cell) => {
+        state.renderInline(cell)
+        state.write(' | ')
+      })
       state.ensureNewLine()
     },
 

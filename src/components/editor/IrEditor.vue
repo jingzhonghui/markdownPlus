@@ -669,6 +669,44 @@ defineExpose({
   border-left: 2px solid var(--color-primary);
 }
 .ir-editor-wrapper :deep(.ProseMirror-gapcursor) { display: none; pointer-events: none; position: absolute; }
+
+/* prosemirror-tables 样式 */
+.ir-editor-wrapper :deep(.ProseMirror .tableWrapper) { overflow-x: auto; margin: 0.5em 0; }
+.ir-editor-wrapper :deep(.ProseMirror table) {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+}
+.ir-editor-wrapper :deep(.ProseMirror td),
+.ir-editor-wrapper :deep(.ProseMirror th) {
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+  min-width: 1em;
+  border: 1px solid var(--color-border);
+  padding: 8px 12px;
+  height: auto;
+  line-height: 1.5;
+}
+.ir-editor-wrapper :deep(.ProseMirror th) {
+  background: var(--color-bg-secondary);
+  font-weight: 600;
+}
+/* 移除了 columnResizing 插件，不再显示 resize handle */
+.ir-editor-wrapper :deep(.ProseMirror .selectedCell):after {
+  z-index: 2;
+  position: absolute;
+  content: '';
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--color-primary-light);
+  pointer-events: none;
+  opacity: 0.3;
+}
+.ir-editor-wrapper :deep(.ProseMirror-protectednode) { white-space: pre-wrap; }
 .ir-editor-wrapper :deep(.ProseMirror-focused .ProseMirror-gapcursor) { display: block; }
 .ir-editor-wrapper :deep(.ProseMirror-gapcursor:after) {
   content: ''; display: block; position: absolute; top: -2px; width: 20px;

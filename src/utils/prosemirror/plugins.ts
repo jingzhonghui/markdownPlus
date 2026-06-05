@@ -8,6 +8,7 @@ import { keymap } from 'prosemirror-keymap'
 import { dropCursor } from 'prosemirror-dropcursor'
 import { gapCursor } from 'prosemirror-gapcursor'
 import { baseKeymap } from 'prosemirror-commands'
+import { tableEditing, columnResizing, goToNextCell } from 'prosemirror-tables'
 import { buildKeymap } from './keymap'
 import { buildInputRules } from './inputrules'
 
@@ -29,6 +30,9 @@ export const pluginsKey = {
  */
 export function createPlugins(schema: Schema): Plugin[] {
   const plugins: Plugin[] = [
+    // 表格编辑核心插件（处理光标定位、单元格导航、选择等）
+    tableEditing(),
+
     // 输入规则（Markdown 语法自动转换）
     buildInputRules(schema),
 
@@ -75,9 +79,7 @@ export const selectionPlugin = new Plugin({
  * 文档更新插件
  * 用于监听文档变化，同步到外部状态
  */
-export function createDocumentChangePlugin(
-  onChange: (doc: EditorState) => void
-): Plugin {
+export function createDocumentChangePlugin(onChange: (doc: EditorState) => void): Plugin {
   return new Plugin({
     view() {
       return {
@@ -118,9 +120,7 @@ export const taskListClickPlugin = new Plugin({
  * 图片点击插件
  * 处理图片点击，显示图片工具栏
  */
-export function createImageClickPlugin(
-  onImageClick: (pos: number, node: any) => void
-): Plugin {
+export function createImageClickPlugin(onImageClick: (pos: number, node: any) => void): Plugin {
   return new Plugin({
     props: {
       handleClickOn(view, pos, node, nodePos, event) {
@@ -137,9 +137,7 @@ export function createImageClickPlugin(
 /**
  * 拖放插件配置
  */
-export function createDragDropPlugin(
-  onDrop: (pos: number, files: File[]) => void
-): Plugin {
+export function createDragDropPlugin(onDrop: (pos: number, files: File[]) => void): Plugin {
   return new Plugin({
     props: {
       handleDrop(view, event, slice, moved) {
@@ -216,12 +214,14 @@ export function createPastePlugin(
                 event.preventDefault()
                 // 将 base64 转换为文件
                 fetch(src)
-                  .then(response => response.blob())
-                  .then(blob => {
-                    const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: blob.type })
+                  .then((response) => response.blob())
+                  .then((blob) => {
+                    const file = new File([blob], `pasted-image-${Date.now()}.png`, {
+                      type: blob.type
+                    })
                     onPasteImage(view, file)
                   })
-                  .catch(err => console.error('Failed to process base64 image:', err))
+                  .catch((err) => console.error('Failed to process base64 image:', err))
                 return true
               }
             }
@@ -243,7 +243,11 @@ export function createPlaceholderPlugin(text: string): Plugin {
     props: {
       decorations: (state) => {
         const doc = state.doc
-        if (doc.childCount === 1 && doc.firstChild?.type.name === 'paragraph' && doc.firstChild?.content.size === 0) {
+        if (
+          doc.childCount === 1 &&
+          doc.firstChild?.type.name === 'paragraph' &&
+          doc.firstChild?.content.size === 0
+        ) {
           const deco = document.createElement('div')
           deco.className = 'ProseMirror-placeholder'
           deco.textContent = text
@@ -259,10 +263,4 @@ export function createPlaceholderPlugin(text: string): Plugin {
 /**
  * 导出所有插件创建函数
  */
-export {
-  history,
-  keymap,
-  dropCursor,
-  gapCursor,
-  baseKeymap
-}
+export { history, keymap, dropCursor, gapCursor, baseKeymap }

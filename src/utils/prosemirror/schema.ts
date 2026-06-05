@@ -3,6 +3,7 @@
  * 支持标准 Markdown 语法 + GFM 扩展（表格、任务列表）
  */
 import { Schema, NodeSpec, MarkSpec, DOMOutputSpec } from 'prosemirror-model'
+import { tableNodes } from 'prosemirror-tables'
 
 /**
  * 块级节点定义
@@ -173,71 +174,7 @@ const nodes: Record<string, NodeSpec> = {
     }
   },
 
-  /**
-   * 表格（GFM）
-   */
-  table: {
-    content: 'table_row+',
-    group: 'block',
-    isolating: true,
-    parseDOM: [{ tag: 'table' }],
-    toDOM(): DOMOutputSpec {
-      return ['table', ['tbody', 0]]
-    }
-  },
-
-  /**
-   * 表格行
-   */
-  table_row: {
-    content: '(table_cell | table_header)*',
-    parseDOM: [{ tag: 'tr' }],
-    toDOM(): DOMOutputSpec {
-      return ['tr', 0]
-    }
-  },
-
-  /**
-   * 表格单元格
-   */
-  table_cell: {
-    content: 'inline*',
-    attrs: { align: { default: null } },
-    parseDOM: [
-      {
-        tag: 'td',
-        getAttrs(dom: HTMLElement) {
-          return { align: dom.getAttribute('align') }
-        }
-      }
-    ],
-    toDOM(node): DOMOutputSpec {
-      const attrs: Record<string, string> = {}
-      if (node.attrs.align) attrs.align = node.attrs.align as string
-      return ['td', attrs, 0]
-    }
-  },
-
-  /**
-   * 表格表头单元格
-   */
-  table_header: {
-    content: 'inline*',
-    attrs: { align: { default: null } },
-    parseDOM: [
-      {
-        tag: 'th',
-        getAttrs(dom: HTMLElement) {
-          return { align: dom.getAttribute('align') }
-        }
-      }
-    ],
-    toDOM(node): DOMOutputSpec {
-      const attrs: Record<string, string> = {}
-      if (node.attrs.align) attrs.align = node.attrs.align as string
-      return ['th', attrs, 0]
-    }
-  },
+  // 表格节点由 tableNodes 扩展提供，见下文
 
   /**
    * 行内数学公式（KaTeX）— 叶子节点，公式源码存于 source 属性
@@ -455,9 +392,32 @@ const marks: Record<string, MarkSpec> = {
 }
 
 /**
+ * 合并表格节点（来自 prosemirror-tables）
+ * tableNodes 提供 table, table_row, table_cell, table_header
+ */
+const extendedNodes = {
+  ...nodes,
+  ...tableNodes({
+    tableGroup: 'block',
+    cellContent: 'inline*',
+    cellAttributes: {
+      align: {
+        default: null,
+        getFromDOM(dom) {
+          return (dom as HTMLElement).getAttribute('align')
+        },
+        setDOMAttr(value, attrs) {
+          if (value) attrs.align = value as string
+        }
+      }
+    }
+  })
+}
+
+/**
  * Markdown Schema 实例
  */
-export const markdownSchema = new Schema({ nodes, marks })
+export const markdownSchema = new Schema({ nodes: extendedNodes, marks })
 
 /**
  * 获取标题级别

@@ -101,12 +101,25 @@ function onDocumentClick(): void {
   headingMenuOpen.value = false
 }
 
+// 从右键菜单打开对话框的事件监听
+function onShowImageDialog() {
+  insertImage()
+}
+
+function onShowLinkDialog() {
+  insertLink()
+}
+
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
+  window.addEventListener('editor:showImageDialog', onShowImageDialog)
+  window.addEventListener('editor:showLinkDialog', onShowLinkDialog)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick)
+  window.removeEventListener('editor:showImageDialog', onShowImageDialog)
+  window.removeEventListener('editor:showLinkDialog', onShowLinkDialog)
 })
 
 /**

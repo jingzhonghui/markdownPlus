@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   ref,
+  reactive,
   watch,
   onMounted,
   onUnmounted,
@@ -26,12 +27,22 @@ import {
   createPastePlugin,
 } from '../../utils/prosemirror'
 import type { IRPluginState } from '../../utils/prosemirror'
-import { TextSelection } from 'prosemirror-state'
+import { TextSelection, Plugin as ProseMirrorPlugin } from 'prosemirror-state'
 import { wrapIn, setBlockType } from 'prosemirror-commands'
 import { wrapInList } from 'prosemirror-schema-list'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import type { NodeView } from 'prosemirror-view'
+import {
+  addColumnBefore,
+  addColumnAfter,
+  deleteColumn,
+  addRowBefore,
+  addRowAfter,
+  deleteRow,
+  deleteTable,
+  isInTable,
+} from 'prosemirror-tables'
 
 class MathInlineView implements NodeView {
   dom: HTMLSpanElement
@@ -103,8 +114,181 @@ const isDragging = ref(false)
 const showMarkers = ref(false)
 const imageCache = new Map<string, string>()
 
+// 右键菜单状态
+interface SubMenuItem {
+  label: string
+  action: () => void
+}
+
+interface ContextMenuItem {
+  label: string
+  action?: () => void
+  children?: SubMenuItem[]
+  divider?: boolean
+}
+
+interface ContextMenuState {
+  visible: boolean
+  x: number
+  y: number
+  items: ContextMenuItem[]
+  type: 'table' | 'general' | null
+  activeSubmenu: string | null
+}
+
+const contextMenu = reactive<ContextMenuState>({
+  visible: false,
+  x: 0,
+  y: 0,
+  items: [],
+  type: null,
+  activeSubmenu: null
+})
+
 // 标记是否正在从 store 同步内容到编辑器（避免 createDocumentChangePlugin 回写 store 造成循环）
 let isUpdatingFromStore = false
+
+// 关闭右键菜单
+function closeContextMenu() {
+  contextMenu.visible = false
+  contextMenu.type = null
+  contextMenu.activeSubmenu = null
+}
+
+// 计算菜单位置，确保在屏幕边界内
+function calculateMenuPosition(x: number, y: number, menuHeight: number = 80): { x: number; y: number } {
+  // 菜单预估尺寸
+  const menuWidth = 140
+
+  // 视口尺寸
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+
+  // 调整 X 坐标
+  let adjustedX = x
+  if (x + menuWidth > viewportWidth) {
+    adjustedX = x - menuWidth
+  }
+
+  // 调整 Y 坐标
+  let adjustedY = y
+  if (y + menuHeight > viewportHeight) {
+    adjustedY = Math.max(10, y - menuHeight)
+  }
+
+  return { x: adjustedX, y: adjustedY }
+}
+
+// 构建表格右键菜单项
+function buildTableMenuItems(view: EditorView): ContextMenuItem[] {
+  const { state } = view
+  if (!isInTable(state)) return []
+
+  return [
+    { label: '在左侧插入列', action: () => { addColumnBefore(state, view.dispatch); view.focus() } },
+    { label: '在右侧插入列', action: () => { addColumnAfter(state, view.dispatch); view.focus() } },
+    { label: '', action: () => {}, divider: true },
+    { label: '在上方插入行', action: () => { addRowBefore(state, view.dispatch); view.focus() } },
+    { label: '在下方插入行', action: () => { addRowAfter(state, view.dispatch); view.focus() } },
+    { label: '', action: () => {}, divider: true },
+    { label: '删除当前列', action: () => { deleteColumn(state, view.dispatch); view.focus() } },
+    { label: '删除当前行', action: () => { deleteRow(state, view.dispatch); view.focus() } },
+    { label: '', action: () => {}, divider: true },
+    { label: '删除表格', action: () => { deleteTable(state, view.dispatch); view.focus() } },
+  ]
+}
+
+// 构建通用右键菜单项
+function buildGeneralMenuItems(view: EditorView): ContextMenuItem[] {
+  const { state } = view
+  const { schema } = state
+
+  return [
+    {
+      label: '插入',
+      children: [
+        { label: '表格', action: () => { insertTableNode(); view.focus() } },
+        { label: '代码块', action: () => {
+          setBlockType(schema.nodes.code_block, { language: '' })(state, view.dispatch)
+          view.focus()
+        }},
+        { label: '图片', action: () => {
+          closeContextMenu()
+          window.dispatchEvent(new CustomEvent('editor:showImageDialog'))
+        }},
+        { label: '链接', action: () => {
+          closeContextMenu()
+          window.dispatchEvent(new CustomEvent('editor:showLinkDialog'))
+        }},
+        { label: '分割线', action: () => {
+          const hr = schema.nodes.horizontal_rule.create()
+          view.dispatch(state.tr.replaceSelectionWith(hr))
+          view.focus()
+        }},
+      ]
+    },
+    {
+      label: '格式化',
+      children: [
+        { label: '标题 1', action: () => { toggleHeading(1)(state, view.dispatch); view.focus() } },
+        { label: '标题 2', action: () => { toggleHeading(2)(state, view.dispatch); view.focus() } },
+        { label: '标题 3', action: () => { toggleHeading(3)(state, view.dispatch); view.focus() } },
+        { label: '引用块', action: () => { wrapIn(schema.nodes.blockquote)(state, view.dispatch); view.focus() } },
+        { label: '无序列表', action: () => { wrapInList(schema.nodes.bullet_list)(state, view.dispatch); view.focus() } },
+        { label: '有序列表', action: () => { wrapInList(schema.nodes.ordered_list)(state, view.dispatch); view.focus() } },
+      ]
+    },
+  ]
+}
+
+// 右键菜单插件
+function createContextMenuPlugin(): ProseMirrorPlugin {
+  return new ProseMirrorPlugin({
+    props: {
+      handleDOMEvents: {
+        contextmenu: (view, event) => {
+          const target = event.target as HTMLElement
+
+          // 检查是否在表格单元格内
+          if (target.closest('td, th')) {
+            event.preventDefault()
+
+            // 确保光标在点击的单元格中
+            const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
+            if (coords) {
+              const pos = view.state.doc.resolve(coords.pos)
+              const tr = view.state.tr.setSelection(new TextSelection(pos))
+              view.dispatch(tr)
+            }
+
+            contextMenu.items = buildTableMenuItems(view)
+            contextMenu.type = 'table'
+            const pos = calculateMenuPosition(event.clientX, event.clientY, 240) // 表格菜单约10项
+            contextMenu.x = pos.x
+            contextMenu.y = pos.y
+            contextMenu.visible = true
+            return true
+          }
+
+          // 检查是否在编辑器内容区域
+          if (target.closest('.ProseMirror')) {
+            event.preventDefault()
+
+            contextMenu.items = buildGeneralMenuItems(view)
+            contextMenu.type = 'general'
+            const pos = calculateMenuPosition(event.clientX, event.clientY, 60) // 一级菜单只有2项
+            contextMenu.x = pos.x
+            contextMenu.y = pos.y
+            contextMenu.visible = true
+            return true
+          }
+
+          return false
+        }
+      }
+    }
+  })
+}
 
 function createEditorState(content: string): EditorState {
   const doc = parseMarkdown(content || '')
@@ -125,6 +309,7 @@ function createEditorState(content: string): EditorState {
       }
     }),
     createIRPlugin(),
+    createContextMenuPlugin(),
   ]
   return EditorState.create({ doc, plugins })
 }
@@ -406,6 +591,7 @@ onMounted(() => {
   window.addEventListener('editor:link', handleLinkEvent)
   window.addEventListener('editor:image', handleImageEvent)
   window.addEventListener('editor:codeBlock', handleCodeBlockEvent)
+  document.addEventListener('click', closeContextMenu)
   nextTick(() => { loadEditorImages(); viewRef.value?.focus() })
 })
 
@@ -429,6 +615,7 @@ onUnmounted(() => {
   window.removeEventListener('editor:link', handleLinkEvent)
   window.removeEventListener('editor:image', handleImageEvent)
   window.removeEventListener('editor:codeBlock', handleCodeBlockEvent)
+  document.removeEventListener('click', closeContextMenu)
   viewRef.value?.destroy()
 })
 
@@ -457,6 +644,62 @@ defineExpose({
       class="ir-editor-wrapper"
     />
   </div>
+
+  <!-- 编辑器右键菜单 -->
+  <teleport to="body">
+    <div
+      v-if="contextMenu.visible"
+      class="context-menu editor-context-menu"
+      :class="{ 'table-menu': contextMenu.type === 'table' }"
+      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      @click.stop
+      @contextmenu.prevent.stop
+      @mouseleave="contextMenu.activeSubmenu = null"
+    >
+      <template v-for="(item, index) in contextMenu.items" :key="index">
+        <!-- 带二级菜单的项 -->
+        <div
+          v-if="item.children"
+          class="context-menu-item submenu-trigger"
+          :class="{ active: contextMenu.activeSubmenu === item.label }"
+          @mouseenter="contextMenu.activeSubmenu = item.label"
+        >
+          <span>{{ item.label }}</span>
+          <svg class="submenu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+
+          <!-- 二级菜单 -->
+          <div
+            v-show="contextMenu.activeSubmenu === item.label"
+            class="submenu"
+            @mouseenter="contextMenu.activeSubmenu = item.label"
+          >
+            <div
+              v-for="(child, childIndex) in item.children"
+              :key="childIndex"
+              class="submenu-item"
+              @click.stop="child.action(); closeContextMenu()"
+            >
+              {{ child.label }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 分隔线 -->
+        <div v-else-if="item.divider" class="context-menu-divider"></div>
+
+        <!-- 普通菜单项 -->
+        <div
+          v-else
+          class="context-menu-item"
+          @click="item.action?.(); closeContextMenu()"
+        >
+          {{ item.label }}
+        </div>
+      </template>
+    </div>
+  </teleport>
 </template>
 
 <style scoped>
@@ -698,4 +941,78 @@ defineExpose({
   animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
 }
 @keyframes ProseMirror-cursor-blink { to { visibility: hidden; } }
+
+/* 编辑器右键菜单样式 */
+.editor-context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.editor-context-menu .context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.editor-context-menu .context-menu-item:hover,
+.editor-context-menu .context-menu-item.active {
+  background: var(--color-bg-secondary);
+}
+
+.editor-context-menu .submenu-arrow {
+  margin-left: 8px;
+  opacity: 0.6;
+}
+
+/* 二级菜单 */
+.editor-context-menu .submenu-trigger {
+  position: relative;
+}
+
+.editor-context-menu .submenu {
+  position: absolute;
+  top: -4px;
+  left: 100%;
+  margin-left: 2px;
+  min-width: 130px;
+  padding: 4px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  z-index: 10001;
+}
+
+.editor-context-menu .submenu-item {
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.editor-context-menu .submenu-item:hover {
+  background: var(--color-bg-secondary);
+}
+
+.editor-context-menu .context-menu-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--color-border);
+}
 </style>

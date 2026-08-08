@@ -372,24 +372,6 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  async function addToRecent(filePath: string): Promise<void> {
-    const index = recentFiles.value.indexOf(filePath)
-    if (index > -1) {
-      recentFiles.value.splice(index, 1)
-    }
-    recentFiles.value.unshift(filePath)
-    if (recentFiles.value.length > 20) {
-      recentFiles.value = recentFiles.value.slice(0, 20)
-    }
-    if (window.electronAPI) {
-      try {
-        await window.electronAPI.getRecentFiles()
-      } catch {
-        // 忽略
-      }
-    }
-  }
-
   async function removeRecent(filePath: string): Promise<void> {
     recentFiles.value = recentFiles.value.filter((p) => p !== filePath)
     if (window.electronAPI?.removeRecentFile) {
@@ -436,7 +418,7 @@ export const useFileStore = defineStore('file', () => {
 
       // Fallback: 本地创建
       const { createMdxDocument } = await import('../types/mdx')
-      tab.document = createMdxDocument('未命名文档', '# 新建文档\n\n开始编写...')
+      tab.document = createMdxDocument('未命名文档', '')
       tab.content = tab.document.content
       tab.fileInfo = {
         path: '',
@@ -886,14 +868,16 @@ export const useFileStore = defineStore('file', () => {
   }
 
   async function getImage(
-    imagePath: string
+    imagePath: string,
+    filePath?: string
   ): Promise<{ success: boolean; data?: string; error?: string }> {
     try {
       if (!window.electronAPI) {
         return { success: false, error: 'Electron API 不可用' }
       }
 
-      const result = await window.electronAPI.getImage(imagePath)
+      const imageFilePath = filePath ?? activeTab.value?.fileInfo?.path ?? undefined
+      const result = await window.electronAPI.getImage(imagePath, imageFilePath)
       if (result.success && result.data) {
         let byteArray: Uint8Array
         const bufferData = result.data.buffer as unknown
@@ -1249,9 +1233,9 @@ export const useFileStore = defineStore('file', () => {
     try {
       if (!window.electronAPI) return false
       const result = await window.electronAPI.createFile(dirPath, name)
-      if (result.success) {
+      if (result.success && result.data?.path) {
         await readFolder(openedFolderPath.value!)
-        return true
+        return await openFile(result.data.path)
       }
       return false
     } catch {

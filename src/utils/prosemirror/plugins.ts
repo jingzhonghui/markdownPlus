@@ -8,7 +8,7 @@ import { keymap } from 'prosemirror-keymap'
 import { dropCursor } from 'prosemirror-dropcursor'
 import { gapCursor } from 'prosemirror-gapcursor'
 import { baseKeymap } from 'prosemirror-commands'
-import { tableEditing, columnResizing, goToNextCell } from 'prosemirror-tables'
+import { tableEditing } from 'prosemirror-tables'
 import { buildKeymap } from './keymap'
 import { buildInputRules } from './inputrules'
 
@@ -64,7 +64,7 @@ export const selectionPlugin = new Plugin({
     init() {
       return { from: 0, to: 0, empty: true }
     },
-    apply(tr, prev) {
+    apply(tr, _prev) {
       const { selection } = tr
       return {
         from: selection.from,
@@ -99,11 +99,11 @@ export function createDocumentChangePlugin(onChange: (doc: EditorState) => void)
  */
 export const taskListClickPlugin = new Plugin({
   props: {
-    handleClickOn(view, pos, node, nodePos, event) {
+    handleClickOn(view, _pos, node, nodePos, event) {
       // 检查是否点击了任务列表的复选框
       if (node.type.name === 'task_item') {
         const target = event.target as HTMLElement
-        if (target && target.tagName === 'INPUT' && target.type === 'checkbox') {
+        if (target && target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'checkbox') {
           const tr = view.state.tr
           const checked = (target as HTMLInputElement).checked
           tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, checked })
@@ -123,7 +123,7 @@ export const taskListClickPlugin = new Plugin({
 export function createImageClickPlugin(onImageClick: (pos: number, node: any) => void): Plugin {
   return new Plugin({
     props: {
-      handleClickOn(view, pos, node, nodePos, event) {
+      handleClickOn(_view, _pos, node, nodePos, _event) {
         if (node.type.name === 'image') {
           onImageClick(nodePos, node)
           return true
@@ -140,7 +140,7 @@ export function createImageClickPlugin(onImageClick: (pos: number, node: any) =>
 export function createDragDropPlugin(onDrop: (pos: number, files: File[]) => void): Plugin {
   return new Plugin({
     props: {
-      handleDrop(view, event, slice, moved) {
+      handleDrop(view, event, _slice, moved) {
         if (moved) return false
 
         const files = event.dataTransfer?.files
@@ -154,7 +154,7 @@ export function createDragDropPlugin(onDrop: (pos: number, files: File[]) => voi
         return false
       },
       handleDOMEvents: {
-        dragover: (view, event) => {
+        dragover: (_view, event) => {
           event.preventDefault()
           return true
         }

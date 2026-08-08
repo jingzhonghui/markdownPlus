@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import {
   ref,
+  shallowRef,
   watch,
   onMounted,
   onUnmounted,
-  nextTick,
-  computed
+  nextTick
 } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
@@ -31,7 +31,7 @@ const fileStore = useFileStore()
 const themeStore = useThemeStore()
 const { fileContent } = storeToRefs(fileStore)
 const editorRef = ref<HTMLDivElement>()
-const viewRef = ref<EditorView | null>(null)
+const viewRef = shallowRef<EditorView | null>(null)
 const isUpdating = ref(false)
 const isDragging = ref(false)
 
@@ -48,16 +48,6 @@ const floatToolbar = ref({
   isStrikethrough: false,
   isCode: false,
   isLink: false
-})
-
-// 图片工具栏状态
-const imageToolbar = ref({
-  visible: false,
-  top: 0,
-  left: 0,
-  nodePos: -1,
-  currentAlign: 'center',
-  currentWidth: null as number | null
 })
 
 /**

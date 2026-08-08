@@ -6,7 +6,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import type { MdxDocument, MdxResult, MdxImageAsset } from './schema'
+import type { MdxDocument, MdxResult } from './schema'
 
 /**
  * 导出选项
@@ -61,7 +61,7 @@ function replaceImagePaths(content: string, pathMappings: Map<string, string>): 
     const escapedPath = originalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedPath}(?:\\s+"([^"]*)")?\\)`, 'g')
 
-    updatedContent = updatedContent.replace(regex, (match, alt, title) => {
+    updatedContent = updatedContent.replace(regex, (_match, alt, title) => {
       if (title) {
         return `![${alt}](${newPath} "${title}")`
       }

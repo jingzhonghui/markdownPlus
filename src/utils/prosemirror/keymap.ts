@@ -1,11 +1,8 @@
 /**
  * ProseMirror 键盘快捷键和命令
  */
-import { Schema, NodeType, MarkType } from 'prosemirror-model'
+import { Schema, NodeType } from 'prosemirror-model'
 import {
-  EditorState,
-  Transaction,
-  Selection,
   TextSelection,
   Command
 } from 'prosemirror-state'
@@ -43,8 +40,8 @@ function toggleHeading(level: number): Command {
     state.doc.nodesBetween($from.pos, $to.pos, (node) => {
       if (node.type === nodeType && node.attrs.level === level) {
         isCurrentHeading = true
-        return false
       }
+      return true
     })
 
     if (isCurrentHeading) {
@@ -83,7 +80,6 @@ function toggleTaskChecked(): Command {
  */
 function insertHardBreak(): Command {
   return (state, dispatch) => {
-    const { $from } = state.selection
     const br = state.schema.nodes.hard_break
 
     if (dispatch) {
@@ -114,7 +110,7 @@ function insertHorizontalRule(): Command {
  */
 function insertLink(href = '', title = ''): Command {
   return (state, dispatch) => {
-    const { $from, $to, empty } = state.selection
+    const { empty } = state.selection
 
     if (empty) {
       // 没有选中文本，插入链接文本
@@ -225,7 +221,7 @@ function customSplitListItem(itemType: NodeType): Command {
  * 回车键处理
  * 在任务列表中点击复选框时切换状态
  */
-function handleEnter(schema: Schema): Command {
+function handleEnter(_schema: Schema): Command {
   return chainCommands(
     exitCode,
     (state, dispatch) => {
@@ -323,7 +319,7 @@ export function buildKeymap(schema: Schema): Record<string, Command> {
     'Mod-Shift-k': insertImage(),
 
     // 水平分割线
-    'Mod-Shift--': insertHorizontalRule,
+    'Mod-Shift--': insertHorizontalRule(),
 
     // 导航
     'Alt-ArrowUp': joinUp,

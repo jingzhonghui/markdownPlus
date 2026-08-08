@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from './ipc/channels'
+import type { MdxAttachmentAsset, MdxDocument } from './mdx/schema'
 
 export { IPC_CHANNELS }
 
@@ -28,13 +29,19 @@ export interface ImageAssetInfo {
   checksum: string
 }
 
+export interface MdxOpenResult {
+  document: MdxDocument
+  filePath?: string
+  isNew?: boolean
+}
+
 // API 类型定义
 export interface ElectronAPI {
   // 文件操作
-  newFile: () => Promise<{ success: boolean; data?: unknown; error?: string }>
-  openFile: (filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
+  newFile: () => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
+  openFile: (filePath?: string) => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
   saveFile: (content?: string, title?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
-  saveAsFile: (content?: string, title?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
+  saveAsFile: (content: string, title?: string) => Promise<{ success: boolean; data?: string; error?: string }>
   closeFile: () => Promise<{ success: boolean; error?: string }>
   getRecentFiles: () => Promise<{ success: boolean; data?: string[]; error?: string }>
   removeRecentFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
@@ -43,13 +50,13 @@ export interface ElectronAPI {
   // MDX 操作
   readMdx: (filePath: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   writeMdx: (filePath: string, data: unknown) => Promise<{ success: boolean; error?: string }>
-  importMd: (filePath?: string, targetPath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
+  importMd: (filePath?: string, targetPath?: string) => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
   importFolder: (sourceFolder?: string, targetFolder?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   exportMd: (filePath: string, outputDir?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   addImage: (filename: string, mimeType: string, data: ArrayBuffer, options?: ImageCompressOptions) => Promise<{ success: boolean; data?: unknown; error?: string }>
-  getImage: (imagePath: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
+  getImage: (imagePath: string, filePath?: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
   removeAsset: (assetId: string) => Promise<{ success: boolean; error?: string }>
-  listAssets: () => Promise<{ success: boolean; data?: { images: ImageAssetInfo[]; attachments: unknown[]; all: unknown[] }; error?: string }>
+  listAssets: () => Promise<{ success: boolean; data?: { images: ImageAssetInfo[]; attachments: MdxAttachmentAsset[]; all: unknown[] }; error?: string }>
   addAttachment: (filename: string, mimeType: string, data: ArrayBuffer) => Promise<{ success: boolean; data?: unknown; error?: string }>
   getAttachment: (attachmentPath: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
 
@@ -102,7 +109,7 @@ const api: ElectronAPI = {
   importFolder: (sourceFolder?, targetFolder?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.IMPORT_FOLDER, sourceFolder, targetFolder),
   exportMd: (filePath, outputDir?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.EXPORT_MD, filePath, outputDir),
   addImage: (filename, mimeType, data, options?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_IMAGE, filename, mimeType, data, options),
-  getImage: (imagePath) => ipcRenderer.invoke(IPC_CHANNELS.MDX.GET_IMAGE, imagePath),
+  getImage: (imagePath, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.GET_IMAGE, imagePath, filePath),
   removeAsset: (assetId) => ipcRenderer.invoke(IPC_CHANNELS.MDX.REMOVE_ASSET, assetId),
   listAssets: () => ipcRenderer.invoke(IPC_CHANNELS.MDX.LIST_ASSETS),
   addAttachment: (filename, mimeType, data) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_ATTACHMENT, filename, mimeType, data),

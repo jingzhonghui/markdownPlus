@@ -6,12 +6,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import {
-  createMdxDocument,
-  createDefaultAssets,
-  createDefaultSettings,
-  type MdxDocument
-} from '../schema'
+import { createMdxDocument } from '../schema'
 import {
   generateAssetId,
   generateContentHashName,

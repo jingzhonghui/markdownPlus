@@ -136,7 +136,7 @@ function replaceImagePaths(content: string, replacements: Map<string, string>): 
     const escapedPath = originalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedPath}(?:\\s+"([^"]*)")?\\)`, 'g')
 
-    updatedContent = updatedContent.replace(regex, (match, alt, title) => {
+    updatedContent = updatedContent.replace(regex, (_match, alt, title) => {
       if (title) {
         return `![${alt}](${newPath} "${title}")`
       }

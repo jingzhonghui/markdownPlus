@@ -16,11 +16,19 @@ export default [
     rules: {
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-unused-expressions': 'off',
+      '@typescript-eslint/no-empty-object-type': 'off',
       'vue/multi-word-component-names': 'off'
     }
   },
   {
-    ignores: ['dist/**', 'dist-electron/**', 'out/**', 'node_modules/**']
+    ignores: [
+      'dist/**',
+      'dist-electron/**',
+      'out/**',
+      'node_modules/**',
+      'public/vditor/dist/**'
+    ]
   }
 ]

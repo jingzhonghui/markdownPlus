@@ -139,7 +139,7 @@ export function getMarkdownIt(): MarkdownIt {
 
     // 自定义任务列表渲染
     md.use((markdownIt: MarkdownIt) => {
-      const defaultRender = markdownIt.renderer.rules.list_item_open || function(tokens, idx, options, env, self) {
+      const defaultRender = markdownIt.renderer.rules.list_item_open || function(tokens, idx, options, _env, self) {
         return self.renderToken(tokens, idx, options)
       }
 
@@ -193,7 +193,7 @@ export function renderMarkdown(content: string, imageAssets: MdxImageAsset[] = [
     // 替换图片引用路径
     const escapedPath = asset.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedPath}\\)`, 'g')
-    processedContent = processedContent.replace(regex, (match, alt) => {
+    processedContent = processedContent.replace(regex, (_match, alt) => {
       // 使用 data URL 或 blob URL（这里先用路径占位）
       return `![${alt}](${asset.path})`
     })

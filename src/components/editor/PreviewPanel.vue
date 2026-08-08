@@ -174,9 +174,13 @@ function scrollToLine(line: number): void {
 async function loadImages(): Promise<void> {
   if (!previewRef.value || !fileStore.document) return
 
+  const filePath = fileStore.currentFile?.path || undefined
   const images = previewRef.value.querySelectorAll('img')
-  
+
   for (const img of images) {
+    // 标签页切换后，放弃旧文档的剩余图片请求
+    if ((fileStore.currentFile?.path || undefined) !== filePath) return
+
     const src = img.getAttribute('src')
     if (!src) continue
 
@@ -185,17 +189,21 @@ async function loadImages(): Promise<void> {
       continue
     }
 
+    const cacheKey = `${filePath ?? ''}:${src}`
+
     // 从缓存获取
-    if (imageCache.has(src)) {
-      img.src = imageCache.get(src)!
+    if (imageCache.has(cacheKey)) {
+      img.src = imageCache.get(cacheKey)!
       continue
     }
 
     // 异步加载图片数据
     try {
-      const result = await fileStore.getImage(src)
+      const result = await fileStore.getImage(src, filePath)
       if (result.success && result.data) {
-        imageCache.set(src, result.data)
+        // 请求返回期间可能已经切换到其他标签页
+        if ((fileStore.currentFile?.path || undefined) !== filePath) return
+        imageCache.set(cacheKey, result.data)
         img.src = result.data
       } else {
         // 图片加载失败，显示占位符

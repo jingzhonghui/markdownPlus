@@ -74,7 +74,7 @@ function createMarkdownIt(): MarkdownIt {
  * 使用 prosemirror-markdown 期望的标准格式
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function createTokens(schema: Schema): Record<string, any> {
+function createTokens(_schema: Schema): Record<string, any> {
   // 辅助函数：获取 token 属性
   const getAttr = (tok: Token, name: string): string | null => {
      
@@ -196,7 +196,7 @@ function createMarkdownParser(schema: Schema): MarkdownParser {
 /**
  * 自定义 Markdown 序列化器
  */
-function createMarkdownSerializer(schema: Schema): MarkdownSerializer {
+function createMarkdownSerializer(_schema: Schema): MarkdownSerializer {
   const nodes: Record<string, (state: MarkdownSerializerState, node: ProseMirrorNode) => void> = {
     text(state, node) {
       state.text(node.text || '', false)
@@ -298,13 +298,8 @@ function createMarkdownSerializer(schema: Schema): MarkdownSerializer {
       state.closeBlock(node)
     },
 
-    hard_break(state, _node, parent, index) {
-      const next = parent.child(index + 1)
-      const prev = parent.child(index - 1)
-      if (next && prev && next.type.name !== 'hard_break' && prev.type.name !== 'hard_break') {
-        state.write('  ')
-      }
-      state.write('\n')
+    hard_break(state, node) {
+      state.write(node.type.name === 'hard_break' ? '\n' : '')
     },
 
     image(state, node) {
@@ -340,6 +335,7 @@ function createMarkdownSerializer(schema: Schema): MarkdownSerializer {
       close: string | ((_state: MarkdownSerializerState, mark: Mark) => string)
       mixable?: boolean
       expelEnclosingWhitespace?: boolean
+      escape?: boolean
     }
   > = {
     bold: { open: '**', close: '**', mixable: true, expelEnclosingWhitespace: true },

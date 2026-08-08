@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   ref,
+  shallowRef,
   reactive,
   watch,
   onMounted,
@@ -109,7 +110,7 @@ const fileStore = useFileStore()
 const themeStore = useThemeStore()
 const { fileContent } = storeToRefs(fileStore)
 const editorRef = ref<HTMLDivElement>()
-const viewRef = ref<EditorView | null>(null)
+const viewRef = shallowRef<EditorView | null>(null)
 const isDragging = ref(false)
 const showMarkers = ref(false)
 const imageCache = new Map<string, string>()
@@ -343,7 +344,9 @@ function initEditor(): void {
   viewRef.value = new EditorView(editorRef.value, {
     state,
     dispatchTransaction(tr) {
-      this.updateState(this.state.apply(tr))
+      const view = viewRef.value
+      if (!view) return
+      view.updateState(view.state.apply(tr))
       syncShowMarkers()
     },
     attributes: { class: 'ir-editor' },
@@ -396,7 +399,7 @@ async function handleDrop(e: DragEvent): Promise<void> {
 }
 // 注意：粘贴图片处理已移至 ProseMirror 插件 createPastePlugin
 // 保留此函数是为了防止其他组件依赖，但实际处理在插件中完成
-async function handlePaste(e: ClipboardEvent): Promise<void> {
+async function handlePaste(_e: ClipboardEvent): Promise<void> {
   // ProseMirror 插件会处理图片粘贴，这里不再重复处理
   // 这样可以避免事务冲突
 }
@@ -419,17 +422,26 @@ function isImageUrl(url: string): boolean {
 
 async function loadEditorImages(): Promise<void> {
   if (!editorRef.value) return
+
+  const filePath = fileStore.currentFile?.path || undefined
   for (const img of editorRef.value.querySelectorAll('img')) {
+    // 标签页切换后，放弃旧文档的剩余图片请求
+    if ((fileStore.currentFile?.path || undefined) !== filePath) return
+
     const src = img.getAttribute('src')
     if (!src || src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) continue
-    if (imageCache.has(src)) {
-      img.src = imageCache.get(src)!
+
+    const cacheKey = `${filePath ?? ''}:${src}`
+    if (imageCache.has(cacheKey)) {
+      img.src = imageCache.get(cacheKey)!
       continue
     }
     try {
-      const result = await fileStore.getImage(src)
+      const result = await fileStore.getImage(src, filePath)
       if (result.success && result.data) {
-        imageCache.set(src, result.data)
+        // 请求返回期间可能已经切换到其他标签页
+        if ((fileStore.currentFile?.path || undefined) !== filePath) return
+        imageCache.set(cacheKey, result.data)
         img.src = result.data
       }
     } catch { /* ignore */ }
@@ -656,7 +668,10 @@ defineExpose({
       @contextmenu.prevent.stop
       @mouseleave="contextMenu.activeSubmenu = null"
     >
-      <template v-for="(item, index) in contextMenu.items" :key="index">
+      <template
+        v-for="(item, index) in contextMenu.items"
+        :key="index"
+      >
         <!-- 带二级菜单的项 -->
         <div
           v-if="item.children"
@@ -665,7 +680,15 @@ defineExpose({
           @mouseenter="contextMenu.activeSubmenu = item.label"
         >
           <span>{{ item.label }}</span>
-          <svg class="submenu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            class="submenu-arrow"
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <polyline points="9 18 15 12 9 6" />
           </svg>
 
@@ -687,7 +710,10 @@ defineExpose({
         </div>
 
         <!-- 分隔线 -->
-        <div v-else-if="item.divider" class="context-menu-divider"></div>
+        <div
+          v-else-if="item.divider"
+          class="context-menu-divider"
+        />
 
         <!-- 普通菜单项 -->
         <div

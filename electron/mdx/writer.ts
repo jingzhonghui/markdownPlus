@@ -11,7 +11,7 @@ import * as crypto from 'crypto'
 import archiver from 'archiver'
 import type { MdxDocument, MdxJson, MdxResult, MdxImageAsset, MdxAttachmentAsset } from './schema'
 import { toMdxJson, createDefaultAssets, createDefaultSettings } from './schema'
-import { calculateChecksum, createTempDir, cleanupTempDir } from './reader'
+import { createTempDir, cleanupTempDir } from './reader'
 
 /**
  * 确保目录存在
@@ -71,36 +71,6 @@ function writeContent(tempDir: string, content: string, contentFile = 'content.m
 }
 
 /**
- * 写入资源文件
- * @param tempDir 临时目录
- * @param assetsDir 资源目录名
- * @param assets 资源数据映射（路径 -> Buffer）
- * @returns 写入的资源信息列表
- */
-function writeAssets(
-  tempDir: string,
-  assetsDir: string,
-  assets: Map<string, Buffer>
-): Array<{ path: string; checksum: string; size: number }> {
-  const writtenAssets: Array<{ path: string; checksum: string; size: number }> = []
-
-  for (const [relativePath, data] of assets) {
-    const assetPath = path.join(tempDir, assetsDir, relativePath)
-    ensureDir(path.dirname(assetPath))
-    fs.writeFileSync(assetPath, data)
-
-    const checksum = crypto.createHash('sha256').update(data).digest('hex')
-    writtenAssets.push({
-      path: path.join(assetsDir, relativePath),
-      checksum,
-      size: data.length
-    })
-  }
-
-  return writtenAssets
-}
-
-/**
  * 压缩目录为 ZIP 文件
  * @param sourceDir 源目录
  * @param targetPath 目标 ZIP 文件路径
@@ -114,6 +84,7 @@ function zipDirectory(sourceDir: string, targetPath: string): Promise<void> {
     })
 
     output.on('close', () => resolve())
+    output.on('error', (err) => reject(err))
     archive.on('error', (err) => reject(err))
     archive.on('warning', (err) => {
       if (err.code === 'ENOENT') {
@@ -310,6 +281,11 @@ export async function saveMdx(
   document: MdxDocument,
   assetsData?: Map<string, Buffer>
 ): Promise<MdxResult> {
+  const validation = validateFilePath(filePath)
+  if (!validation.valid) {
+    return { success: false, error: validation.error }
+  }
+
   const tempDir = createTempDir()
   const tempMdxPath = `${filePath}.tmp`
 

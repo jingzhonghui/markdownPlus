@@ -7,6 +7,7 @@ export interface SessionState {
   openFilePaths: string[]
   activeFilePath: string | null
   sidebarCollapsed: boolean
+  sidebarWidth?: number
   editorMode: EditorMode
 }
 

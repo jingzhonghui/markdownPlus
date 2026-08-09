@@ -64,12 +64,23 @@ export const useFileStore = defineStore('file', () => {
   })
 
   // 编辑器状态
+  const DEFAULT_SIDEBAR_WIDTH = 220
+  const MIN_SIDEBAR_WIDTH = 180
+  const MAX_SIDEBAR_WIDTH = 420
+  const clampSidebarWidth = (width: number): number => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width))
+
   const editorMode = ref<EditorMode>('ir')
   const sessionEditorMode = loadSessionState()?.editorMode
-  if (sessionEditorMode === 'ir' || sessionEditorMode === 'source') {
+  if (sessionEditorMode === 'ir' || sessionEditorMode === 'source' || sessionEditorMode === 'split') {
     editorMode.value = sessionEditorMode
   }
   const sidebarCollapsed = ref(false)
+  const savedSidebarWidth = loadSessionState()?.sidebarWidth
+  const sidebarWidth = ref(
+    typeof savedSidebarWidth === 'number' && Number.isFinite(savedSidebarWidth)
+      ? clampSidebarWidth(savedSidebarWidth)
+      : DEFAULT_SIDEBAR_WIDTH
+  )
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const recentFiles = ref<string[]>([])
@@ -295,6 +306,12 @@ export const useFileStore = defineStore('file', () => {
     persistSession()
   }
 
+  function setSidebarWidth(width: number, persist = true): void {
+    if (!Number.isFinite(width)) return
+    sidebarWidth.value = clampSidebarWidth(width)
+    if (persist) persistSession()
+  }
+
   // ================ 会话持久化 ================
 
   function persistSession(): void {
@@ -303,6 +320,7 @@ export const useFileStore = defineStore('file', () => {
       openFilePaths: tabs.value.map((t) => t.fileInfo?.path).filter((p): p is string => !!p),
       activeFilePath: activeTab.value?.fileInfo?.path ?? null,
       sidebarCollapsed: sidebarCollapsed.value,
+      sidebarWidth: sidebarWidth.value,
       editorMode: editorMode.value
     })
   }
@@ -311,8 +329,13 @@ export const useFileStore = defineStore('file', () => {
     const state = loadSessionState()
     if (!state) return
 
-    editorMode.value = state.editorMode
-    sidebarCollapsed.value = state.sidebarCollapsed
+    if (state.editorMode === 'ir' || state.editorMode === 'source' || state.editorMode === 'split') {
+      editorMode.value = state.editorMode
+    }
+    sidebarCollapsed.value = state.sidebarCollapsed === true
+    if (typeof state.sidebarWidth === 'number' && Number.isFinite(state.sidebarWidth)) {
+      sidebarWidth.value = clampSidebarWidth(state.sidebarWidth)
+    }
 
     if (state.openedFolderPath) {
       const success = await readFolder(state.openedFolderPath)
@@ -1336,6 +1359,7 @@ export const useFileStore = defineStore('file', () => {
     // 编辑器状态
     editorMode,
     sidebarCollapsed,
+    sidebarWidth,
     isLoading,
     error,
     recentFiles,
@@ -1375,6 +1399,7 @@ export const useFileStore = defineStore('file', () => {
     // 编辑器操作
     setEditorMode,
     toggleSidebar,
+    setSidebarWidth,
     setCursorPosition,
     setImageCompressSettings,
 

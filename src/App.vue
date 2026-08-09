@@ -3,7 +3,6 @@ import { onMounted, onUnmounted } from 'vue'
 import { useThemeStore } from './stores/theme'
 import { useFileStore } from './stores/file'
 import AppHeader from './components/layout/AppHeader.vue'
-import ToolBar from './components/layout/ToolBar.vue'
 import SideBar from './components/layout/SideBar.vue'
 import StatusBar from './components/layout/StatusBar.vue'
 import EditorPanel from './components/editor/EditorPanel.vue'
@@ -48,11 +47,8 @@ onUnmounted(() => {
     class="app-container"
     :data-theme="themeStore.currentTheme"
   >
-    <!-- 顶部菜单栏 -->
-    <AppHeader @toggle-sidebar="fileStore.toggleSidebar" />
-    
-    <!-- 工具栏 -->
-    <ToolBar />
+    <!-- 顶部标题栏 -->
+    <AppHeader />
 
     <!-- 主体区域 -->
     <div class="main-content">

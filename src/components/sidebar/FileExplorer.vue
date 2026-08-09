@@ -47,17 +47,27 @@ function showContextMenu(event: MouseEvent, items: ContextMenuItem[]): void {
 }
 
 function onEmptyContextMenu(event: MouseEvent): void {
-  const items: ContextMenuItem[] = [
-    { label: '新建文件', action: () => promptCreateFile(fileStore.openedFolderPath!) },
-    { label: '新建文件夹', action: () => promptCreateFolder(fileStore.openedFolderPath!) },
-    { label: '刷新', action: () => fileStore.readFolder(fileStore.openedFolderPath!) }
-  ]
+  const folderPath = fileStore.openedFolderPath
+  const items: ContextMenuItem[] = folderPath
+    ? [
+        { label: '新建文件', action: () => promptCreateFile(folderPath) },
+        { label: '新建文件夹', action: () => promptCreateFolder(folderPath) },
+        { label: '打开文件', action: () => openFile() },
+        { label: '打开文件夹', action: () => openFolder() },
+        { label: '刷新', action: () => fileStore.readFolder(folderPath) }
+      ]
+    : [
+        { label: '打开文件', action: () => openFile() },
+        { label: '打开文件夹', action: () => openFolder() }
+      ]
   showContextMenu(event, items)
 }
 
 function onFileContextMenu(event: MouseEvent, node: FileTreeNode): void {
   const items: ContextMenuItem[] = [
     { label: '打开', action: () => fileStore.openFile(node.path) },
+    { label: '保存', action: () => saveFileNode(node) },
+    { label: '另存为', action: () => saveFileNodeAs(node) },
     { label: '重命名', action: () => promptRename(node) },
     { label: '删除', action: () => promptDelete(node) },
     { label: '复制路径', action: () => fileStore.copyPath(node.path) }
@@ -69,6 +79,8 @@ function onFolderContextMenu(event: MouseEvent, node: FileTreeNode): void {
   const items: ContextMenuItem[] = [
     { label: '新建文件', action: () => promptCreateFile(node.path) },
     { label: '新建文件夹', action: () => promptCreateFolder(node.path) },
+    { label: '打开文件', action: () => openFile() },
+    { label: '打开文件夹', action: () => openFolder() },
     { label: '刷新', action: () => fileStore.loadChildren(node) },
     { label: '重命名', action: () => promptRename(node) },
     { label: '删除', action: () => promptDelete(node) },
@@ -159,16 +171,30 @@ async function promptDelete(node: FileTreeNode): Promise<void> {
 }
 
 // ========== 基础操作 ==========
-async function createNewFile(): Promise<void> {
-  await fileStore.newFile()
-}
-
 async function openFile(): Promise<void> {
+  if (!await fileStore.confirmSaveBeforeAction()) return
   await fileStore.openFile()
 }
 
 async function openFolder(): Promise<void> {
   await fileStore.openFolder()
+}
+
+async function activateFileNode(node: FileTreeNode): Promise<boolean> {
+  const tab = fileStore.tabs.find((item) => item.fileInfo?.path === node.path)
+  if (tab) {
+    fileStore.setActiveTab(tab.id)
+    return true
+  }
+  return fileStore.openFile(node.path)
+}
+
+async function saveFileNode(node: FileTreeNode): Promise<void> {
+  if (await activateFileNode(node)) await fileStore.saveFile()
+}
+
+async function saveFileNodeAs(node: FileTreeNode): Promise<void> {
+  if (await activateFileNode(node)) await fileStore.saveAsFile()
 }
 
 function handleNodeContextMenu(event: MouseEvent, node: FileTreeNode): void {
@@ -190,80 +216,27 @@ onUnmounted(() => {
 
 <template>
   <div class="file-explorer">
-    <!-- 头部操作栏 -->
-    <div class="explorer-header">
-      <div class="explorer-actions">
-        <button
-          class="action-btn"
-          title="新建文件"
-          @click="createNewFile"
+    <!-- 资源管理器标题栏 -->
+    <div class="explorer-titlebar">
+      <span class="explorer-title">资源管理器</span>
+      <button
+        class="explorer-collapse-btn"
+        type="button"
+        title="收起侧边栏"
+        aria-label="收起侧边栏"
+        @click="emit('collapse')"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <path
-              stroke-width="2"
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-        </button>
-        <button
-          class="action-btn"
-          title="打开文件"
-          @click="openFile"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <path
-              stroke-width="2"
-              d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
-            />
-            <path
-              stroke-width="2"
-              d="M14 2v6h6"
-            />
-          </svg>
-        </button>
-        <button
-          class="action-btn"
-          title="打开文件夹"
-          @click="openFolder"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <path
-              stroke-width="2"
-              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-            />
-          </svg>
-        </button>
-      </div>
-      <div class="explorer-collapse">
-        <button
-          class="action-btn"
-          title="收起侧边栏"
-          @click="emit('collapse')"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <path
-              stroke-width="2"
-              d="M11 17l-5-5 5-5M18 17l-5-5 5-5"
-            />
-          </svg>
-        </button>
-      </div>
+          <path
+            stroke-width="2"
+            d="M11 17l-5-5 5-5M18 17l-5-5 5-5"
+          />
+        </svg>
+      </button>
     </div>
 
     <!-- 文件列表 -->
@@ -417,26 +390,26 @@ onUnmounted(() => {
   height: 100%;
 }
 
-.explorer-header {
+.explorer-titlebar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  min-height: 40px;
+  padding: 0 8px 0 12px;
   border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
-.explorer-actions {
-  display: flex;
-  gap: 4px;
+.explorer-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.3px;
 }
 
-.explorer-collapse {
-  display: flex;
-}
-
-.action-btn {
-  width: 24px;
-  height: 24px;
+.explorer-collapse-btn {
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -448,19 +421,14 @@ onUnmounted(() => {
   transition: all 0.2s;
 }
 
-.action-btn:hover {
-  background-color: var(--color-bg-secondary);
+.explorer-collapse-btn:hover {
   color: var(--color-text);
+  background-color: var(--color-bg-secondary);
 }
 
-.action-btn svg {
+.explorer-collapse-btn svg {
   width: 16px;
   height: 16px;
-}
-
-.action-btn-sm svg {
-  width: 14px;
-  height: 14px;
 }
 
 .file-list {

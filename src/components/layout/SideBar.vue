@@ -1,8 +1,20 @@
 <script setup lang="ts">
+import { computed, onUnmounted, ref } from 'vue'
 import FileExplorer from '../sidebar/FileExplorer.vue'
 import { useFileStore } from '../../stores/file'
 
 const fileStore = useFileStore()
+
+const MIN_SIDEBAR_WIDTH = 180
+const MAX_SIDEBAR_WIDTH = 420
+const COLLAPSED_SIDEBAR_WIDTH = 48
+const sidebarStyle = computed(() => ({
+  width: `${props.collapsed ? COLLAPSED_SIDEBAR_WIDTH : fileStore.sidebarWidth}px`
+}))
+const resizeHandleRef = ref<HTMLElement | null>(null)
+const isResizing = ref(false)
+let resizeStartX = 0
+let resizeStartWidth = 0
 
 interface Props {
   collapsed?: boolean
@@ -23,6 +35,53 @@ function toggleSidebar(): void {
   emit('toggle')
 }
 
+function updateSidebarWidth(width: number, persist = false): void {
+  fileStore.setSidebarWidth(width, persist)
+}
+
+function handleResizeMove(event: PointerEvent): void {
+  if (!isResizing.value) return
+  updateSidebarWidth(resizeStartWidth + event.clientX - resizeStartX)
+}
+
+function stopResize(): void {
+  if (!isResizing.value) return
+  isResizing.value = false
+  document.removeEventListener('pointermove', handleResizeMove)
+  document.removeEventListener('pointerup', stopResize)
+  document.removeEventListener('pointercancel', stopResize)
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+  updateSidebarWidth(fileStore.sidebarWidth, true)
+}
+
+function startResize(event: PointerEvent): void {
+  if (event.button !== 0 || props.collapsed) return
+  event.preventDefault()
+  resizeStartX = event.clientX
+  resizeStartWidth = fileStore.sidebarWidth
+  isResizing.value = true
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+  document.addEventListener('pointermove', handleResizeMove)
+  document.addEventListener('pointerup', stopResize)
+  document.addEventListener('pointercancel', stopResize)
+  resizeHandleRef.value?.setPointerCapture(event.pointerId)
+}
+
+function handleResizeKeydown(event: KeyboardEvent): void {
+  let nextWidth: number | null = null
+  if (event.key === 'ArrowLeft') nextWidth = fileStore.sidebarWidth - 10
+  if (event.key === 'ArrowRight') nextWidth = fileStore.sidebarWidth + 10
+  if (event.key === 'Home') nextWidth = MIN_SIDEBAR_WIDTH
+  if (event.key === 'End') nextWidth = MAX_SIDEBAR_WIDTH
+  if (nextWidth === null) return
+  event.preventDefault()
+  updateSidebarWidth(nextWidth, true)
+}
+
+onUnmounted(stopResize)
+
 /**
  * 打开文件夹
  */
@@ -34,7 +93,8 @@ function openFolder(): void {
 <template>
   <aside
     class="sidebar"
-    :class="{ collapsed: props.collapsed }"
+    :class="{ collapsed: props.collapsed, 'is-resizing': isResizing }"
+    :style="sidebarStyle"
   >
     <!-- 折叠状态下的图标栏 -->
     <div
@@ -112,10 +172,24 @@ function openFolder(): void {
       </button>
     </div>
 
-    <!-- 展开状态：直接显示文件浏览器 -->
+    <!-- 展开状态：显示资源管理器 -->
     <FileExplorer
       v-else
       @collapse="toggleSidebar"
+    />
+    <div
+      v-if="!props.collapsed"
+      ref="resizeHandleRef"
+      class="sidebar-resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整侧边栏宽度"
+      :aria-valuemin="MIN_SIDEBAR_WIDTH"
+      :aria-valuemax="MAX_SIDEBAR_WIDTH"
+      :aria-valuenow="fileStore.sidebarWidth"
+      tabindex="0"
+      @pointerdown="startResize"
+      @keydown="handleResizeKeydown"
     />
   </aside>
 </template>
@@ -124,7 +198,6 @@ function openFolder(): void {
 .sidebar {
   display: flex;
   flex-direction: column;
-  width: var(--sidebar-width);
   background-color: var(--color-bg-primary);
   border-right: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -132,8 +205,12 @@ function openFolder(): void {
   position: relative;
 }
 
+.sidebar.is-resizing {
+  transition: none;
+}
+
 .sidebar.collapsed {
-  width: 48px;
+  width: 48px !important;
 }
 
 /* 折叠状态下的图标栏 */
@@ -174,5 +251,23 @@ function openFolder(): void {
   height: 1px;
   background-color: var(--color-border);
   margin: 8px 0;
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: 0;
+  z-index: 3;
+  width: 4px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:focus-visible {
+  background: var(--color-primary);
+  opacity: 0.5;
+  outline: none;
 }
 </style>

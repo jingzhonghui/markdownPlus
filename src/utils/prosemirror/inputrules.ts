@@ -8,10 +8,8 @@ import {
   InputRule,
   inputRules,
   wrappingInputRule,
-  textblockTypeInputRule,
-  undoInputRule
+  textblockTypeInputRule
 } from 'prosemirror-inputrules'
-import { markdownSchema } from './schema'
 
 /**
  * 创建标题输入规则 (# 标题)

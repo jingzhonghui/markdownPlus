@@ -7,12 +7,12 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import * as path from 'path'
 import { IPC_CHANNELS } from './channels'
-import type { MdxDocument, MdxResult } from '../mdx/schema'
+import type { MdxDocument } from '../mdx/schema'
 import { createMdxDocument } from '../mdx/schema'
-import { openMdx, cleanupTempDir, cleanupAllTempDirs, calculateChecksum } from '../mdx/reader'
-import { saveMdx, saveAsMdx, createMdx, validateFilePath } from '../mdx/writer'
-import { importFromMarkdown, importAndSaveAsMdx } from '../mdx/import'
-import { exportMdxFile, exportToMarkdown } from '../mdx/export'
+import { openMdx, cleanupTempDir, cleanupAllTempDirs } from '../mdx/reader'
+import { saveMdx, validateFilePath } from '../mdx/writer'
+import { importAndSaveAsMdx } from '../mdx/import'
+import { exportMdxFile } from '../mdx/export'
 import { addRecentFile as addRecent } from './file-handlers'
 
 // 存储当前打开的文档信息
@@ -28,6 +28,17 @@ const currentDoc: OpenedDocument = {
   tempDir: null,
   document: null,
   isModified: false
+}
+
+// 多标签页共用同一个主进程，通过文件路径定位各文档的资源目录
+const tempDirsByFile = new Map<string, string>()
+
+function normalizeFilePath(filePath: string): string {
+  return path.normalize(path.resolve(filePath))
+}
+
+function registerTempDir(filePath: string, tempDir: string): void {
+  tempDirsByFile.set(normalizeFilePath(filePath), tempDir)
 }
 
 /**
@@ -94,6 +105,7 @@ export function registerMdxHandlers(): void {
       currentDoc.filePath = targetPath
       currentDoc.tempDir = tempDir
       currentDoc.isModified = false
+      registerTempDir(targetPath, tempDir)
 
       // 添加到最近文件列表
       addRecent(targetPath)
@@ -212,10 +224,13 @@ export function registerMdxHandlers(): void {
         const openResult = openMdx(targetPath)
         if (openResult.success && openResult.data) {
           currentDoc.tempDir = openResult.data.tempDir
+          registerTempDir(targetPath, openResult.data.tempDir)
         }
       }
 
-      return saveResult
+      return saveResult.success
+        ? { ...saveResult, data: targetPath }
+        : saveResult
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
       return { success: false, error: errorMessage }
@@ -432,6 +447,7 @@ export function registerMdxHandlers(): void {
         currentDoc.filePath = savePath
         currentDoc.tempDir = importResult.data.tempDir
         currentDoc.isModified = false
+        registerTempDir(savePath, importResult.data.tempDir)
 
         addRecent(savePath)
 
@@ -500,7 +516,6 @@ export function registerMdxHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.APP.CLOSE_CONFIRMED, () => {
     setCloseConfirmed(true)
     // 触发窗口关闭
-    const { BrowserWindow } = require('electron') as typeof import('electron')
     const win = BrowserWindow.getFocusedWindow()
     if (win) {
       win.close()
@@ -515,16 +530,13 @@ export function registerMdxHandlers(): void {
         return { success: false, error: '没有打开的文档' }
       }
 
-      let buffer = Buffer.from(data)
+      let buffer: Buffer<ArrayBufferLike> = Buffer.from(data)
 
       // 如果需要压缩，调用压缩功能
       if (options?.compress) {
         try {
           const sharp = await import('sharp')
           let sharpInstance = sharp.default(buffer)
-
-          // 获取图片元数据
-          const metadata = await sharpInstance.metadata()
 
           // 调整尺寸
           if (options.maxWidth || options.maxHeight) {
@@ -579,15 +591,18 @@ export function registerMdxHandlers(): void {
   })
 
   // 获取图片数据
-  ipcMain.handle(IPC_CHANNELS.MDX.GET_IMAGE, async (_, imagePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.MDX.GET_IMAGE, async (_, imagePath: string, filePath?: string) => {
     try {
-      if (!currentDoc.tempDir) {
+      const tempDir = filePath
+        ? tempDirsByFile.get(normalizeFilePath(filePath))
+        : currentDoc.tempDir
+      if (!tempDir) {
         return { success: false, error: '没有打开的文档' }
       }
 
       const fs = await import('fs')
       const path = await import('path')
-      const fullPath = path.join(currentDoc.tempDir, imagePath)
+      const fullPath = path.join(tempDir, imagePath)
 
       if (!fs.existsSync(fullPath)) {
         return { success: false, error: '图片不存在' }

@@ -277,11 +277,11 @@ export function registerFileHandlers(): void {
           settings: { editor_theme: 'default', preview_style: 'github' }
         }, null, 2)
         zip.addFile('mdx.json', Buffer.from(mdxJson, 'utf-8'))
-        zip.addFile('content.md', Buffer.from('# ' + name.replace(/\.mdx$/i, '') + '\n\n', 'utf-8'))
+        zip.addFile('content.md', Buffer.from('', 'utf-8'))
         zip.writeZip(fullPath)
       } else {
         // 普通的 .md 文件
-        fs.writeFileSync(fullPath, '# ' + name.replace(/\.md$/i, '') + '\n\n', 'utf-8')
+        fs.writeFileSync(fullPath, '', 'utf-8')
       }
       return { success: true, data: { path: fullPath } }
     } catch (error) {

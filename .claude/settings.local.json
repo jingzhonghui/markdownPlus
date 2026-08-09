@@ -4,7 +4,9 @@
       "Bash(npx tsc:*)",
       "Bash(taskkill /f /im electron.exe)",
       "Bash(npm run:*)",
-      "Bash(npx electron-vite *)"
+      "Bash(npx electron-vite *)",
+      "Bash(git stash *)",
+      "Bash(npx vue-tsc *)"
     ]
   }
 }

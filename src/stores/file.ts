@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import type { MdxDocument, MdxImageAsset } from '../types/mdx'
 import { loadSessionState, saveSessionState } from './session'
 
-export type EditorMode = 'split' | 'source'
+export type EditorMode = 'split' | 'source' | 'ir'
 
 export interface FileInfo {
   path: string
@@ -46,13 +46,29 @@ export const useFileStore = defineStore('file', () => {
   let tabIdCounter = 0
 
   // 向后兼容的代理 computed（从 activeTab 读取）
+  // 注意：Vue computed 对对象引用做缓存，直接修改 tab 属性不会触发下游更新。
+  // 使用 stateVersion 强制在属性变更时重新计算。
   const activeTab = computed(() => tabs.value.find((t) => t.id === activeTabId.value) ?? null)
-  const currentFile = computed<FileInfo | null>(() => activeTab.value?.fileInfo ?? null)
-  const document = computed<MdxDocument | null>(() => activeTab.value?.document ?? null)
-  const fileContent = computed<string>(() => activeTab.value?.content ?? '')
+  const stateVersion = ref(0)
+  const currentFile = computed<FileInfo | null>(() => {
+    stateVersion.value
+    return activeTab.value?.fileInfo ?? null
+  })
+  const document = computed<MdxDocument | null>(() => {
+    stateVersion.value
+    return activeTab.value?.document ?? null
+  })
+  const fileContent = computed<string>(() => {
+    stateVersion.value
+    return activeTab.value?.content ?? ''
+  })
 
   // 编辑器状态
-  const editorMode = ref<EditorMode>('split')
+  const editorMode = ref<EditorMode>('ir')
+  const sessionEditorMode = loadSessionState()?.editorMode
+  if (sessionEditorMode === 'ir' || sessionEditorMode === 'source') {
+    editorMode.value = sessionEditorMode
+  }
   const sidebarCollapsed = ref(false)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
@@ -60,21 +76,30 @@ export const useFileStore = defineStore('file', () => {
   const wordCount = ref(0)
   const cursorLine = ref(1)
   const cursorColumn = ref(1)
+  const editorResetVersion = ref(0)
 
   // 文件夹浏览状态
   const openedFolderPath = ref<string | null>(null)
-  const folderItems = ref<FolderItem[]>([])  // 保留兼容
-  const folderHistory = ref<string[]>([])     // 保留兼容
-  const fileTree = ref<FileTreeNode[]>([])   // 树形结构
+  const folderItems = ref<FolderItem[]>([]) // 保留兼容
+  const folderHistory = ref<string[]>([]) // 保留兼容
+  const fileTree = ref<FileTreeNode[]>([]) // 树形结构
 
   // Getters
-  const hasFile = computed(() => activeTab.value !== null && activeTab.value.document !== null)
-  const isModified = computed(() => activeTab.value?.fileInfo?.modified ?? false)
+  const hasFile = computed(() => {
+    stateVersion.value
+    return activeTab.value !== null && activeTab.value.document !== null
+  })
+  const isModified = computed(() => {
+    stateVersion.value
+    return activeTab.value?.fileInfo?.modified ?? false
+  })
   const isDirty = computed(() => {
+    stateVersion.value
     if (!activeTab.value?.document) return false
-    return isModified.value || !activeTab.value?.fileInfo?.path
+    return (activeTab.value?.fileInfo?.modified ?? false) || !activeTab.value?.fileInfo?.path
   })
   const fileName = computed(() => {
+    stateVersion.value
     const tab = activeTab.value
     if (!tab) return '未命名.mdx'
     if (tab.document?.metadata.title && tab.document.metadata.title !== '未命名文档') {
@@ -83,10 +108,12 @@ export const useFileStore = defineStore('file', () => {
     return tab.fileInfo?.name ?? '未命名.mdx'
   })
   const displayTitle = computed(() => {
+    stateVersion.value
     const name = fileName.value.replace('.mdx', '')
     return isModified.value ? `${name} *` : name
   })
   const imageAssets = computed(() => {
+    stateVersion.value
     return activeTab.value?.document?.assets.images || []
   })
   const hasMultipleTabs = computed(() => tabs.value.length > 1)
@@ -183,6 +210,8 @@ export const useFileStore = defineStore('file', () => {
       } else {
         activeTabId.value = null
       }
+      stateVersion.value++
+      editorResetVersion.value++
     }
 
     return true
@@ -195,6 +224,7 @@ export const useFileStore = defineStore('file', () => {
     if (!tab) return
     tab.fileInfo = file
     if (!file) tab.content = ''
+    stateVersion.value++
     error.value = null
   }
 
@@ -211,10 +241,12 @@ export const useFileStore = defineStore('file', () => {
           modified: false
         }
       }
+      stateVersion.value++
       updateWordCount()
     } else {
       tab.content = ''
       tab.fileInfo = null
+      stateVersion.value++
     }
   }
 
@@ -225,6 +257,7 @@ export const useFileStore = defineStore('file', () => {
     if (tab.document) {
       tab.document.content = content
     }
+    stateVersion.value++
     updateWordCount()
   }
 
@@ -238,6 +271,7 @@ export const useFileStore = defineStore('file', () => {
     if (tab.fileInfo) {
       tab.fileInfo.modified = true
     }
+    stateVersion.value++
     updateWordCount()
   }
 
@@ -246,6 +280,7 @@ export const useFileStore = defineStore('file', () => {
     if (tab?.fileInfo) {
       tab.fileInfo.modified = false
     }
+    stateVersion.value++
   }
 
   // ================ 其余状态操作 ================
@@ -265,9 +300,7 @@ export const useFileStore = defineStore('file', () => {
   function persistSession(): void {
     saveSessionState({
       openedFolderPath: openedFolderPath.value,
-      openFilePaths: tabs.value
-        .map((t) => t.fileInfo?.path)
-        .filter((p): p is string => !!p),
+      openFilePaths: tabs.value.map((t) => t.fileInfo?.path).filter((p): p is string => !!p),
       activeFilePath: activeTab.value?.fileInfo?.path ?? null,
       sidebarCollapsed: sidebarCollapsed.value,
       editorMode: editorMode.value
@@ -285,21 +318,23 @@ export const useFileStore = defineStore('file', () => {
       const success = await readFolder(state.openedFolderPath)
       if (success) {
         const folderName = state.openedFolderPath.split(/[/\\]/).pop() || state.openedFolderPath
-        fileTree.value = [{
-          name: folderName,
-          path: state.openedFolderPath,
-          isDirectory: true,
-          isExpanded: true,
-          isLoading: false,
-          children: folderItems.value.map(item => ({
-            name: item.name,
-            path: item.path,
-            isDirectory: item.isDirectory,
-            isExpanded: false,
+        fileTree.value = [
+          {
+            name: folderName,
+            path: state.openedFolderPath,
+            isDirectory: true,
+            isExpanded: true,
             isLoading: false,
-            children: []
-          }))
-        }]
+            children: folderItems.value.map((item) => ({
+              name: item.name,
+              path: item.path,
+              isDirectory: item.isDirectory,
+              isExpanded: false,
+              isLoading: false,
+              children: []
+            }))
+          }
+        ]
       }
     }
 
@@ -337,24 +372,6 @@ export const useFileStore = defineStore('file', () => {
       }
     } catch {
       recentFiles.value = []
-    }
-  }
-
-  async function addToRecent(filePath: string): Promise<void> {
-    const index = recentFiles.value.indexOf(filePath)
-    if (index > -1) {
-      recentFiles.value.splice(index, 1)
-    }
-    recentFiles.value.unshift(filePath)
-    if (recentFiles.value.length > 20) {
-      recentFiles.value = recentFiles.value.slice(0, 20)
-    }
-    if (window.electronAPI) {
-      try {
-        await window.electronAPI.getRecentFiles()
-      } catch {
-        // 忽略
-      }
     }
   }
 
@@ -404,7 +421,7 @@ export const useFileStore = defineStore('file', () => {
 
       // Fallback: 本地创建
       const { createMdxDocument } = await import('../types/mdx')
-      tab.document = createMdxDocument('未命名文档', '# 新建文档\n\n开始编写...')
+      tab.document = createMdxDocument('未命名文档', '')
       tab.content = tab.document.content
       tab.fileInfo = {
         path: '',
@@ -722,21 +739,23 @@ export const useFileStore = defineStore('file', () => {
           const success = await readFolder(data.targetDir)
           if (success) {
             const folderName = data.targetDir.split(/[/\\]/).pop() || data.targetDir
-            fileTree.value = [{
-              name: folderName,
-              path: data.targetDir,
-              isDirectory: true,
-              isExpanded: true,
-              isLoading: false,
-              children: folderItems.value.map((item: FolderItem) => ({
-                name: item.name,
-                path: item.path,
-                isDirectory: item.isDirectory,
-                isExpanded: false,
+            fileTree.value = [
+              {
+                name: folderName,
+                path: data.targetDir,
+                isDirectory: true,
+                isExpanded: true,
                 isLoading: false,
-                children: []
-              }))
-            }]
+                children: folderItems.value.map((item: FolderItem) => ({
+                  name: item.name,
+                  path: item.path,
+                  isDirectory: item.isDirectory,
+                  isExpanded: false,
+                  isLoading: false,
+                  children: []
+                }))
+              }
+            ]
             persistSession()
           }
         }
@@ -852,14 +871,16 @@ export const useFileStore = defineStore('file', () => {
   }
 
   async function getImage(
-    imagePath: string
+    imagePath: string,
+    filePath?: string
   ): Promise<{ success: boolean; data?: string; error?: string }> {
     try {
       if (!window.electronAPI) {
         return { success: false, error: 'Electron API 不可用' }
       }
 
-      const result = await window.electronAPI.getImage(imagePath)
+      const imageFilePath = filePath ?? activeTab.value?.fileInfo?.path ?? undefined
+      const result = await window.electronAPI.getImage(imagePath, imageFilePath)
       if (result.success && result.data) {
         let byteArray: Uint8Array
         const bufferData = result.data.buffer as unknown
@@ -1047,6 +1068,7 @@ export const useFileStore = defineStore('file', () => {
       if (tab.fileInfo) {
         tab.fileInfo.modified = true
       }
+      stateVersion.value++
 
       return { success: true }
     } catch (err) {
@@ -1081,21 +1103,23 @@ export const useFileStore = defineStore('file', () => {
       // 初始化文件树
       if (success) {
         const folderName = dirPath.split(/[/\\]/).pop() || dirPath
-        fileTree.value = [{
-          name: folderName,
-          path: dirPath,
-          isDirectory: true,
-          isExpanded: true,
-          isLoading: false,
-          children: folderItems.value.map(item => ({
-            name: item.name,
-            path: item.path,
-            isDirectory: item.isDirectory,
-            isExpanded: false,
+        fileTree.value = [
+          {
+            name: folderName,
+            path: dirPath,
+            isDirectory: true,
+            isExpanded: true,
             isLoading: false,
-            children: []
-          }))
-        }]
+            children: folderItems.value.map((item) => ({
+              name: item.name,
+              path: item.path,
+              isDirectory: item.isDirectory,
+              isExpanded: false,
+              isLoading: false,
+              children: []
+            }))
+          }
+        ]
         persistSession()
       }
 
@@ -1212,9 +1236,9 @@ export const useFileStore = defineStore('file', () => {
     try {
       if (!window.electronAPI) return false
       const result = await window.electronAPI.createFile(dirPath, name)
-      if (result.success) {
+      if (result.success && result.data?.path) {
         await readFolder(openedFolderPath.value!)
-        return true
+        return await openFile(result.data.path)
       }
       return false
     } catch {
@@ -1262,22 +1286,24 @@ export const useFileStore = defineStore('file', () => {
       if (!window.electronAPI) return false
       const result = await window.electronAPI.deleteFile(targetPath)
       if (result.success) {
-        // 关闭所有匹配的 tab
-        const matchingTabs = tabs.value.filter((t) => t.fileInfo?.path === targetPath)
-        for (const mt of matchingTabs) {
-          const idx = tabs.value.findIndex((t) => t.id === mt.id)
-          if (idx !== -1) {
-            tabs.value.splice(idx, 1)
-            if (activeTabId.value === mt.id) {
-              if (tabs.value.length > 0) {
-                const nextIdx = Math.min(idx, tabs.value.length - 1)
-                activeTabId.value = tabs.value[nextIdx].id
-              } else {
-                activeTabId.value = null
-              }
-            }
+        // 一次性移除匹配的 tab，避免编辑器收到删除过程中的中间状态
+        const activeIndex = tabs.value.findIndex((tab) => tab.id === activeTabId.value)
+        const matchingTabs = tabs.value.filter((tab) => tab.fileInfo?.path === targetPath)
+        const matchingIds = new Set(matchingTabs.map((tab) => tab.id))
+        const activeTabDeleted = matchingIds.has(activeTabId.value || '')
+
+        if (matchingIds.size > 0) {
+          tabs.value = tabs.value.filter((tab) => !matchingIds.has(tab.id))
+
+          if (activeTabDeleted) {
+            const nextIndex = activeIndex >= 0 ? Math.min(activeIndex, tabs.value.length - 1) : 0
+            activeTabId.value = tabs.value[nextIndex]?.id ?? null
+            editorResetVersion.value++
           }
+          stateVersion.value++
+          persistSession()
         }
+
         await readFolder(openedFolderPath.value!)
         return true
       }
@@ -1316,6 +1342,7 @@ export const useFileStore = defineStore('file', () => {
     wordCount,
     cursorLine,
     cursorColumn,
+    editorResetVersion,
 
     // 文件夹浏览
     openedFolderPath,

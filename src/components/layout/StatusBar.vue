@@ -25,10 +25,10 @@ const saveStatusClass = computed(() => {
 
 /**
  * 切换编辑模式
- * 顺序：分屏预览 -> 源码编辑 -> 分屏预览
+ * 顺序：分屏预览 -> 源码编辑 -> 即时渲染 -> 分屏预览
  */
 function toggleEditorMode(): void {
-  const modes: EditorMode[] = ['split', 'source']
+  const modes: EditorMode[] = ['split', 'source', 'ir']
   const currentIndex = modes.indexOf(fileStore.editorMode)
   const nextIndex = (currentIndex + 1) % modes.length
   fileStore.setEditorMode(modes[nextIndex])
@@ -40,7 +40,8 @@ function toggleEditorMode(): void {
 const modeIcon = computed(() => {
   const icons: Record<EditorMode, string> = {
     split: 'split',
-    source: 'source'
+    source: 'source',
+    ir: 'ir'
   }
   return icons[fileStore.editorMode]
 })
@@ -51,7 +52,8 @@ const modeIcon = computed(() => {
 const modeTooltip = computed(() => {
   const tooltips: Record<EditorMode, string> = {
     split: '分屏预览',
-    source: '源码编辑'
+    source: '源码编辑',
+    ir: '即时渲染'
   }
   return `${tooltips[fileStore.editorMode]} (点击切换)`
 })
@@ -97,6 +99,29 @@ const modeTooltip = computed(() => {
           <path
             stroke-width="2"
             d="M12 3v18"
+          />
+        </svg>
+        <!-- 即时渲染图标 -->
+        <svg
+          v-else-if="modeIcon === 'ir'"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+          />
+          <polyline
+            points="14 2 14 8 20 8"
+            stroke-width="2"
+          />
+          <line
+            x1="9"
+            y1="15"
+            x2="15"
+            y2="15"
+            stroke-width="2"
           />
         </svg>
         <!-- 源码编辑图标 -->
@@ -208,6 +233,12 @@ const modeTooltip = computed(() => {
   color: #10b981;
   border-color: #10b981;
   background-color: rgba(16, 185, 129, 0.1);
+}
+
+.mode-toggle-btn.ir {
+  color: #f59e0b;
+  border-color: #f59e0b;
+  background-color: rgba(245, 158, 11, 0.1);
 }
 
 .mode-label {

@@ -85,6 +85,11 @@ const inputPlaceholder = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
 let inputResolve: ((value: string | null) => void) | null = null
 
+const showConfirmDialog = ref(false)
+const confirmDialogTitle = ref('')
+const confirmDialogMessage = ref('')
+let confirmResolve: ((value: boolean) => void) | null = null
+
 function openInputDialog(title: string, initialValue: string, placeholder: string): Promise<string | null> {
   return new Promise((resolve) => {
     inputDialogTitle.value = title
@@ -110,6 +115,21 @@ function cancelInput(): void {
   inputResolve = null
 }
 
+function openConfirmDialog(title: string, message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    confirmDialogTitle.value = title
+    confirmDialogMessage.value = message
+    showConfirmDialog.value = true
+    confirmResolve = resolve
+  })
+}
+
+function resolveConfirmDialog(value: boolean): void {
+  showConfirmDialog.value = false
+  confirmResolve?.(value)
+  confirmResolve = null
+}
+
 // ========== 操作函数 ==========
 async function promptCreateFile(dirPath: string): Promise<void> {
   const name = await openInputDialog('新建文件', '未命名.mdx', '文件名 (.mdx / .md)')
@@ -131,8 +151,11 @@ async function promptRename(node: FileTreeNode): Promise<void> {
 
 async function promptDelete(node: FileTreeNode): Promise<void> {
   const type = node.isDirectory ? '文件夹' : '文件'
-  if (!window.confirm(`确定要删除${type} "${node.name}" 吗？\n此操作不可恢复。`)) return
-  await fileStore.deleteItem(node.path)
+  const confirmed = await openConfirmDialog(
+    `删除${type}`,
+    `确定要删除${type}“${node.name}”吗？此操作不可恢复。`
+  )
+  if (confirmed) await fileStore.deleteItem(node.path)
 }
 
 // ========== 基础操作 ==========
@@ -306,9 +329,43 @@ onUnmounted(() => {
           v-for="(item, index) in contextMenu.items"
           :key="index"
           class="context-menu-item"
-          @click="item.action(); closeContextMenu()"
+          @click="closeContextMenu(); item.action()"
         >
           {{ item.label }}
+        </div>
+      </div>
+    </teleport>
+
+    <!-- ====== 删除确认对话框 ====== -->
+    <teleport to="body">
+      <div
+        v-if="showConfirmDialog"
+        class="dialog-overlay"
+      >
+        <div
+          class="dialog"
+          @click.stop
+        >
+          <h3 class="dialog-title">
+            {{ confirmDialogTitle }}
+          </h3>
+          <p class="dialog-message">
+            {{ confirmDialogMessage }}
+          </p>
+          <div class="dialog-actions">
+            <button
+              class="dialog-btn dialog-btn-cancel"
+              @click="resolveConfirmDialog(false)"
+            >
+              取消
+            </button>
+            <button
+              class="dialog-btn dialog-btn-confirm"
+              @click="resolveConfirmDialog(true)"
+            >
+              删除
+            </button>
+          </div>
         </div>
       </div>
     </teleport>
@@ -318,7 +375,6 @@ onUnmounted(() => {
       <div
         v-if="showInputDialog"
         class="dialog-overlay"
-        @click="cancelInput"
       >
         <div
           class="dialog"
@@ -333,7 +389,6 @@ onUnmounted(() => {
             class="dialog-input"
             :placeholder="inputPlaceholder"
             @keyup.enter="confirmInput"
-            @keyup.escape="cancelInput"
           >
           <div class="dialog-actions">
             <button
@@ -597,6 +652,13 @@ onUnmounted(() => {
   font-size: 15px;
   font-weight: 600;
   color: var(--color-text);
+}
+
+.dialog-message {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .dialog-input {

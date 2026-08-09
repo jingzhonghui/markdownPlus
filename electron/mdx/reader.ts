@@ -7,8 +7,9 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as crypto from 'crypto'
+import * as os from 'os'
 import AdmZip from 'adm-zip'
-import type { MdxDocument, MdxJson, MdxAssets, MdxImageAsset, MdxAttachmentAsset, MdxResult } from './schema'
+import type { MdxDocument, MdxJson, MdxAssets, MdxResult } from './schema'
 import { validateMdxJson, createDefaultSettings, createDefaultAssets } from './schema'
 
 /** 临时目录前缀 */
@@ -22,7 +23,7 @@ let tempRoot: string
  */
 function getTempRoot(): string {
   if (!tempRoot) {
-    tempRoot = path.join(require('os').tmpdir(), 'markdown-plus')
+    tempRoot = path.join(os.tmpdir(), 'markdown-plus')
     if (!fs.existsSync(tempRoot)) {
       fs.mkdirSync(tempRoot, { recursive: true })
     }

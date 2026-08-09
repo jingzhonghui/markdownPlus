@@ -1,14 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
-
-const title = computed(() => {
-  return fileStore.displayTitle + ' - Markdown+'
-})
 
 // 菜单显示状态
 const showFileMenu = ref(false)
@@ -156,13 +152,6 @@ function toggleFileMenu(): void {
 function closeMenu(): void {
   showFileMenu.value = false
   showRecentSubmenu.value = false
-}
-
-/**
- * 切换最近文件子菜单
- */
-function toggleRecentSubmenu(): void {
-  showRecentSubmenu.value = !showRecentSubmenu.value
 }
 
 /**

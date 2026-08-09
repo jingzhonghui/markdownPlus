@@ -3,6 +3,7 @@
  * 支持标准 Markdown 语法 + GFM 扩展（表格、任务列表）
  */
 import { Schema, NodeSpec, MarkSpec, DOMOutputSpec } from 'prosemirror-model'
+import { tableNodes } from 'prosemirror-tables'
 
 /**
  * 块级节点定义
@@ -82,9 +83,9 @@ const nodes: Record<string, NodeSpec> = {
     ],
     toDOM(node): DOMOutputSpec {
       const { language } = node.attrs
-      return language
-        ? ['pre', ['code', { class: 'language-' + language }, 0]]
-        : ['pre', ['code', 0]]
+      const attrs: Record<string, string> = {}
+      if (language) attrs['data-lang'] = language
+      return ['pre', attrs, ['code', { class: language ? 'language-' + language : '' }, 0]]
     }
   },
 
@@ -105,9 +106,7 @@ const nodes: Record<string, NodeSpec> = {
       }
     ],
     toDOM(node): DOMOutputSpec {
-      return node.attrs.order === 1
-        ? ['ol', 0]
-        : ['ol', { start: node.attrs.order }, 0]
+      return node.attrs.order === 1 ? ['ol', 0] : ['ol', { start: node.attrs.order }, 0]
     }
   },
 
@@ -164,73 +163,71 @@ const nodes: Record<string, NodeSpec> = {
       }
     ],
     toDOM(node): DOMOutputSpec {
-      return ['li', { 'data-type': 'task_item' }, 0]
+      return [
+        'li',
+        {
+          'data-type': 'task_item',
+          'data-checked': node.attrs.checked ? 'true' : 'false'
+        },
+        0
+      ]
+    }
+  },
+
+  // 表格节点由 tableNodes 扩展提供，见下文
+
+  /**
+   * 行内数学公式（KaTeX）— 叶子节点，公式源码存于 source 属性
+   */
+  math_inline: {
+    group: 'inline',
+    inline: true,
+    atom: true,
+    attrs: { source: { default: '' } },
+    parseDOM: [
+      {
+        tag: 'span[data-type="math_inline"]',
+        getAttrs(dom: HTMLElement) {
+          return { source: dom.getAttribute('data-source') || '' }
+        }
+      }
+    ],
+    toDOM(node): DOMOutputSpec {
+      return [
+        'span',
+        {
+          'data-type': 'math_inline',
+          'data-source': node.attrs.source as string,
+          class: 'math-inline'
+        }
+      ]
     }
   },
 
   /**
-   * 表格（GFM）
+   * 块级数学公式（KaTeX）— 叶子节点，公式源码存于 source 属性
    */
-  table: {
-    content: 'table_row+',
+  math_block: {
     group: 'block',
-    isolating: true,
-    parseDOM: [{ tag: 'table' }],
-    toDOM(): DOMOutputSpec {
-      return ['table', ['tbody', 0]]
-    }
-  },
-
-  /**
-   * 表格行
-   */
-  table_row: {
-    content: 'table_cell*',
-    parseDOM: [{ tag: 'tr' }],
-    toDOM(): DOMOutputSpec {
-      return ['tr', 0]
-    }
-  },
-
-  /**
-   * 表格单元格
-   */
-  table_cell: {
-    content: 'inline*',
-    attrs: { align: { default: null } },
+    atom: true,
+    attrs: { source: { default: '' } },
     parseDOM: [
       {
-        tag: 'td',
+        tag: 'div[data-type="math_block"]',
         getAttrs(dom: HTMLElement) {
-          return { align: dom.getAttribute('align') }
+          return { source: dom.getAttribute('data-source') || '' }
         }
       }
     ],
     toDOM(node): DOMOutputSpec {
-      const attrs: Record<string, string> = {}
-      if (node.attrs.align) attrs.align = node.attrs.align as string
-      return ['td', attrs, 0]
-    }
-  },
-
-  /**
-   * 表格表头单元格
-   */
-  table_header: {
-    content: 'inline*',
-    attrs: { align: { default: null } },
-    parseDOM: [
-      {
-        tag: 'th',
-        getAttrs(dom: HTMLElement) {
-          return { align: dom.getAttribute('align') }
+      return [
+        'div',
+        {
+          'data-type': 'math_block',
+          'data-source': node.attrs.source as string,
+          class: 'math-block'
         }
-      }
-    ],
-    toDOM(node): DOMOutputSpec {
-      const attrs: Record<string, string> = {}
-      if (node.attrs.align) attrs.align = node.attrs.align as string
-      return ['th', attrs, 0]
+      ]
     }
   },
 
@@ -316,10 +313,13 @@ const marks: Record<string, MarkSpec> = {
       { tag: 'strong' },
       { tag: 'b', getAttrs: (node: HTMLElement) => node.style.fontWeight !== 'normal' && null },
       { style: 'font-weight=400', clearMark: (m) => m.type.name === 'bold' },
-      { style: 'font-weight', getAttrs: (value: string) => /^(bold(er)?|[5-9]\d{2,})$/.test(value) && null }
+      {
+        style: 'font-weight',
+        getAttrs: (value: string) => /^(bold(er)?|[5-9]\d{2,})$/.test(value) && null
+      }
     ],
     toDOM(): DOMOutputSpec {
-      return ['strong', 0]
+      return ['strong', { 'data-mark': 'bold' }, 0]
     }
   },
 
@@ -329,12 +329,12 @@ const marks: Record<string, MarkSpec> = {
   italic: {
     parseDOM: [
       { tag: 'em' },
-      { tag: 'i', getAttrs: (node: HTMLElement) => node.style.fontStyle !== 'normal' && null },
+      { tag: 'i', getAttrs: (node: HTMLElement) => node.style.fontWeight !== 'normal' && null },
       { style: 'font-style=italic' },
       { style: 'font-style=normal', clearMark: (m) => m.type.name === 'italic' }
     ],
     toDOM(): DOMOutputSpec {
-      return ['em', 0]
+      return ['em', { 'data-mark': 'italic' }, 0]
     }
   },
 
@@ -349,7 +349,7 @@ const marks: Record<string, MarkSpec> = {
       { style: 'text-decoration=line-through' }
     ],
     toDOM(): DOMOutputSpec {
-      return ['s', 0]
+      return ['s', { 'data-mark': 'strikethrough' }, 0]
     }
   },
 
@@ -359,7 +359,7 @@ const marks: Record<string, MarkSpec> = {
   code: {
     parseDOM: [{ tag: 'code' }],
     toDOM(): DOMOutputSpec {
-      return ['code', 0]
+      return ['code', { 'data-mark': 'code' }, 0]
     }
   },
 
@@ -392,9 +392,32 @@ const marks: Record<string, MarkSpec> = {
 }
 
 /**
+ * 合并表格节点（来自 prosemirror-tables）
+ * tableNodes 提供 table, table_row, table_cell, table_header
+ */
+const extendedNodes = {
+  ...nodes,
+  ...tableNodes({
+    tableGroup: 'block',
+    cellContent: 'inline*',
+    cellAttributes: {
+      align: {
+        default: null,
+        getFromDOM(dom) {
+          return (dom as HTMLElement).getAttribute('align')
+        },
+        setDOMAttr(value, attrs) {
+          if (value) attrs.align = value as string
+        }
+      }
+    }
+  })
+}
+
+/**
  * Markdown Schema 实例
  */
-export const markdownSchema = new Schema({ nodes, marks })
+export const markdownSchema = new Schema({ nodes: extendedNodes, marks })
 
 /**
  * 获取标题级别

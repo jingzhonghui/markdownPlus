@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useFileStore } from '../../stores/file'
 import SourceEditor from './SourceEditor.vue'
+import IrEditor from './IrEditor.vue'
 import PreviewPanel from './PreviewPanel.vue'
 import TabBar from './TabBar.vue'
 import { Splitpanes, Pane } from 'splitpanes'
@@ -10,6 +11,7 @@ import 'splitpanes/dist/splitpanes.css'
 const fileStore = useFileStore()
 
 const showPreview = computed(() => fileStore.editorMode === 'split')
+const isIrMode = computed(() => fileStore.editorMode === 'ir')
 const hasOpenFile = computed(() => fileStore.tabs.length > 0 && fileStore.activeTabId !== null)
 
 // 组件引用
@@ -170,9 +172,15 @@ function onPreviewScroll(ratio: number): void {
 
     <!-- 有文件打开时：显示编辑器 -->
     <template v-else>
+      <!-- 即时渲染模式 -->
+      <IrEditor
+        v-if="isIrMode"
+        :key="fileStore.activeTabId || 'ir-editor'"
+      />
+
       <!-- 源码模式：仅显示编辑器 -->
       <SourceEditor
-        v-if="!showPreview"
+        v-else-if="!showPreview"
       />
 
       <!-- 分屏模式：可拖拽调整左右面板 -->

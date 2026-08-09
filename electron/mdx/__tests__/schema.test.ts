@@ -234,7 +234,9 @@ describe('Schema Module', () => {
 
       // 等待一小段时间确保时间戳不同
       const start = Date.now()
-      while (Date.now() - start < 10) {} // 延迟 10ms
+      while (Date.now() - start < 10) {
+        // 延迟 10ms
+      }
 
       const json = toMdxJson(doc)
       expect(json.modified_at).not.toBe(originalModifiedAt)

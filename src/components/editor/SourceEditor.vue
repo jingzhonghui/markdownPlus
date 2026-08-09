@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, shallowRef, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, shallowRef } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view'
@@ -16,7 +16,7 @@ interface Props {
   class?: string
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
 // Emits
 const emit = defineEmits<{
@@ -112,7 +112,7 @@ function createExtensions(): Extension[] {
  * Markdown 自动补全
  */
 function markdownCompletions(context: { matchBefore: (regexp: RegExp) => { from: number; to: number; text: string } | null; explicit: boolean }): { from: number; options: Completion[] } | null {
-  const word = context.matchBefore(/^\s*[#\-*>\[]?/)
+  const word = context.matchBefore(/^\s*[#\-* >[]?/)
   if (!word && !context.explicit) return null
 
   const completions: Completion[] = [
@@ -302,7 +302,7 @@ function insertImage(view: EditorView): void {
  * 切换标题级别
  */
 function cycleHeading(view: EditorView): void {
-  const { from, to } = view.state.selection.main
+  const { from } = view.state.selection.main
   const line = view.state.doc.lineAt(from)
   const lineText = line.text
   
@@ -419,7 +419,7 @@ function continueList(view: EditorView): boolean {
  * 列表缩进/反缩进
  */
 function indentList(view: EditorView, increase: boolean): boolean {
-  const { from, to } = view.state.selection.main
+  const { from } = view.state.selection.main
   const line = view.state.doc.lineAt(from)
   const lineText = line.text
   

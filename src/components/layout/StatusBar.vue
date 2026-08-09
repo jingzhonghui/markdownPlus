@@ -1,8 +1,21 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useFileStore, type EditorMode } from '../../stores/file'
 
 const fileStore = useFileStore()
+const appVersion = ref('')
+
+onMounted(async () => {
+  try {
+    appVersion.value = await window.electronAPI.getVersion()
+  } catch {
+    appVersion.value = ''
+  }
+})
+
+const appLabel = computed(() => {
+  return appVersion.value ? `Markdown+ v${appVersion.value}` : 'Markdown+'
+})
 
 const fileSize = computed(() => {
   const bytes = new Blob([fileStore.fileContent]).size
@@ -150,8 +163,10 @@ const modeTooltip = computed(() => {
       >
         {{ saveStatus }}
       </span>
-      <span class="status-separator">|</span>
-      <span class="status-item">Markdown+ v1.0.0</span>
+      <template v-if="appVersion">
+        <span class="status-separator">|</span>
+        <span class="status-item">{{ appLabel }}</span>
+      </template>
     </div>
   </footer>
 </template>

@@ -4,7 +4,6 @@ import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { renderMarkdown } from '../../utils/markdown'
 import { createHighlighter, type Highlighter } from 'shiki'
-import 'katex/dist/katex.min.css'
 
 // 图片缓存
 const imageCache = new Map<string, string>()

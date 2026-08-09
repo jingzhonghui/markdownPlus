@@ -32,7 +32,6 @@ import { TextSelection, Plugin as ProseMirrorPlugin } from 'prosemirror-state'
 import { wrapIn, setBlockType } from 'prosemirror-commands'
 import { wrapInList } from 'prosemirror-schema-list'
 import katex from 'katex'
-import 'katex/dist/katex.min.css'
 import type { NodeView } from 'prosemirror-view'
 import {
   addColumnBefore,
@@ -115,6 +114,8 @@ let editorTabId: string | null = null
 const isDragging = ref(false)
 const showMarkers = ref(false)
 const imageCache = new Map<string, string>()
+
+const CLOSE_ALL_CONTEXT_MENUS_EVENT = 'markdown-plus:close-context-menus'
 
 function focusEditor(): void {
   const view = viewRef.value
@@ -263,6 +264,7 @@ function createContextMenuPlugin(): ProseMirrorPlugin {
           // 检查是否在表格单元格内
           if (target.closest('td, th')) {
             event.preventDefault()
+            window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))
 
             // 确保光标在点击的单元格中
             const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
@@ -284,6 +286,7 @@ function createContextMenuPlugin(): ProseMirrorPlugin {
           // 检查是否在编辑器内容区域
           if (target.closest('.ProseMirror')) {
             event.preventDefault()
+            window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))
 
             contextMenu.items = buildGeneralMenuItems(view)
             contextMenu.type = 'general'
@@ -620,6 +623,9 @@ onMounted(() => {
   window.addEventListener('editor:image', handleImageEvent)
   window.addEventListener('editor:codeBlock', handleCodeBlockEvent)
   document.addEventListener('click', closeContextMenu)
+  document.addEventListener('contextmenu', closeContextMenu, true)
+  window.addEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
+  window.addEventListener('blur', closeContextMenu)
   const view = viewRef.value
   if (view) {
     // 删除文件后组件虽然重新挂载，窗口焦点仍可能停留在删除按钮上；
@@ -654,6 +660,9 @@ onUnmounted(() => {
   window.removeEventListener('editor:image', handleImageEvent)
   window.removeEventListener('editor:codeBlock', handleCodeBlockEvent)
   document.removeEventListener('click', closeContextMenu)
+  document.removeEventListener('contextmenu', closeContextMenu, true)
+  window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
+  window.removeEventListener('blur', closeContextMenu)
   window.removeEventListener('focus', focusEditor)
   view?.dom.removeEventListener('mousedown', focusEditor)
   view?.destroy()

@@ -46,6 +46,17 @@ npm run build:mac    # macOS
 npm run build:linux  # Linux
 ```
 
+## 发布
+
+推送 `vX.Y.Z` 格式的标签会自动触发 GitHub Actions 发布流程。
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+流水线会使用 `dist/` 目录下的安装包自动创建 GitHub Release 并上传资产。
+
 ## 项目结构
 
 ```

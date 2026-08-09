@@ -9,6 +9,8 @@ const emit = defineEmits<{
   (e: 'collapse'): void
 }>()
 
+const CLOSE_ALL_CONTEXT_MENUS_EVENT = 'markdown-plus:close-context-menus'
+
 // ========== 右键菜单状态 ==========
 interface ContextMenuItem {
   label: string
@@ -26,7 +28,9 @@ function closeContextMenu(): void {
   contextMenu.visible = false
 }
 
+
 function showContextMenu(event: MouseEvent, items: ContextMenuItem[]): void {
+  window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))
   contextMenu.items = items
   contextMenu.x = event.clientX
   contextMenu.y = event.clientY
@@ -52,11 +56,15 @@ function onEmptyContextMenu(event: MouseEvent): void {
     ? [
         { label: '新建文件', action: () => promptCreateFile(folderPath) },
         { label: '新建文件夹', action: () => promptCreateFolder(folderPath) },
+        { label: '导入 Markdown', action: () => fileStore.importMarkdown() },
+        { label: '导入文件夹', action: () => fileStore.importFolder() },
         { label: '打开文件', action: () => openFile() },
         { label: '打开文件夹', action: () => openFolder() },
         { label: '刷新', action: () => fileStore.readFolder(folderPath) }
       ]
     : [
+        { label: '导入 Markdown', action: () => fileStore.importMarkdown() },
+        { label: '导入文件夹', action: () => fileStore.importFolder() },
         { label: '打开文件', action: () => openFile() },
         { label: '打开文件夹', action: () => openFolder() }
       ]
@@ -207,10 +215,16 @@ function handleNodeContextMenu(event: MouseEvent, node: FileTreeNode): void {
 
 onMounted(() => {
   document.addEventListener('click', closeContextMenu)
+  document.addEventListener('contextmenu', closeContextMenu, true)
+  window.addEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
+  window.addEventListener('blur', closeContextMenu)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeContextMenu)
+  document.removeEventListener('contextmenu', closeContextMenu, true)
+  window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
+  window.removeEventListener('blur', closeContextMenu)
 })
 </script>
 

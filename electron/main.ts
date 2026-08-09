@@ -94,6 +94,10 @@ app.whenReady().then(() => {
 
   // IPC 测试通道
   ipcMain.handle('ping', () => 'pong')
+  ipcMain.handle(IPC_CHANNELS.APP.GET_VERSION, () => {
+    if (is.dev) return ''
+    return app.getVersion()
+  })
 
   // 注册文件操作 handlers
   registerFileHandlers()

@@ -76,6 +76,7 @@ export const useFileStore = defineStore('file', () => {
   const wordCount = ref(0)
   const cursorLine = ref(1)
   const cursorColumn = ref(1)
+  const editorResetVersion = ref(0)
 
   // 文件夹浏览状态
   const openedFolderPath = ref<string | null>(null)
@@ -209,6 +210,8 @@ export const useFileStore = defineStore('file', () => {
       } else {
         activeTabId.value = null
       }
+      stateVersion.value++
+      editorResetVersion.value++
     }
 
     return true
@@ -1283,22 +1286,24 @@ export const useFileStore = defineStore('file', () => {
       if (!window.electronAPI) return false
       const result = await window.electronAPI.deleteFile(targetPath)
       if (result.success) {
-        // 关闭所有匹配的 tab
-        const matchingTabs = tabs.value.filter((t) => t.fileInfo?.path === targetPath)
-        for (const mt of matchingTabs) {
-          const idx = tabs.value.findIndex((t) => t.id === mt.id)
-          if (idx !== -1) {
-            tabs.value.splice(idx, 1)
-            if (activeTabId.value === mt.id) {
-              if (tabs.value.length > 0) {
-                const nextIdx = Math.min(idx, tabs.value.length - 1)
-                activeTabId.value = tabs.value[nextIdx].id
-              } else {
-                activeTabId.value = null
-              }
-            }
+        // 一次性移除匹配的 tab，避免编辑器收到删除过程中的中间状态
+        const activeIndex = tabs.value.findIndex((tab) => tab.id === activeTabId.value)
+        const matchingTabs = tabs.value.filter((tab) => tab.fileInfo?.path === targetPath)
+        const matchingIds = new Set(matchingTabs.map((tab) => tab.id))
+        const activeTabDeleted = matchingIds.has(activeTabId.value || '')
+
+        if (matchingIds.size > 0) {
+          tabs.value = tabs.value.filter((tab) => !matchingIds.has(tab.id))
+
+          if (activeTabDeleted) {
+            const nextIndex = activeIndex >= 0 ? Math.min(activeIndex, tabs.value.length - 1) : 0
+            activeTabId.value = tabs.value[nextIndex]?.id ?? null
+            editorResetVersion.value++
           }
+          stateVersion.value++
+          persistSession()
         }
+
         await readFolder(openedFolderPath.value!)
         return true
       }
@@ -1337,6 +1342,7 @@ export const useFileStore = defineStore('file', () => {
     wordCount,
     cursorLine,
     cursorColumn,
+    editorResetVersion,
 
     // 文件夹浏览
     openedFolderPath,

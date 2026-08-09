@@ -77,7 +77,6 @@ function createMarkdownIt(): MarkdownIt {
 function createTokens(_schema: Schema): Record<string, any> {
   // 辅助函数：获取 token 属性
   const getAttr = (tok: Token, name: string): string | null => {
-     
     return (
       (tok as any).attrGet?.(name) ??
       tok.attrs?.find((a: [string, string]) => a[0] === name)?.[1] ??
@@ -362,6 +361,11 @@ const markdownSerializer = createMarkdownSerializer(markdownSchema)
  * @returns ProseMirror Node
  */
 export function parseMarkdown(content: string): ProseMirrorNode {
+  // 空文档也必须保留一个段落，否则 IR 模式没有可放置光标的编辑节点。
+  if (!content.trim()) {
+    return markdownSchema.node('doc', null, [markdownSchema.node('paragraph')])
+  }
+
   return (
     markdownParser.parse(content) ||
     markdownSchema.node('doc', null, [markdownSchema.node('paragraph')])

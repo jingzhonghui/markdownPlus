@@ -108,12 +108,22 @@ class MathBlockView implements NodeView {
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
-const { fileContent } = storeToRefs(fileStore)
+const { fileContent, activeTabId } = storeToRefs(fileStore)
 const editorRef = ref<HTMLDivElement>()
 const viewRef = shallowRef<EditorView | null>(null)
+let editorTabId: string | null = null
 const isDragging = ref(false)
 const showMarkers = ref(false)
 const imageCache = new Map<string, string>()
+
+function focusEditor(): void {
+  const view = viewRef.value
+  if (!view || view.isDestroyed) return
+
+  // 先让浏览器产生真实的 focus 事件，再让 ProseMirror 同步 selection。
+  view.dom.focus({ preventScroll: true })
+  view.focus()
+}
 
 // 右键菜单状态
 interface SubMenuItem {
@@ -338,7 +348,11 @@ function syncShowMarkers(): void {
 }
 
 function initEditor(): void {
-  if (!editorRef.value) return
+  if (!editorRef.value) {
+    console.warn('[IrEditor] init skipped: editorRef is null')
+    return
+  }
+  editorTabId = activeTabId.value
   const content = fileStore.fileContent
   const state = createEditorState(content)
   viewRef.value = new EditorView(editorRef.value, {
@@ -448,12 +462,14 @@ async function loadEditorImages(): Promise<void> {
   }
 }
 
-watch(fileContent, (newContent) => {
+watch([activeTabId, fileContent], ([newTabId, newContent], [oldTabId]) => {
   const view = viewRef.value
   if (!view) return
+
   const currentMarkdown = serializeMarkdown(view.state.doc).replace(/\n+$/, '')
   const normalizedNewContent = (newContent || '').replace(/\n+$/, '')
-  if (currentMarkdown === normalizedNewContent) return
+  const tabChanged = newTabId !== oldTabId
+  if (!tabChanged && currentMarkdown === normalizedNewContent) return
 
   // 从 store 同步内容到编辑器：直接用 updateState 替换整个 state
   // 避免 dispatch transaction 时和当前 state 不匹配，同时阻止
@@ -604,13 +620,23 @@ onMounted(() => {
   window.addEventListener('editor:image', handleImageEvent)
   window.addEventListener('editor:codeBlock', handleCodeBlockEvent)
   document.addEventListener('click', closeContextMenu)
-  nextTick(() => { loadEditorImages(); viewRef.value?.focus() })
+  const view = viewRef.value
+  if (view) {
+    // 删除文件后组件虽然重新挂载，窗口焦点仍可能停留在删除按钮上；
+    // 点击编辑器正文时强制恢复真正的输入焦点。
+    view.dom.addEventListener('mousedown', focusEditor)
+  }
+  window.addEventListener('focus', focusEditor)
+  nextTick(() => {
+    loadEditorImages()
+    focusEditor()
+  })
 })
 
 onUnmounted(() => {
   // 组件卸载前强制同步内容到 store，防止切换模式时内容丢失
   const view = viewRef.value
-  if (view) {
+  if (view && editorTabId === activeTabId.value) {
     const markdown = serializeMarkdown(view.state.doc)
     fileStore.setContent(markdown)
   }
@@ -628,7 +654,10 @@ onUnmounted(() => {
   window.removeEventListener('editor:image', handleImageEvent)
   window.removeEventListener('editor:codeBlock', handleCodeBlockEvent)
   document.removeEventListener('click', closeContextMenu)
-  viewRef.value?.destroy()
+  window.removeEventListener('focus', focusEditor)
+  view?.dom.removeEventListener('mousedown', focusEditor)
+  view?.destroy()
+  viewRef.value = null
 })
 
 defineExpose({
@@ -746,6 +775,8 @@ defineExpose({
 .ir-editor-wrapper :deep(.ProseMirror) {
   outline: none;
   min-height: 100%;
+  white-space: pre-wrap;
+  caret-color: var(--color-primary);
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.8;

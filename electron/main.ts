@@ -12,7 +12,7 @@ function createWindow(): void {
   // 开发模式用项目根目录，生产模式用 out 的上级目录
   const iconPath = is.dev
     ? resolve(__dirname, '../../resources/icon.png')
-    : join(__dirname, '../resources/icon.png')
+    : join(app.getAppPath(), 'resources/icon.png')
 
   const mainWindow = new BrowserWindow({
     width: 1400,

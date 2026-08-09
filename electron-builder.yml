@@ -1,5 +1,5 @@
 appId: com.markdown-plus.app
-productName: Markdown+
+productName: MackdownPlus
 copyright: Copyright © 2026 Markdown+ Team
 directories:
   output: dist
@@ -24,7 +24,11 @@ win:
       arch:
         - x64
         - ia32
-  icon: build/icon.png
+    - target: zip
+      arch:
+        - x64
+        - ia32
+  icon: resources/icon.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -41,7 +45,7 @@ linux:
   target:
     - AppImage
     - deb
-  icon: build/icon.png
+  icon: resources/icon.png
   category: Office
   maintainer: Markdown+ Team
 publish:

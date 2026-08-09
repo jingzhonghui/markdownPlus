@@ -341,7 +341,6 @@ onUnmounted(() => {
       <div
         v-if="showConfirmDialog"
         class="dialog-overlay"
-        @click="resolveConfirmDialog(false)"
       >
         <div
           class="dialog"
@@ -376,7 +375,6 @@ onUnmounted(() => {
       <div
         v-if="showInputDialog"
         class="dialog-overlay"
-        @click="cancelInput"
       >
         <div
           class="dialog"
@@ -391,7 +389,6 @@ onUnmounted(() => {
             class="dialog-input"
             :placeholder="inputPlaceholder"
             @keyup.enter="confirmInput"
-            @keyup.escape="cancelInput"
           >
           <div class="dialog-actions">
             <button

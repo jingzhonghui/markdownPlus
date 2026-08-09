@@ -394,7 +394,6 @@ async function selectImageFile(): Promise<void> {
     <div
       v-if="linkDialogOpen"
       class="dialog-overlay"
-      @click="linkDialogOpen = false"
     >
       <div
         class="dialog"
@@ -438,7 +437,6 @@ async function selectImageFile(): Promise<void> {
     <div
       v-if="imageDialogOpen"
       class="dialog-overlay"
-      @click="imageDialogOpen = false"
     >
       <div
         class="dialog"

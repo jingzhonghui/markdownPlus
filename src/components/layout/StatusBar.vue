@@ -1,8 +1,21 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useFileStore, type EditorMode } from '../../stores/file'
 
 const fileStore = useFileStore()
+const appVersion = ref('')
+
+onMounted(async () => {
+  try {
+    appVersion.value = await window.electronAPI.getVersion()
+  } catch {
+    appVersion.value = ''
+  }
+})
+
+const appLabel = computed(() => {
+  return appVersion.value ? `Markdown+ v${appVersion.value}` : 'Markdown+'
+})
 
 const fileSize = computed(() => {
   const bytes = new Blob([fileStore.fileContent]).size
@@ -25,10 +38,10 @@ const saveStatusClass = computed(() => {
 
 /**
  * 切换编辑模式
- * 顺序：所见即所得 -> 分屏预览 -> 源码编辑 -> 所见即所得
+ * 顺序：分屏预览 -> 源码编辑 -> 即时渲染 -> 分屏预览
  */
 function toggleEditorMode(): void {
-  const modes: EditorMode[] = ['wysiwyg', 'split', 'source']
+  const modes: EditorMode[] = ['split', 'source', 'ir']
   const currentIndex = modes.indexOf(fileStore.editorMode)
   const nextIndex = (currentIndex + 1) % modes.length
   fileStore.setEditorMode(modes[nextIndex])
@@ -39,9 +52,9 @@ function toggleEditorMode(): void {
  */
 const modeIcon = computed(() => {
   const icons: Record<EditorMode, string> = {
-    wysiwyg: 'wysiwyg',
     split: 'split',
-    source: 'source'
+    source: 'source',
+    ir: 'ir'
   }
   return icons[fileStore.editorMode]
 })
@@ -51,9 +64,9 @@ const modeIcon = computed(() => {
  */
 const modeTooltip = computed(() => {
   const tooltips: Record<EditorMode, string> = {
-    wysiwyg: '所见即所得',
     split: '分屏预览',
-    source: '源码编辑'
+    source: '源码编辑',
+    ir: '即时渲染'
   }
   return `${tooltips[fileStore.editorMode]} (点击切换)`
 })
@@ -81,25 +94,9 @@ const modeTooltip = computed(() => {
         :title="modeTooltip"
         @click="toggleEditorMode"
       >
-        <!-- 所见即所得图标 -->
-        <svg
-          v-if="modeIcon === 'wysiwyg'"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-        >
-          <path
-            stroke-width="2"
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-          />
-          <path
-            stroke-width="2"
-            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-          />
-        </svg>
         <!-- 分屏预览图标 -->
         <svg
-          v-else-if="modeIcon === 'split'"
+          v-if="modeIcon === 'split'"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -115,6 +112,29 @@ const modeTooltip = computed(() => {
           <path
             stroke-width="2"
             d="M12 3v18"
+          />
+        </svg>
+        <!-- 即时渲染图标 -->
+        <svg
+          v-else-if="modeIcon === 'ir'"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+          />
+          <polyline
+            points="14 2 14 8 20 8"
+            stroke-width="2"
+          />
+          <line
+            x1="9"
+            y1="15"
+            x2="15"
+            y2="15"
+            stroke-width="2"
           />
         </svg>
         <!-- 源码编辑图标 -->
@@ -143,8 +163,10 @@ const modeTooltip = computed(() => {
       >
         {{ saveStatus }}
       </span>
-      <span class="status-separator">|</span>
-      <span class="status-item">Markdown+ v1.0.0</span>
+      <template v-if="appVersion">
+        <span class="status-separator">|</span>
+        <span class="status-item">{{ appLabel }}</span>
+      </template>
     </div>
   </footer>
 </template>
@@ -216,13 +238,6 @@ const modeTooltip = computed(() => {
   background-color: var(--color-bg-secondary);
 }
 
-/* 不同模式下的颜色标识 */
-.mode-toggle-btn.wysiwyg {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  background-color: var(--color-primary-light);
-}
-
 .mode-toggle-btn.split {
   color: #8b5cf6;
   border-color: #8b5cf6;
@@ -233,6 +248,12 @@ const modeTooltip = computed(() => {
   color: #10b981;
   border-color: #10b981;
   background-color: rgba(16, 185, 129, 0.1);
+}
+
+.mode-toggle-btn.ir {
+  color: #f59e0b;
+  border-color: #f59e0b;
+  background-color: rgba(245, 158, 11, 0.1);
 }
 
 .mode-label {

@@ -44,9 +44,14 @@ export const useThemeStore = defineStore('theme', () => {
   /**
    * 设置主题
    */
+  function applyThemeToDocument(): void {
+    document.documentElement.dataset.theme = currentTheme.value
+  }
+
   function setTheme(newTheme: ThemeType): void {
     theme.value = newTheme
     followSystem.value = newTheme === 'system'
+    applyThemeToDocument()
     saveTheme()
   }
 
@@ -97,6 +102,7 @@ export const useThemeStore = defineStore('theme', () => {
    */
   function updateSystemPreference(): void {
     systemPreference.value = getSystemTheme()
+    applyThemeToDocument()
   }
 
   /**

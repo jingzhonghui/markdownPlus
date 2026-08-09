@@ -1,18 +1,5 @@
 <script setup lang="ts">
-import { inject, ref } from 'vue'
-import { useFileStore } from '../../stores/file'
-
-const fileStore = useFileStore()
-
-interface EditorController {
-  applyFormat: (format: string) => void
-  setHeading: (level: number) => void
-  insertLink: (href?: string, title?: string) => void
-  insertImage: (src?: string, alt?: string, title?: string) => void
-  insertCodeBlock: (language?: string) => void
-}
-
-const editorController = inject<EditorController>('editorController')
+import { ref, onMounted, onUnmounted } from 'vue'
 
 // 标题下拉菜单状态
 const headingMenuOpen = ref(false)
@@ -34,20 +21,13 @@ const imageDialogOpen = ref(false)
 const imageSrc = ref('')
 const imageAlt = ref('')
 
-// 代码块对话框状态
-const codeBlockDialogOpen = ref(false)
-const codeLanguage = ref('')
+// 代码块对话框状态（已移除，改为直接插入）
 
 /**
  * 应用格式
  */
 function applyFormat(format: string): void {
-  if (fileStore.editorMode === 'wysiwyg' && editorController) {
-    editorController.applyFormat(format)
-  } else {
-    // 源码模式：通过事件通知 SourceEditor
-    window.dispatchEvent(new CustomEvent('editor:format', { detail: format }))
-  }
+  window.dispatchEvent(new CustomEvent('editor:format', { detail: format }))
 }
 
 /**
@@ -55,11 +35,7 @@ function applyFormat(format: string): void {
  */
 function handleHeadingSelect(level: number): void {
   headingMenuOpen.value = false
-  if (fileStore.editorMode === 'wysiwyg' && editorController) {
-    editorController.setHeading(level)
-  } else {
-    window.dispatchEvent(new CustomEvent('editor:heading', { detail: level }))
-  }
+  window.dispatchEvent(new CustomEvent('editor:heading', { detail: level }))
 }
 
 /**
@@ -76,13 +52,9 @@ function insertLink(): void {
  */
 function confirmInsertLink(): void {
   if (linkHref.value.trim()) {
-    if (fileStore.editorMode === 'wysiwyg' && editorController) {
-      editorController.insertLink(linkHref.value.trim(), linkTitle.value.trim())
-    } else {
-      window.dispatchEvent(new CustomEvent('editor:link', {
-        detail: { href: linkHref.value.trim(), title: linkTitle.value.trim() }
-      }))
-    }
+    window.dispatchEvent(new CustomEvent('editor:link', {
+      detail: { href: linkHref.value.trim(), title: linkTitle.value.trim() }
+    }))
   }
   linkDialogOpen.value = false
 }
@@ -101,46 +73,54 @@ function insertImage(): void {
  */
 function confirmInsertImage(): void {
   if (imageSrc.value.trim()) {
-    if (fileStore.editorMode === 'wysiwyg' && editorController) {
-      editorController.insertImage(imageSrc.value.trim(), imageAlt.value.trim())
-    } else {
-      window.dispatchEvent(new CustomEvent('editor:image', {
-        detail: { src: imageSrc.value.trim(), alt: imageAlt.value.trim() }
-      }))
-    }
+    window.dispatchEvent(new CustomEvent('editor:image', {
+      detail: { src: imageSrc.value.trim(), alt: imageAlt.value.trim() }
+    }))
   }
   imageDialogOpen.value = false
 }
 
 /**
- * 显示插入代码块对话框
+ * 直接插入代码块（不弹窗）
  */
 function insertCodeBlock(): void {
-  codeBlockDialogOpen.value = true
-  codeLanguage.value = ''
-}
-
-/**
- * 确认插入代码块
- */
-function confirmInsertCodeBlock(): void {
-  if (fileStore.editorMode === 'wysiwyg' && editorController) {
-    editorController.insertCodeBlock(codeLanguage.value.trim())
-  } else {
-    window.dispatchEvent(new CustomEvent('editor:codeBlock', {
-      detail: { language: codeLanguage.value.trim() }
-    }))
-  }
-  codeBlockDialogOpen.value = false
+  window.dispatchEvent(new CustomEvent('editor:codeBlock', {
+    detail: { language: '' }
+  }))
 }
 
 /**
  * 插入表格
  */
 function insertTable(): void {
-  // TODO: 实现表格插入
-  console.log('Insert table')
+  window.dispatchEvent(new CustomEvent('editor:format', { detail: 'table' }))
 }
+
+/** 点击外部关闭标题菜单 */
+function onDocumentClick(): void {
+  headingMenuOpen.value = false
+}
+
+// 从右键菜单打开对话框的事件监听
+function onShowImageDialog() {
+  insertImage()
+}
+
+function onShowLinkDialog() {
+  insertLink()
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  window.addEventListener('editor:showImageDialog', onShowImageDialog)
+  window.addEventListener('editor:showLinkDialog', onShowLinkDialog)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick)
+  window.removeEventListener('editor:showImageDialog', onShowImageDialog)
+  window.removeEventListener('editor:showLinkDialog', onShowLinkDialog)
+})
 
 /**
  * 选择本地图片文件
@@ -157,13 +137,9 @@ async function selectImageFile(): Promise<void> {
         const reader = new FileReader()
         reader.onload = (event) => {
           const dataUrl = event.target?.result as string
-          if (fileStore.editorMode === 'wysiwyg' && editorController) {
-            editorController.insertImage(dataUrl, file.name)
-          } else {
-            window.dispatchEvent(new CustomEvent('editor:image', {
-              detail: { src: dataUrl, alt: file.name }
-            }))
-          }
+          window.dispatchEvent(new CustomEvent('editor:image', {
+            detail: { src: dataUrl, alt: file.name }
+          }))
           imageDialogOpen.value = false
         }
         reader.readAsDataURL(file)
@@ -256,7 +232,7 @@ async function selectImageFile(): Promise<void> {
         <button
           class="format-btn"
           title="标题"
-          @click="headingMenuOpen = !headingMenuOpen"
+          @click.stop="headingMenuOpen = !headingMenuOpen"
         >
           <svg
             viewBox="0 0 24 24"
@@ -418,7 +394,6 @@ async function selectImageFile(): Promise<void> {
     <div
       v-if="linkDialogOpen"
       class="dialog-overlay"
-      @click="linkDialogOpen = false"
     >
       <div
         class="dialog"
@@ -462,7 +437,6 @@ async function selectImageFile(): Promise<void> {
     <div
       v-if="imageDialogOpen"
       class="dialog-overlay"
-      @click="imageDialogOpen = false"
     >
       <div
         class="dialog"
@@ -512,43 +486,6 @@ async function selectImageFile(): Promise<void> {
           <button
             class="dialog-btn dialog-btn-confirm"
             @click="confirmInsertImage"
-          >
-            确定
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 代码块对话框 -->
-    <div
-      v-if="codeBlockDialogOpen"
-      class="dialog-overlay"
-      @click="codeBlockDialogOpen = false"
-    >
-      <div
-        class="dialog"
-        @click.stop
-      >
-        <h3 class="dialog-title">
-          插入代码块
-        </h3>
-        <input
-          v-model="codeLanguage"
-          type="text"
-          placeholder="编程语言 (如: javascript, python, 可选)"
-          class="dialog-input"
-          @keydown.enter="confirmInsertCodeBlock"
-        >
-        <div class="dialog-actions">
-          <button
-            class="dialog-btn dialog-btn-cancel"
-            @click="codeBlockDialogOpen = false"
-          >
-            取消
-          </button>
-          <button
-            class="dialog-btn dialog-btn-confirm"
-            @click="confirmInsertCodeBlock"
           >
             确定
           </button>

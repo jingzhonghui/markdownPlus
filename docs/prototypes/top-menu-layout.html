@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown+ 资源管理器菜单原型</title>
+  <style>
+    :root{--bg:#f7f8fa;--surface:#fff;--soft:#f1f3f5;--hover:#e8f0fe;--border:#e1e5ea;--text:#202733;--muted:#737d8c;--primary:#3b82f6;--danger:#e5484d;--shadow:0 12px 30px rgba(24,39,75,.16)}
+    [data-theme=dark]{--bg:#171a21;--surface:#20242d;--soft:#292e38;--hover:#313a4b;--border:#363d49;--text:#edf1f7;--muted:#9ca7b8;--primary:#72a7ff;--shadow:0 14px 34px rgba(0,0,0,.4)}
+    *{box-sizing:border-box}html,body{height:100%;margin:0}body{overflow:hidden;color:var(--text);background:var(--bg);font:13px/1.4 Inter,"Segoe UI",system-ui,sans-serif}button{font:inherit}.app{height:100%;display:flex;flex-direction:column}
+    .header{height:52px;display:flex;align-items:center;padding:0 12px;background:var(--surface);border-bottom:1px solid var(--border)}.logo{width:32px;height:32px;flex:none}.logo img{width:100%;height:100%}.drag{flex:1;align-self:stretch;min-width:20px}.header-right{display:flex;align-items:center;gap:5px}.icon{width:32px;height:32px;border:0;border-radius:7px;color:var(--muted);background:transparent;cursor:pointer}.icon:hover{color:var(--text);background:var(--soft)}.window{width:28px;height:28px;border:0;border-radius:5px;color:var(--muted);background:transparent;cursor:pointer}.window:hover{color:var(--text);background:var(--soft)}.window.close:hover{color:#fff;background:var(--danger)}
+    .body{display:flex;flex:1;min-height:0;overflow:hidden}.sidebar{position:relative;width:240px;flex:none;padding:16px;background:var(--surface);border-right:1px solid var(--border)}.sidebar h2{margin:0 0 14px;font-size:12px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}.row{height:32px;display:flex;align-items:center;gap:8px;padding:0 9px;border-radius:7px;color:var(--muted)}.row.active{color:var(--primary);background:var(--hover)}.editor{flex:1;min-width:0;padding:42px clamp(24px,8vw,120px)}.paper{height:100%;max-width:820px;margin:auto;padding:36px 48px;background:var(--surface);border:1px solid var(--border);border-radius:12px 12px 0 0}.paper h1{margin:0 0 10px;font-size:28px}.paper p{color:var(--muted)}.status{height:30px;display:flex;justify-content:space-between;align-items:center;padding:0 14px;color:var(--muted);font-size:11px;background:var(--surface);border-top:1px solid var(--border)}
+    .context{position:fixed;z-index:10;width:230px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}.context[hidden]{display:none}.context h3{margin:4px 10px 6px;color:var(--muted);font-size:11px;font-weight:600}.item{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-radius:6px;cursor:pointer}.item:hover{background:var(--hover)}.item.danger{color:var(--danger)}.divider{height:1px;margin:6px 4px;background:var(--border)}.hint{color:var(--muted);font-size:11px}
+    @media(max-width:700px){.sidebar{width:190px;padding:12px}.editor{padding:18px}.paper{padding:24px 18px}.header-right .theme{display:none}}
+  </style>
+</head>
+<body>
+  <div class="app" id="app" data-theme="light">
+    <header class="header"><img class="logo" src="../../src/assets/logo.svg" alt="Markdown+"><div class="drag"></div><div class="header-right"><button class="icon theme" id="theme" title="切换主题">◐</button><button class="window">−</button><button class="window">□</button><button class="window close">×</button></div></header>
+    <main class="body"><aside class="sidebar" id="sidebar"><h2>资源管理器</h2><div class="row active" data-kind="file">▱ <span>产品需求文档.mdx</span></div><div class="row" data-kind="file">▱ <span>设计方案.md</span></div><div class="row" data-kind="folder">▰ <span>assets</span></div><p class="hint">在空白处右键查看文件操作</p></aside><section class="editor"><article class="paper"><h1>顶部菜单简化</h1><p>顶部只保留窗口级操作。文件相关命令统一从资源管理器右键菜单进入。</p></article></section></main>
+    <footer class="status"><span>字数 128 · 已保存</span><span>即时渲染 · UTF-8</span></footer>
+    <div class="context" id="context" hidden></div>
+  </div>
+  <script>
+    const app=document.getElementById('app'), context=document.getElementById('context');
+    const menus={empty:['新建文件','新建文件夹','打开文件','打开文件夹','刷新'],file:['打开','保存','另存为','重命名','删除','复制路径'],folder:['新建文件','新建文件夹','刷新','重命名','删除','复制路径']};
+    function showMenu(event,kind){event.preventDefault();event.stopPropagation();context.innerHTML='<h3>文件操作</h3>'+menus[kind].map((item)=>`<div class="item ${item==='删除'?'danger':''}">${item}</div>`).join('');context.style.left=Math.min(event.clientX,innerWidth-238)+'px';context.style.top=Math.min(event.clientY,innerHeight-260)+'px';context.hidden=false}
+    document.getElementById('sidebar').addEventListener('contextmenu',(event)=>{const row=event.target.closest('.row');showMenu(event,row?row.dataset.kind:'empty')});
+    document.addEventListener('click',()=>{context.hidden=true});
+    document.getElementById('theme').addEventListener('click',()=>{app.dataset.theme=app.dataset.theme==='dark'?'light':'dark'});
+  </script>
+</body>
+</html>

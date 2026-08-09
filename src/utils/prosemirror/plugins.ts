@@ -8,6 +8,7 @@ import { keymap } from 'prosemirror-keymap'
 import { dropCursor } from 'prosemirror-dropcursor'
 import { gapCursor } from 'prosemirror-gapcursor'
 import { baseKeymap } from 'prosemirror-commands'
+import { tableEditing } from 'prosemirror-tables'
 import { buildKeymap } from './keymap'
 import { buildInputRules } from './inputrules'
 
@@ -29,6 +30,9 @@ export const pluginsKey = {
  */
 export function createPlugins(schema: Schema): Plugin[] {
   const plugins: Plugin[] = [
+    // 表格编辑核心插件（处理光标定位、单元格导航、选择等）
+    tableEditing(),
+
     // 输入规则（Markdown 语法自动转换）
     buildInputRules(schema),
 
@@ -60,7 +64,7 @@ export const selectionPlugin = new Plugin({
     init() {
       return { from: 0, to: 0, empty: true }
     },
-    apply(tr, prev) {
+    apply(tr, _prev) {
       const { selection } = tr
       return {
         from: selection.from,
@@ -75,9 +79,7 @@ export const selectionPlugin = new Plugin({
  * 文档更新插件
  * 用于监听文档变化，同步到外部状态
  */
-export function createDocumentChangePlugin(
-  onChange: (doc: EditorState) => void
-): Plugin {
+export function createDocumentChangePlugin(onChange: (doc: EditorState) => void): Plugin {
   return new Plugin({
     view() {
       return {
@@ -97,11 +99,11 @@ export function createDocumentChangePlugin(
  */
 export const taskListClickPlugin = new Plugin({
   props: {
-    handleClickOn(view, pos, node, nodePos, event) {
+    handleClickOn(view, _pos, node, nodePos, event) {
       // 检查是否点击了任务列表的复选框
       if (node.type.name === 'task_item') {
         const target = event.target as HTMLElement
-        if (target && target.tagName === 'INPUT' && target.type === 'checkbox') {
+        if (target && target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'checkbox') {
           const tr = view.state.tr
           const checked = (target as HTMLInputElement).checked
           tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, checked })
@@ -118,12 +120,10 @@ export const taskListClickPlugin = new Plugin({
  * 图片点击插件
  * 处理图片点击，显示图片工具栏
  */
-export function createImageClickPlugin(
-  onImageClick: (pos: number, node: any) => void
-): Plugin {
+export function createImageClickPlugin(onImageClick: (pos: number, node: any) => void): Plugin {
   return new Plugin({
     props: {
-      handleClickOn(view, pos, node, nodePos, event) {
+      handleClickOn(_view, _pos, node, nodePos, _event) {
         if (node.type.name === 'image') {
           onImageClick(nodePos, node)
           return true
@@ -137,12 +137,10 @@ export function createImageClickPlugin(
 /**
  * 拖放插件配置
  */
-export function createDragDropPlugin(
-  onDrop: (pos: number, files: File[]) => void
-): Plugin {
+export function createDragDropPlugin(onDrop: (pos: number, files: File[]) => void): Plugin {
   return new Plugin({
     props: {
-      handleDrop(view, event, slice, moved) {
+      handleDrop(view, event, _slice, moved) {
         if (moved) return false
 
         const files = event.dataTransfer?.files
@@ -156,9 +154,80 @@ export function createDragDropPlugin(
         return false
       },
       handleDOMEvents: {
-        dragover: (view, event) => {
+        dragover: (_view, event) => {
           event.preventDefault()
           return true
+        }
+      }
+    }
+  })
+}
+
+/**
+ * 粘贴插件配置
+ * 处理粘贴图片 - 返回文件信息，由外部处理插入
+ */
+export function createPastePlugin(
+  onPasteImage: (view: import('prosemirror-view').EditorView, file: File) => void
+): Plugin {
+  return new Plugin({
+    props: {
+      handleDOMEvents: {
+        paste: (view, event) => {
+          const clipboardData = (event as ClipboardEvent).clipboardData
+          if (!clipboardData) return false
+
+          // 优先处理图片文件
+          const files = Array.from(clipboardData.files)
+          for (const file of files) {
+            if (file.type.startsWith('image/')) {
+              event.preventDefault()
+              onPasteImage(view, file)
+              return true
+            }
+          }
+
+          // 尝试从 clipboardData.items 获取（某些截图工具）
+          const items = Array.from(clipboardData.items)
+          for (const item of items) {
+            if (item.type.startsWith('image/')) {
+              const blob = item.getAsFile()
+              if (blob) {
+                event.preventDefault()
+                const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: item.type })
+                onPasteImage(view, file)
+                return true
+              }
+            }
+          }
+
+          // 尝试从 HTML 内容中提取 base64 图片
+          const html = clipboardData.getData('text/html')
+          if (html) {
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(html, 'text/html')
+            const images = doc.querySelectorAll('img')
+
+            for (const img of Array.from(images)) {
+              const src = img.getAttribute('src')
+              if (src && src.startsWith('data:')) {
+                event.preventDefault()
+                // 将 base64 转换为文件
+                fetch(src)
+                  .then((response) => response.blob())
+                  .then((blob) => {
+                    const file = new File([blob], `pasted-image-${Date.now()}.png`, {
+                      type: blob.type
+                    })
+                    onPasteImage(view, file)
+                  })
+                  .catch((err) => console.error('Failed to process base64 image:', err))
+                return true
+              }
+            }
+          }
+
+          return false
         }
       }
     }
@@ -174,7 +243,11 @@ export function createPlaceholderPlugin(text: string): Plugin {
     props: {
       decorations: (state) => {
         const doc = state.doc
-        if (doc.childCount === 1 && doc.firstChild?.type.name === 'paragraph' && doc.firstChild?.content.size === 0) {
+        if (
+          doc.childCount === 1 &&
+          doc.firstChild?.type.name === 'paragraph' &&
+          doc.firstChild?.content.size === 0
+        ) {
           const deco = document.createElement('div')
           deco.className = 'ProseMirror-placeholder'
           deco.textContent = text
@@ -190,10 +263,4 @@ export function createPlaceholderPlugin(text: string): Plugin {
 /**
  * 导出所有插件创建函数
  */
-export {
-  history,
-  keymap,
-  dropCursor,
-  gapCursor,
-  baseKeymap
-}
+export { history, keymap, dropCursor, gapCursor, baseKeymap }

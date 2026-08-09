@@ -111,7 +111,7 @@ Some text
       expect(result.data).toBeDefined()
 
       if (result.data) {
-        const { document, importedImages, failedImages } = result.data
+        const { document, importedImages } = result.data
 
         expect(importedImages).toHaveLength(1)
         expect(document.assets.images).toHaveLength(1)

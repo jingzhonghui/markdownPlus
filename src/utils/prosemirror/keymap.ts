@@ -1,11 +1,8 @@
 /**
  * ProseMirror 键盘快捷键和命令
  */
-import { Schema, NodeType, MarkType } from 'prosemirror-model'
+import { Schema, NodeType } from 'prosemirror-model'
 import {
-  EditorState,
-  Transaction,
-  Selection,
   TextSelection,
   Command
 } from 'prosemirror-state'
@@ -43,8 +40,8 @@ function toggleHeading(level: number): Command {
     state.doc.nodesBetween($from.pos, $to.pos, (node) => {
       if (node.type === nodeType && node.attrs.level === level) {
         isCurrentHeading = true
-        return false
       }
+      return true
     })
 
     if (isCurrentHeading) {
@@ -83,7 +80,6 @@ function toggleTaskChecked(): Command {
  */
 function insertHardBreak(): Command {
   return (state, dispatch) => {
-    const { $from } = state.selection
     const br = state.schema.nodes.hard_break
 
     if (dispatch) {
@@ -114,7 +110,7 @@ function insertHorizontalRule(): Command {
  */
 function insertLink(href = '', title = ''): Command {
   return (state, dispatch) => {
-    const { $from, $to, empty } = state.selection
+    const { empty } = state.selection
 
     if (empty) {
       // 没有选中文本，插入链接文本
@@ -163,21 +159,61 @@ function toggleStrikethrough(): Command {
 /**
  * 自定义列表分割逻辑
  * 处理任务列表和普通列表的分割
+ * 在列表项末尾按回车时自动创建新列表项，空列表项时退出列表
  */
 function customSplitListItem(itemType: NodeType): Command {
   return (state, dispatch) => {
-    const { $from, $to } = state.selection
+    const { $from } = state.selection
 
-    // 检查是否在列表项中
-    const depth = $from.depth
-    const parent = $from.node(depth)
-
-    if (parent.type.name === 'list_item' || parent.type.name === 'task_item') {
-      // 使用默认分割
-      return splitListItem(itemType)(state, dispatch)
+    // 查找列表项节点 - 需要向上遍历节点树
+    let listItemDepth = -1
+    for (let i = $from.depth; i > 0; i--) {
+      const node = $from.node(i)
+      if (node.type.name === 'list_item' || node.type.name === 'task_item') {
+        listItemDepth = i
+        break
+      }
     }
 
-    return false
+    // 如果不在列表项中，返回 false 让其他命令处理
+    if (listItemDepth === -1) {
+      return false
+    }
+
+    const listItemNode = $from.node(listItemDepth)
+
+    // 检查列表项是否为空（只有段落且内容为空）
+    const isEmpty = listItemNode.childCount === 1 &&
+      listItemNode.firstChild?.type.name === 'paragraph' &&
+      listItemNode.firstChild?.content.size === 0
+
+    if (isEmpty) {
+      // 空列表项：退出列表（lift）
+      if (dispatch) {
+        // 获取列表在文档中的位置
+        const listDepth = listItemDepth - 1
+        const listNode = $from.node(listDepth)
+
+        // 如果这是列表中的唯一一个项，直接转换为段落
+        if (listNode.childCount === 1) {
+          const tr = state.tr
+          // 删除整个列表，插入段落
+          const listStart = $from.before(listDepth)
+          const listEnd = $from.after(listDepth)
+          const paragraph = state.schema.nodes.paragraph.create()
+          tr.replaceWith(listStart, listEnd, paragraph)
+          tr.setSelection(TextSelection.create(tr.doc, listStart + 1))
+          dispatch(tr)
+        } else {
+          // 多个列表项：将当前项提升为段落
+          liftListItem(itemType)(state, dispatch)
+        }
+      }
+      return true
+    }
+
+    // 非空列表项：使用默认分割创建新列表项
+    return splitListItem(itemType)(state, dispatch)
   }
 }
 
@@ -185,7 +221,7 @@ function customSplitListItem(itemType: NodeType): Command {
  * 回车键处理
  * 在任务列表中点击复选框时切换状态
  */
-function handleEnter(schema: Schema): Command {
+function handleEnter(_schema: Schema): Command {
   return chainCommands(
     exitCode,
     (state, dispatch) => {
@@ -246,10 +282,18 @@ export function buildKeymap(schema: Schema): Record<string, Command> {
     'Mod-y': redo,
 
     // 基本格式
-    'Mod-b': toggleMark(schema.marks.bold),
-    'Mod-i': toggleMark(schema.marks.italic),
-    'Mod-`': toggleCode,
-    'Mod-Shift-x': toggleStrikethrough,
+    'Mod-b': (state, dispatch) => {
+      return toggleMark(schema.marks.bold)(state, dispatch)
+    },
+    'Mod-i': (state, dispatch) => {
+      return toggleMark(schema.marks.italic)(state, dispatch)
+    },
+    'Mod-`': (state, dispatch) => {
+      return toggleCode()(state, dispatch)
+    },
+    'Mod-Shift-x': (state, dispatch) => {
+      return toggleStrikethrough()(state, dispatch)
+    },
 
     // 标题 (Ctrl+1 ~ Ctrl+4)
     'Mod-1': toggleHeading(1),
@@ -275,7 +319,7 @@ export function buildKeymap(schema: Schema): Record<string, Command> {
     'Mod-Shift-k': insertImage(),
 
     // 水平分割线
-    'Mod-Shift--': insertHorizontalRule,
+    'Mod-Shift--': insertHorizontalRule(),
 
     // 导航
     'Alt-ArrowUp': joinUp,

@@ -11,12 +11,16 @@ export const IPC_CHANNELS = {
     SAVE: 'file:save',
     SAVE_AS: 'file:saveAs',
     CLOSE: 'file:close',
-    RECENT: 'file:recent'
+    RECENT: 'file:recent',
+    CREATE: 'file:create',
+    RENAME: 'file:rename',
+    DELETE: 'file:delete'
   },
   MDX: {
     READ: 'mdx:read',
     WRITE: 'mdx:write',
     IMPORT_MD: 'mdx:importMd',
+    IMPORT_FOLDER: 'mdx:importFolder',
     EXPORT_MD: 'mdx:exportMd',
     ADD_IMAGE: 'mdx:addImage',
     GET_IMAGE: 'mdx:getImage',
@@ -32,9 +36,21 @@ export const IPC_CHANNELS = {
     CONFIRM_CLOSE: 'app:confirm-close',
     CLOSE_CONFIRMED: 'app:close-confirmed'
   },
+  WINDOW: {
+    MINIMIZE: 'window:minimize',
+    MAXIMIZE: 'window:maximize',
+    MAXIMIZED: 'window:maximized',
+    UNMAXIMIZED: 'window:unmaximized',
+    CLOSE: 'window:close',
+    IS_MAXIMIZED: 'window:isMaximized'
+  },
   DIALOG: {
     SHOW_OPEN: 'dialog:showOpen',
     SHOW_SAVE: 'dialog:showSave',
     SHOW_MESSAGE: 'dialog:showMessage'
+  },
+  FOLDER: {
+    READ: 'folder:read',
+    CREATE: 'folder:create'
   }
 } as const

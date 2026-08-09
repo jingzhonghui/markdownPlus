@@ -177,7 +177,7 @@ export function useMdx() {
         targetPath += '.mdx'
       }
 
-      const result = await window.electronAPI.saveAsFile(targetPath, content, title)
+      const result = await window.electronAPI.saveAsFile(content, title)
 
       if (result.success) {
         filePath.value = targetPath

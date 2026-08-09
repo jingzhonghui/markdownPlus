@@ -1,8 +1,119 @@
 import MarkdownIt from 'markdown-it'
+import katex from 'katex'
 import type { MdxImageAsset } from '../types/mdx'
 
 // Markdown-it 实例
 let md: MarkdownIt | null = null
+
+/**
+ * 渲染数学公式为 HTML
+ * @param content LaTeX 内容
+ * @param displayMode 是否为块级显示
+ */
+function renderMath(content: string, displayMode: boolean): string {
+  try {
+    return katex.renderToString(content.trim(), {
+      displayMode,
+      throwOnError: false,
+      strict: false
+    })
+  } catch {
+    // 渲染失败时返回原始内容
+    return displayMode
+      ? `<div class="katex-error">$$${escapeHtml(content)}$$</div>`
+      : `<span class="katex-error">$${escapeHtml(content)}$</span>`
+  }
+}
+
+/**
+ * markdown-it 数学公式插件
+ * 支持行内 $...$ 和块级 $$...$$
+ */
+function mathPlugin(markdownIt: MarkdownIt): void {
+  // 行内数学公式规则
+  markdownIt.inline.ruler.after('escape', 'math_inline', (state, silent) => {
+    // 检查是否以 $ 开头且不是 $$
+    if (state.src.charCodeAt(state.pos) !== 0x24 /* $ */) return false
+    if (state.src.charCodeAt(state.pos + 1) === 0x24 /* $ */) return false
+
+    const start = state.pos + 1
+    const end = state.src.indexOf('$', start)
+
+    // 找不到闭合 $，或内容为空
+    if (end === -1 || end === start) return false
+
+    // 检查 $ 前是否有转义符
+    if (state.src.charCodeAt(end - 1) === 0x5C /* \ */) return false
+
+    // 内容不能包含换行
+    const content = state.src.slice(start, end)
+    if (content.includes('\n')) return false
+
+    if (!silent) {
+      const token = state.push('math_inline', 'math', 0)
+      token.content = content
+      token.markup = '$'
+    }
+
+    state.pos = end + 1
+    return true
+  })
+
+  // 块级数学公式规则
+  markdownIt.block.ruler.before('fence', 'math_block', (state, startLine, endLine, silent) => {
+    const pos = state.bMarks[startLine] + state.tShift[startLine]
+    const max = state.eMarks[startLine]
+
+    // 检查行首是否是 $$
+    if (pos + 2 > max || state.src.slice(pos, pos + 2) !== '$$') return false
+
+    // 查找闭合 $$
+    let nextLine = startLine + 1
+    let endLineNum = -1
+
+    while (nextLine < endLine) {
+      const linePos = state.bMarks[nextLine] + state.tShift[nextLine]
+      const lineMax = state.eMarks[nextLine]
+      const lineContent = state.src.slice(linePos, lineMax).trim()
+
+      if (lineContent === '$$') {
+        endLineNum = nextLine
+        break
+      }
+      nextLine++
+    }
+
+    // 没找到闭合标记
+    if (endLineNum === -1) return false
+
+    if (!silent) {
+      const token = state.push('math_block', 'math', 0)
+      // 收集 $$ 之间的所有内容
+      const contentLines: string[] = []
+      for (let i = startLine + 1; i < endLineNum; i++) {
+        const linePos = state.bMarks[i] + state.tShift[i]
+        const lineMax = state.eMarks[i]
+        contentLines.push(state.src.slice(linePos, lineMax))
+      }
+      token.content = contentLines.join('\n')
+      token.markup = '$$'
+      token.map = [startLine, endLineNum + 1]
+      token.block = true
+    }
+
+    state.line = endLineNum + 1
+    return true
+  })
+
+  // 渲染规则
+  markdownIt.renderer.rules.math_inline = (tokens, idx) => {
+    return renderMath(tokens[idx].content, false)
+  }
+
+  markdownIt.renderer.rules.math_block = (tokens, idx) => {
+    return renderMath(tokens[idx].content, true) + '\n'
+  }
+}
 
 /**
  * 获取 Markdown-it 实例（单例）
@@ -13,7 +124,7 @@ export function getMarkdownIt(): MarkdownIt {
       html: true,
       linkify: true,
       typographer: true,
-      breaks: false,
+      breaks: true,
       highlight: (str: string, lang: string) => {
         // 代码高亮由 Shiki 处理，这里只返回原始代码
         return `<pre class="shiki"><code class="language-${lang || 'text'}">${escapeHtml(str)}</code></pre>`
@@ -23,9 +134,12 @@ export function getMarkdownIt(): MarkdownIt {
     // 添加 GFM 支持
     md.enable(['table', 'strikethrough'])
 
+    // 数学公式支持
+    md.use(mathPlugin)
+
     // 自定义任务列表渲染
     md.use((markdownIt: MarkdownIt) => {
-      const defaultRender = markdownIt.renderer.rules.list_item_open || function(tokens, idx, options, env, self) {
+      const defaultRender = markdownIt.renderer.rules.list_item_open || function(tokens, idx, options, _env, self) {
         return self.renderToken(tokens, idx, options)
       }
 
@@ -79,7 +193,7 @@ export function renderMarkdown(content: string, imageAssets: MdxImageAsset[] = [
     // 替换图片引用路径
     const escapedPath = asset.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedPath}\\)`, 'g')
-    processedContent = processedContent.replace(regex, (match, alt) => {
+    processedContent = processedContent.replace(regex, (_match, alt) => {
       // 使用 data URL 或 blob URL（这里先用路径占位）
       return `![${alt}](${asset.path})`
     })

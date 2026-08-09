@@ -5,18 +5,68 @@
 import { Schema, Node as ProseMirrorNode, Mark } from 'prosemirror-model'
 import MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
-import {
-  MarkdownParser,
-  MarkdownSerializer,
-  MarkdownSerializerState
-} from 'prosemirror-markdown'
+import { MarkdownParser, MarkdownSerializer, MarkdownSerializerState } from 'prosemirror-markdown'
 import { markdownSchema } from './schema'
 
 /**
  * 创建 MarkdownIt 实例
  */
 function createMarkdownIt(): MarkdownIt {
-  return MarkdownIt('commonmark', { html: false })
+  const md = MarkdownIt('commonmark', { html: false })
+  md.enable('table')
+
+  // 行内数学公式规则 $...$
+  md.inline.ruler.after('escape', 'math_inline', (state, silent) => {
+    if (state.src.charCodeAt(state.pos) !== 0x24 /* $ */) return false
+    if (state.src.charCodeAt(state.pos + 1) === 0x24 /* $ */) return false
+    const start = state.pos + 1
+    const end = state.src.indexOf('$', start)
+    if (end === -1 || end === start) return false
+    if (state.src.charCodeAt(end - 1) === 0x5c /* \ */) return false
+    const content = state.src.slice(start, end)
+    if (content.includes('\n')) return false
+    if (!silent) {
+      const token = state.push('math_inline', 'math', 0)
+      token.content = content
+      token.markup = '$'
+    }
+    state.pos = end + 1
+    return true
+  })
+
+  // 块级数学公式规则 $$...$$
+  md.block.ruler.before('fence', 'math_block', (state, startLine, endLine, silent) => {
+    const pos = state.bMarks[startLine] + state.tShift[startLine]
+    const max = state.eMarks[startLine]
+    if (pos + 2 > max || state.src.slice(pos, pos + 2) !== '$$') return false
+    let endLineNum = -1
+    for (let i = startLine + 1; i < endLine; i++) {
+      const lp = state.bMarks[i] + state.tShift[i]
+      const lm = state.eMarks[i]
+      if (state.src.slice(lp, lm).trim() === '$$') {
+        endLineNum = i
+        break
+      }
+    }
+    if (endLineNum === -1) return false
+    if (!silent) {
+      const token = state.push('math_block', 'math', 0)
+      const lines: string[] = []
+      for (let i = startLine + 1; i < endLineNum; i++) {
+        const lp = state.bMarks[i] + state.tShift[i]
+        const lm = state.eMarks[i]
+        lines.push(state.src.slice(lp, lm))
+      }
+      token.content = lines.join('\n')
+      token.markup = '$$'
+      token.map = [startLine, endLineNum + 1]
+      token.block = true
+    }
+    state.line = endLineNum + 1
+    return true
+  })
+
+  return md
 }
 
 /**
@@ -24,11 +74,14 @@ function createMarkdownIt(): MarkdownIt {
  * 使用 prosemirror-markdown 期望的标准格式
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function createTokens(schema: Schema): Record<string, any> {
+function createTokens(_schema: Schema): Record<string, any> {
   // 辅助函数：获取 token 属性
   const getAttr = (tok: Token, name: string): string | null => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (tok as any).attrGet?.(name) ?? tok.attrs?.find((a: [string, string]) => a[0] === name)?.[1] ?? null
+    return (
+      (tok as any).attrGet?.(name) ??
+      tok.attrs?.find((a: [string, string]) => a[0] === name)?.[1] ??
+      null
+    )
   }
 
   return {
@@ -90,12 +143,10 @@ function createTokens(schema: Schema): Record<string, any> {
     },
 
     // 表格 - 使用 ignore 跳过 tbody/thead
+    // handler 名用基名，prosemirror-markdown 自动加 _open/_close 后缀
     table: { block: 'table' },
-    table_open: { block: 'table' },
-    table_close: { ignore: true },
-    tr_open: { block: 'table_row' },
-    tr_close: { ignore: true },
-    td_open: {
+    tr: { block: 'table_row' },
+    td: {
       block: 'table_cell',
       getAttrs: (tok: Token) => {
         const style = getAttr(tok, 'style') || ''
@@ -103,8 +154,7 @@ function createTokens(schema: Schema): Record<string, any> {
         return { align: match ? match[1] : null }
       }
     },
-    td_close: { ignore: true },
-    th_open: {
+    th: {
       block: 'table_header',
       getAttrs: (tok: Token) => {
         const style = getAttr(tok, 'style') || ''
@@ -112,11 +162,12 @@ function createTokens(schema: Schema): Record<string, any> {
         return { align: match ? match[1] : null }
       }
     },
-    th_close: { ignore: true },
-    thead_open: { ignore: true },
-    thead_close: { ignore: true },
-    tbody_open: { ignore: true },
-    tbody_close: { ignore: true },
+    thead: { ignore: true },
+    tbody: { ignore: true },
+
+    // 数学公式（叶子节点，源码存于 source 属性）
+    math_inline: { node: 'math_inline', getAttrs: (tok: Token) => ({ source: tok.content }) },
+    math_block: { node: 'math_block', getAttrs: (tok: Token) => ({ source: tok.content }) },
 
     // 行内标记
     em: { mark: 'italic' },
@@ -144,8 +195,12 @@ function createMarkdownParser(schema: Schema): MarkdownParser {
 /**
  * 自定义 Markdown 序列化器
  */
-function createMarkdownSerializer(schema: Schema): MarkdownSerializer {
+function createMarkdownSerializer(_schema: Schema): MarkdownSerializer {
   const nodes: Record<string, (state: MarkdownSerializerState, node: ProseMirrorNode) => void> = {
+    text(state, node) {
+      state.text(node.text || '', false)
+    },
+
     paragraph(state, node) {
       state.renderInline(node)
       state.closeBlock(node)
@@ -198,14 +253,32 @@ function createMarkdownSerializer(schema: Schema): MarkdownSerializer {
     },
 
     table(state, node) {
-      state.renderContent(node)
+      node.forEach((row, _, i) => {
+        state.render(row, node, i)
+        // 首行若是表头，追加 GFM 分隔行
+        if (i === 0 && row.firstChild?.type.name === 'table_header') {
+          const aligns: string[] = []
+          row.forEach((cell) => {
+            const a = cell.attrs.align as string | null
+            if (a === 'center') aligns.push(':---:')
+            else if (a === 'right') aligns.push('---:')
+            else aligns.push('---')
+          })
+          if (aligns.length > 0) {
+            state.write('| ' + aligns.join(' | ') + ' |')
+            state.ensureNewLine()
+          }
+        }
+      })
       state.ensureNewLine()
     },
 
     table_row(state, node) {
       state.write('| ')
-      state.renderContent(node)
-      state.write(' |')
+      node.forEach((cell) => {
+        state.renderInline(cell)
+        state.write(' | ')
+      })
       state.ensureNewLine()
     },
 
@@ -224,32 +297,54 @@ function createMarkdownSerializer(schema: Schema): MarkdownSerializer {
       state.closeBlock(node)
     },
 
-    hard_break(state, _node, parent, index) {
-      const next = parent.child(index + 1)
-      const prev = parent.child(index - 1)
-      if (next && prev && next.type.name !== 'hard_break' && prev.type.name !== 'hard_break') {
-        state.write('  ')
-      }
-      state.write('\n')
+    hard_break(state, node) {
+      state.write(node.type.name === 'hard_break' ? '\n' : '')
     },
 
     image(state, node) {
-      state.write('![' + state.esc(node.attrs.alt as string || '') + '](' + state.esc(node.attrs.src as string || ''))
+      state.write(
+        '![' +
+          state.esc((node.attrs.alt as string) || '') +
+          '](' +
+          state.esc((node.attrs.src as string) || '')
+      )
       if (node.attrs.title) {
         state.write(' "' + node.attrs.title + '"')
       }
       state.write(')')
+    },
+
+    math_inline(state, node) {
+      state.write('$' + (node.attrs.source || '') + '$')
+    },
+
+    math_block(state, node) {
+      state.write('$$\n')
+      state.text((node.attrs.source as string) || '', false)
+      state.ensureNewLine()
+      state.write('$$')
+      state.closeBlock(node)
     }
   }
 
-  const marks: Record<string, { open: string | ((_state: MarkdownSerializerState, mark: Mark) => string); close: string | ((_state: MarkdownSerializerState, mark: Mark) => string); mixable?: boolean; expelEnclosingWhitespace?: boolean }> = {
+  const marks: Record<
+    string,
+    {
+      open: string | ((_state: MarkdownSerializerState, mark: Mark) => string)
+      close: string | ((_state: MarkdownSerializerState, mark: Mark) => string)
+      mixable?: boolean
+      expelEnclosingWhitespace?: boolean
+      escape?: boolean
+    }
+  > = {
     bold: { open: '**', close: '**', mixable: true, expelEnclosingWhitespace: true },
     italic: { open: '*', close: '*', mixable: true, expelEnclosingWhitespace: true },
     strikethrough: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: true },
     code: { open: '`', close: '`', escape: false },
     link: {
       open: '[',
-      close: (_state, mark) => '](' + mark.attrs.href + (mark.attrs.title ? ' "' + mark.attrs.title + '"' : '') + ')'
+      close: (_state, mark) =>
+        '](' + mark.attrs.href + (mark.attrs.title ? ' "' + mark.attrs.title + '"' : '') + ')'
     }
   }
 
@@ -266,7 +361,15 @@ const markdownSerializer = createMarkdownSerializer(markdownSchema)
  * @returns ProseMirror Node
  */
 export function parseMarkdown(content: string): ProseMirrorNode {
-  return markdownParser.parse(content) || markdownSchema.node('doc', null, [markdownSchema.node('paragraph')])
+  // 空文档也必须保留一个段落，否则 IR 模式没有可放置光标的编辑节点。
+  if (!content.trim()) {
+    return markdownSchema.node('doc', null, [markdownSchema.node('paragraph')])
+  }
+
+  return (
+    markdownParser.parse(content) ||
+    markdownSchema.node('doc', null, [markdownSchema.node('paragraph')])
+  )
 }
 
 /**

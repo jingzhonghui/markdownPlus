@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, shallowRef, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, shallowRef } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view'
@@ -16,11 +16,12 @@ interface Props {
   class?: string
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
 // Emits
 const emit = defineEmits<{
   (e: 'update:content', content: string): void
+  (e: 'scroll', ratio: number): void
 }>()
 
 // Store
@@ -111,7 +112,7 @@ function createExtensions(): Extension[] {
  * Markdown 自动补全
  */
 function markdownCompletions(context: { matchBefore: (regexp: RegExp) => { from: number; to: number; text: string } | null; explicit: boolean }): { from: number; options: Completion[] } | null {
-  const word = context.matchBefore(/^\s*[#\-*>\[]?/)
+  const word = context.matchBefore(/^\s*[#\-* >[]?/)
   if (!word && !context.explicit) return null
 
   const completions: Completion[] = [
@@ -301,7 +302,7 @@ function insertImage(view: EditorView): void {
  * 切换标题级别
  */
 function cycleHeading(view: EditorView): void {
-  const { from, to } = view.state.selection.main
+  const { from } = view.state.selection.main
   const line = view.state.doc.lineAt(from)
   const lineText = line.text
   
@@ -418,7 +419,7 @@ function continueList(view: EditorView): boolean {
  * 列表缩进/反缩进
  */
 function indentList(view: EditorView, increase: boolean): boolean {
-  const { from, to } = view.state.selection.main
+  const { from } = view.state.selection.main
   const line = view.state.doc.lineAt(from)
   const lineText = line.text
   
@@ -595,18 +596,38 @@ function updateCursorPosition(state: EditorState): void {
  */
 function initEditor(): void {
   if (!editorRef.value) return
-  
+
   const startState = EditorState.create({
     doc: fileStore.fileContent,
     extensions: createExtensions()
   })
-  
+
   const view = new EditorView({
     state: startState,
     parent: editorRef.value
   })
-  
+
+  // 监听滚动事件
+  const scroller = view.scrollDOM
+  scroller.addEventListener('scroll', handleScroll)
+
   editorView.value = view
+}
+
+/**
+ * 处理滚动事件
+ */
+function handleScroll(): void {
+  if (isSyncing) return
+  const view = editorView.value
+  if (!view) return
+
+  const scroller = view.scrollDOM
+  const maxScroll = scroller.scrollHeight - scroller.clientHeight
+  if (maxScroll > 0) {
+    const ratio = scroller.scrollTop / maxScroll
+    emit('scroll', ratio)
+  }
 }
 
 /**
@@ -629,7 +650,11 @@ function toggleSearchPanel(): void {
  * 销毁编辑器
  */
 function destroyEditor(): void {
-  editorView.value?.destroy()
+  const view = editorView.value
+  if (view) {
+    view.scrollDOM.removeEventListener('scroll', handleScroll)
+    view.destroy()
+  }
   editorView.value = null
 }
 
@@ -699,6 +724,144 @@ function updateTheme(): void {
   })
 }
 
+// ========== 工具栏事件处理 ==========
+
+function handleFormatEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const format = (e as CustomEvent).detail as string
+  switch (format) {
+    case 'bold':
+      wrapSelection(view, '**', '**')
+      break
+    case 'italic':
+      wrapSelection(view, '*', '*')
+      break
+    case 'strikethrough':
+      wrapSelection(view, '~~', '~~')
+      break
+    case 'unorderedList':
+      prependLinePrefix(view, '- ')
+      break
+    case 'orderedList':
+      prependLinePrefix(view, '1. ')
+      break
+    case 'blockquote':
+      prependLinePrefix(view, '> ')
+      break
+    case 'table':
+      insertTable(view)
+      break
+  }
+  view.focus()
+}
+
+function handleHeadingEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const level = (e as CustomEvent).detail as number
+  const { from } = view.state.selection.main
+  const line = view.state.doc.lineAt(from)
+
+  // 移除已有标题标记
+  const existingMatch = line.text.match(/^(#{0,4})\s/)
+  const currentLevel = existingMatch ? existingMatch[1].length : 0
+
+  let newText: string
+  if (level === 0) {
+    newText = line.text.replace(/^#{1,4}\s+/, '')
+  } else if (currentLevel > 0) {
+    newText = line.text.replace(/^#{1,4}\s*/, '#'.repeat(level) + ' ')
+  } else {
+    newText = '#'.repeat(level) + ' ' + line.text
+  }
+
+  view.dispatch({ changes: { from: line.from, to: line.to, insert: newText } })
+  view.focus()
+}
+
+function handleLinkEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const { href, title } = (e as CustomEvent).detail as { href: string; title: string }
+  const { from, to } = view.state.selection.main
+  const selectedText = view.state.doc.sliceString(from, to)
+  const linkText = title || selectedText || '链接文本'
+  const insert = `[${linkText}](${href})`
+
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: from + 1, head: from + 1 + linkText.length }
+  })
+  view.focus()
+}
+
+function handleImageEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const { src, alt } = (e as CustomEvent).detail as { src: string; alt: string }
+  const { from } = view.state.selection.main
+  const altText = alt || '图片'
+  const insert = `![${altText}](${src})`
+
+  view.dispatch({
+    changes: { from, insert },
+    selection: { anchor: from + 2, head: from + 2 + altText.length }
+  })
+  view.focus()
+}
+
+function handleCodeBlockEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+
+  const { language } = (e as CustomEvent).detail as { language?: string }
+  const { from } = view.state.selection.main
+  const lang = language || ''
+  const insert = `\n\`\`\`${lang}\n\n\`\`\`\n`
+
+  view.dispatch({
+    changes: { from, insert },
+    selection: { anchor: from + 4 + lang.length + 1 }
+  })
+  view.focus()
+}
+
+/** 在当前行首插入前缀 */
+function prependLinePrefix(view: EditorView, prefix: string): void {
+  const { from } = view.state.selection.main
+  const line = view.state.doc.lineAt(from)
+
+  // 如果已有相同前缀则移除
+  if (line.text.startsWith(prefix)) {
+    const newText = line.text.slice(prefix.length)
+    view.dispatch({ changes: { from: line.from, to: line.to, insert: newText } })
+  } else {
+    // 移除其他列表前缀
+    const cleaned = line.text.replace(/^[-*]\s|\d+\.\s|>\s/, '')
+    view.dispatch({ changes: { from: line.from, to: line.to, insert: prefix + cleaned } })
+  }
+}
+
+/** 插入表格 */
+function insertTable(view: EditorView): void {
+  const { from } = view.state.selection.main
+  const table = [
+    '| 列1 | 列2 | 列3 |',
+    '| --- | --- | --- |',
+    '| 内容 | 内容 | 内容 |'
+  ].join('\n')
+
+  view.dispatch({
+    changes: { from, insert: '\n' + table + '\n' },
+    selection: { anchor: from + 3 }
+  })
+}
+
 // Lifecycle
 onMounted(() => {
   initEditor()
@@ -710,6 +873,13 @@ onMounted(() => {
     editorEl.addEventListener('drop', handleDrop)
     editorEl.addEventListener('paste', handlePaste)
   }
+
+  // 工具栏事件监听
+  window.addEventListener('editor:format', handleFormatEvent)
+  window.addEventListener('editor:heading', handleHeadingEvent)
+  window.addEventListener('editor:link', handleLinkEvent)
+  window.addEventListener('editor:image', handleImageEvent)
+  window.addEventListener('editor:codeBlock', handleCodeBlockEvent)
 })
 
 onUnmounted(() => {
@@ -720,6 +890,12 @@ onUnmounted(() => {
     editorEl.removeEventListener('drop', handleDrop)
     editorEl.removeEventListener('paste', handlePaste)
   }
+
+  window.removeEventListener('editor:format', handleFormatEvent)
+  window.removeEventListener('editor:heading', handleHeadingEvent)
+  window.removeEventListener('editor:link', handleLinkEvent)
+  window.removeEventListener('editor:image', handleImageEvent)
+  window.removeEventListener('editor:codeBlock', handleCodeBlockEvent)
 
   destroyEditor()
 })
@@ -747,7 +923,16 @@ watch(() => themeStore.systemPreference, updateTheme)
 defineExpose({
   toggleSearchPanel,
   focus: () => editorView.value?.focus(),
-  getView: () => editorView.value
+  getView: () => editorView.value,
+  scrollTo: (ratio: number) => {
+    const view = editorView.value
+    if (!view) return
+    const scroller = view.scrollDOM
+    const maxScroll = scroller.scrollHeight - scroller.clientHeight
+    if (maxScroll > 0) {
+      scroller.scrollTop = ratio * maxScroll
+    }
+  }
 })
 </script>
 
@@ -762,7 +947,7 @@ defineExpose({
 
 <style scoped>
 .source-container {
-  flex: 1;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -771,7 +956,7 @@ defineExpose({
 
 .codemirror-wrapper {
   flex: 1;
-  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -781,6 +966,7 @@ defineExpose({
 
 .codemirror-wrapper :deep(.cm-scroller) {
   font-family: var(--font-mono);
+  overflow: auto;
 }
 
 /* 自动补全面板样式 */

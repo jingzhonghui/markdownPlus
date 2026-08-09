@@ -1,194 +1,208 @@
 <script setup lang="ts">
-import { computed, ref, provide } from 'vue'
+import { computed, ref } from 'vue'
 import { useFileStore } from '../../stores/file'
-import WysiwygEditor from './WysiwygEditor.vue'
 import SourceEditor from './SourceEditor.vue'
+import IrEditor from './IrEditor.vue'
 import PreviewPanel from './PreviewPanel.vue'
+import TabBar from './TabBar.vue'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
-import type { EditorView } from 'prosemirror-view'
 
 const fileStore = useFileStore()
 
-/**
- * WysiwygEditor 组件引用
- */
-const wysiwygEditorRef = ref<InstanceType<typeof WysiwygEditor> | null>(null)
-
-/**
- * 是否显示 WYSIWYG 编辑器
- */
-const showWysiwyg = computed(() => fileStore.editorMode === 'wysiwyg')
-
-/**
- * 是否显示源码编辑器
- */
-const showSource = computed(() => fileStore.editorMode === 'source' || fileStore.editorMode === 'split')
-
-/**
- * 是否显示预览面板
- */
 const showPreview = computed(() => fileStore.editorMode === 'split')
+const isIrMode = computed(() => fileStore.editorMode === 'ir')
+const hasOpenFile = computed(() => fileStore.tabs.length > 0 && fileStore.activeTabId !== null)
+
+// 组件引用
+const sourceEditorRef = ref<InstanceType<typeof SourceEditor>>()
+const previewRef = ref<InstanceType<typeof PreviewPanel>>()
+
+// 滚动同步锁，防止循环同步
+let isSyncing = false
 
 /**
- * 获取 ProseMirror EditorView 实例
+ * 编辑器滚动回调
  */
-function getEditorView(): EditorView | null {
-  return wysiwygEditorRef.value?.getView() || null
+function onEditorScroll(ratio: number): void {
+  if (isSyncing) return
+  isSyncing = true
+  previewRef.value?.scrollTo(ratio)
+  setTimeout(() => { isSyncing = false }, 50)
 }
 
 /**
- * 在 WYSIWYG 编辑器中应用格式
+ * 预览区域滚动回调
  */
-function applyFormat(format: string): void {
-  if (!wysiwygEditorRef.value) return
-
-  const view = wysiwygEditorRef.value.getView()
-  if (!view) return
-
-  const { state, dispatch } = view
-  const { schema } = state
-
-  switch (format) {
-    case 'bold':
-      import('../../utils/prosemirror/keymap').then(({ toggleMark }) => {
-        toggleMark(schema.marks.bold)(view.state, dispatch)
-        view.focus()
-      })
-      break
-    case 'italic':
-      import('../../utils/prosemirror/keymap').then(({ toggleMark }) => {
-        toggleMark(schema.marks.italic)(view.state, dispatch)
-        view.focus()
-      })
-      break
-    case 'strikethrough':
-      import('../../utils/prosemirror/keymap').then(({ toggleMark }) => {
-        toggleMark(schema.marks.strikethrough)(view.state, dispatch)
-        view.focus()
-      })
-      break
-    case 'code':
-      import('../../utils/prosemirror/keymap').then(({ toggleMark }) => {
-        toggleMark(schema.marks.code)(view.state, dispatch)
-        view.focus()
-      })
-      break
-    case 'unorderedList':
-      import('prosemirror-schema-list').then(({ wrapInList }) => {
-        wrapInList(schema.nodes.bullet_list)(view.state, dispatch)
-        view.focus()
-      })
-      break
-    case 'orderedList':
-      import('prosemirror-schema-list').then(({ wrapInList }) => {
-        wrapInList(schema.nodes.ordered_list)(view.state, dispatch)
-        view.focus()
-      })
-      break
-    case 'blockquote':
-      import('prosemirror-commands').then(({ wrapIn }) => {
-        wrapIn(schema.nodes.blockquote)(view.state, dispatch)
-        view.focus()
-      })
-      break
-  }
+function onPreviewScroll(ratio: number): void {
+  if (isSyncing) return
+  isSyncing = true
+  sourceEditorRef.value?.scrollTo(ratio)
+  setTimeout(() => { isSyncing = false }, 50)
 }
-
-/**
- * 设置标题级别
- */
-function setHeading(level: number): void {
-  wysiwygEditorRef.value?.toggleHeadingLevel(level)
-}
-
-/**
- * 插入链接
- */
-function insertLink(href?: string, title?: string): void {
-  if (!wysiwygEditorRef.value) return
-
-  const view = wysiwygEditorRef.value.getView()
-  if (!view) return
-
-  const { state, dispatch } = view
-  const { schema } = state
-
-  import('../../utils/prosemirror/keymap').then(({ insertLink: insertLinkCmd }) => {
-    insertLinkCmd(href || '', title)(view.state, dispatch)
-    view.focus()
-  })
-}
-
-/**
- * 插入图片
- */
-function insertImage(src?: string, alt?: string, title?: string): void {
-  wysiwygEditorRef.value?.insertImage(src || '', alt, title)
-}
-
-/**
- * 插入代码块
- */
-function insertCodeBlock(language?: string): void {
-  if (!wysiwygEditorRef.value) return
-
-  const view = wysiwygEditorRef.value.getView()
-  if (!view) return
-
-  const { state, dispatch } = view
-  const { schema } = state
-
-  import('prosemirror-commands').then(({ setBlockType }) => {
-    setBlockType(schema.nodes.code_block, { language: language || '' })(view.state, dispatch)
-    view.focus()
-  })
-}
-
-/**
- * 设置块级类型
- */
-function setBlockTypeCommand(type: string, attrs?: Record<string, unknown>): void {
-  wysiwygEditorRef.value?.setBlockTypeCommand(type, attrs)
-}
-
-// 提供编辑器控制方法给子组件
-provide('editorController', {
-  applyFormat,
-  setHeading,
-  insertLink,
-  insertImage,
-  insertCodeBlock,
-  setBlockTypeCommand,
-  getEditorView
-})
 </script>
 
 <template>
   <div class="editor-panel">
-    <!-- WYSIWYG 编辑器 -->
-    <WysiwygEditor
-      v-if="showWysiwyg"
-      ref="wysiwygEditorRef"
-    />
+    <!-- 标签栏 -->
+    <TabBar />
 
-    <!-- 源码模式：仅显示编辑器 -->
-    <SourceEditor
-      v-if="showSource && !showPreview"
-    />
-
-    <!-- 分屏模式：可拖拽调整左右面板 -->
-    <Splitpanes
-      v-if="showSource && showPreview"
-      class="splitpanes-theme"
+    <!-- 无文件打开时：显示欢迎页 -->
+    <div
+      v-if="!hasOpenFile"
+      class="welcome-page"
     >
-      <Pane :min-size="20">
-        <SourceEditor />
-      </Pane>
-      <Pane :min-size="20">
-        <PreviewPanel />
-      </Pane>
-    </Splitpanes>
+      <div class="welcome-content">
+        <img
+          src="../../assets/logo.svg"
+          alt="M+"
+          class="welcome-logo"
+        >
+        <h1 class="welcome-title">
+          Markdown+
+        </h1>
+        <p class="welcome-subtitle">
+          轻量级 Markdown 编辑器
+        </p>
+
+        <div class="welcome-actions">
+          <button
+            class="welcome-btn primary"
+            @click="fileStore.newFile()"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                stroke-width="2"
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            新建文件
+          </button>
+          <button
+            class="welcome-btn"
+            @click="fileStore.openFile()"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                stroke-width="2"
+                d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+              />
+              <path
+                stroke-width="2"
+                d="M14 2v6h6"
+              />
+            </svg>
+            打开文件
+          </button>
+          <button
+            class="welcome-btn"
+            @click="fileStore.openFolder()"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                stroke-width="2"
+                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+              />
+            </svg>
+            打开文件夹
+          </button>
+        </div>
+
+        <div class="welcome-shortcuts">
+          <h2 class="shortcuts-title">
+            快捷键
+          </h2>
+          <div class="shortcuts-grid">
+            <div class="shortcut-item">
+              <kbd>Ctrl+N</kbd>
+              <span>新建文件</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+O</kbd>
+              <span>打开文件</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+S</kbd>
+              <span>保存文件</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+Shift+S</kbd>
+              <span>另存为</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+B</kbd>
+              <span>粗体</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+I</kbd>
+              <span>斜体</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+K</kbd>
+              <span>插入链接</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+H</kbd>
+              <span>切换标题</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+F</kbd>
+              <span>查找</span>
+            </div>
+            <div class="shortcut-item">
+              <kbd>Ctrl+/</kbd>
+              <span>注释</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 有文件打开时：显示编辑器 -->
+    <template v-else>
+      <!-- 即时渲染模式 -->
+      <IrEditor
+        v-if="isIrMode"
+        :key="fileStore.activeTabId || 'ir-editor'"
+      />
+
+      <!-- 源码模式：仅显示编辑器 -->
+      <SourceEditor
+        v-else-if="!showPreview"
+      />
+
+      <!-- 分屏模式：可拖拽调整左右面板 -->
+      <Splitpanes
+        v-else
+        class="splitpanes-theme"
+      >
+        <Pane :min-size="20">
+          <SourceEditor
+            ref="sourceEditorRef"
+            @scroll="onEditorScroll"
+          />
+        </Pane>
+        <Pane :min-size="20">
+          <PreviewPanel
+            ref="previewRef"
+            :enable-scroll-sync="true"
+            @scroll="onPreviewScroll"
+          />
+        </Pane>
+      </Splitpanes>
+    </template>
   </div>
 </template>
 
@@ -196,8 +210,129 @@ provide('editorController', {
 .editor-panel {
   flex: 1;
   display: flex;
+  flex-direction: column;
   overflow: hidden;
   background-color: var(--color-bg-primary);
+}
+
+/* 欢迎页 */
+.welcome-page {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.welcome-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 32px;
+  max-width: 520px;
+  width: 100%;
+}
+
+.welcome-logo {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+}
+
+.welcome-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.welcome-subtitle {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin: 8px 0 32px;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 40px;
+}
+
+.welcome-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.welcome-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.welcome-btn.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+.welcome-btn.primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.welcome-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.shortcuts-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 16px;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 32px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.shortcut-item kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.shortcut-item span {
+  font-size: 13px;
+  color: var(--color-text-secondary);
 }
 
 /* Splitpanes 主题适配 */
@@ -209,6 +344,8 @@ provide('editorController', {
 .splitpanes-theme :deep(.splitpanes__pane) {
   background-color: var(--color-bg-primary);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .splitpanes-theme :deep(.splitpanes__splitter) {
@@ -216,7 +353,7 @@ provide('editorController', {
   border-left: 1px solid var(--color-border);
   border-right: 1px solid var(--color-border);
   position: relative;
-  width: 7px;
+  width: 2px;
   cursor: col-resize;
   transition: background-color 0.2s;
 }

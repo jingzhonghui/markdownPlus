@@ -8,8 +8,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as mime from './mime'
 import type { MdxDocument, MdxResult, MdxImageAsset } from './schema'
-import { createMdxDocument, createDefaultAssets, createDefaultSettings } from './schema'
-import { addImageAsset, generateAssetId } from './writer'
+import { createMdxDocument } from './schema'
+import { addImageAsset } from './writer'
 
 /**
  * Markdown 中的图片引用信息
@@ -136,7 +136,7 @@ function replaceImagePaths(content: string, replacements: Map<string, string>): 
     const escapedPath = originalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedPath}(?:\\s+"([^"]*)")?\\)`, 'g')
 
-    updatedContent = updatedContent.replace(regex, (match, alt, title) => {
+    updatedContent = updatedContent.replace(regex, (_match, alt, title) => {
       if (title) {
         return `![${alt}](${newPath} "${title}")`
       }
@@ -150,9 +150,9 @@ function replaceImagePaths(content: string, replacements: Map<string, string>): 
 /**
  * 从 Markdown 文件导入
  * @param mdFilePath Markdown 文件路径
- * @returns 导入结果，包含 MDX 文档对象
+ * @returns 导入结果，包含 MDX 文档对象和图片资源数据
  */
-export function importFromMarkdown(mdFilePath: string): MdxResult<{ document: MdxDocument; importedImages: string[]; failedImages: string[] }> {
+export function importFromMarkdown(mdFilePath: string): MdxResult<{ document: MdxDocument; importedImages: string[]; failedImages: string[]; assetsData: Map<string, Buffer> }> {
   try {
     // 检查文件是否存在
     if (!fs.existsSync(mdFilePath)) {
@@ -172,6 +172,7 @@ export function importFromMarkdown(mdFilePath: string): MdxResult<{ document: Md
 
     // 收集替换映射和导入结果
     const pathReplacements = new Map<string, string>()
+    const assetsData = new Map<string, Buffer>()
     const importedImages: string[] = []
     const failedImages: string[] = []
 
@@ -187,11 +188,22 @@ export function importFromMarkdown(mdFilePath: string): MdxResult<{ document: Md
         continue
       }
 
-      // 导入图片到文档
+      // 读取图片原始数据
+      let imageData: Buffer
+      try {
+        imageData = fs.readFileSync(absolutePath)
+      } catch {
+        failedImages.push(ref.originalPath)
+        continue
+      }
+
+      // 导入图片到文档（生成 hash 文件名并注册到 assets）
       const result = importImageToDocument(document, absolutePath)
 
       if (result) {
         pathReplacements.set(ref.originalPath, result.relativePath)
+        // 保存图片二进制数据，key 为 .mdx 内的相对路径
+        assetsData.set(result.relativePath, imageData)
         importedImages.push(ref.originalPath)
       } else {
         failedImages.push(ref.originalPath)
@@ -206,7 +218,8 @@ export function importFromMarkdown(mdFilePath: string): MdxResult<{ document: Md
       data: {
         document,
         importedImages,
-        failedImages
+        failedImages,
+        assetsData
       }
     }
   } catch (error) {
@@ -222,19 +235,15 @@ export function importFromMarkdown(mdFilePath: string): MdxResult<{ document: Md
  * @returns 操作结果
  */
 export async function importAndSaveAsMdx(targetPath: string, mdFilePath: string): Promise<MdxResult<{ document: MdxDocument; tempDir: string }>> {
-  // 导入 Markdown
+  // 导入 Markdown（同时获取图片资源数据）
   const importResult = importFromMarkdown(mdFilePath)
   if (!importResult.success) {
     return { success: false, error: importResult.error }
   }
 
-  const { document } = importResult.data!
+  const { document, assetsData } = importResult.data!
 
-  // 准备资源数据
-  const { prepareAssetsFromMarkdown } = await import('./import')
-  const assetsData = prepareAssetsFromMarkdown(mdFilePath, document)
-
-  // 保存为 MDX
+  // 保存为 MDX，直接使用导入时收集的图片数据
   const { saveMdx } = await import('./writer')
   const saveResult = await saveMdx(targetPath, document, assetsData)
 
@@ -245,38 +254,6 @@ export async function importAndSaveAsMdx(targetPath: string, mdFilePath: string)
   // 重新打开以获取临时目录
   const { openMdx } = await import('./reader')
   return openMdx(targetPath)
-}
-
-/**
- * 从 Markdown 文件目录准备资源数据
- * @param mdFilePath Markdown 文件路径
- * @param document MDX 文档
- * @returns 资源数据映射
- */
-export function prepareAssetsFromMarkdown(mdFilePath: string, document: MdxDocument): Map<string, Buffer> {
-  const assetsData = new Map<string, Buffer>()
-  const mdFileDir = path.dirname(mdFilePath)
-
-  // 遍历已导入的图片资源
-  for (const image of document.assets.images) {
-    // 查找对应的原始文件
-    const imageReferences = extractImageReferences(document.content)
-    for (const ref of imageReferences) {
-      if (ref.originalPath.includes(image.filename.split('_')[0])) {
-        const absolutePath = resolveImagePath(ref.originalPath, mdFileDir)
-        if (absolutePath) {
-          try {
-            const data = fs.readFileSync(absolutePath)
-            assetsData.set(image.path, data)
-          } catch (error) {
-            console.warn(`无法读取图片: ${absolutePath}`, error)
-          }
-        }
-      }
-    }
-  }
-
-  return assetsData
 }
 
 /**

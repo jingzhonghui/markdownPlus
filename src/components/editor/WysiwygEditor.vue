@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import {
   ref,
+  shallowRef,
   watch,
   onMounted,
   onUnmounted,
-  nextTick,
-  computed
+  nextTick
 } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
@@ -31,7 +31,7 @@ const fileStore = useFileStore()
 const themeStore = useThemeStore()
 const { fileContent } = storeToRefs(fileStore)
 const editorRef = ref<HTMLDivElement>()
-const viewRef = ref<EditorView | null>(null)
+const viewRef = shallowRef<EditorView | null>(null)
 const isUpdating = ref(false)
 const isDragging = ref(false)
 
@@ -48,16 +48,6 @@ const floatToolbar = ref({
   isStrikethrough: false,
   isCode: false,
   isLink: false
-})
-
-// 图片工具栏状态
-const imageToolbar = ref({
-  visible: false,
-  top: 0,
-  left: 0,
-  nodePos: -1,
-  currentAlign: 'center',
-  currentWidth: null as number | null
 })
 
 /**
@@ -299,6 +289,46 @@ async function handlePaste(e: ClipboardEvent): Promise<void> {
       e.preventDefault()
       await insertImageFromFile(file)
       return
+    }
+  }
+
+  // 如果没有文件，尝试从 clipboardData.items 获取（某些截图工具）
+  const items = Array.from(e.clipboardData.items)
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault()
+      const blob = item.getAsFile()
+      if (blob) {
+        // 为 blob 创建一个 File 对象
+        const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: item.type })
+        await insertImageFromFile(file)
+        return
+      }
+    }
+  }
+
+  // 尝试从 HTML 内容中提取图片
+  const html = e.clipboardData.getData('text/html')
+  if (html) {
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(html, 'text/html')
+    const images = doc.querySelectorAll('img')
+
+    for (const img of Array.from(images)) {
+      const src = img.getAttribute('src')
+      if (src && src.startsWith('data:')) {
+        // 处理 base64 图片
+        e.preventDefault()
+        try {
+          const response = await fetch(src)
+          const blob = await response.blob()
+          const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: blob.type })
+          await insertImageFromFile(file)
+          return
+        } catch (err) {
+          console.error('Failed to process base64 image:', err)
+        }
+      }
     }
   }
 }

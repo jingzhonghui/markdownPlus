@@ -1,8 +1,9 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type { MdxDocument, MdxImageAsset } from '../types/mdx'
+import { loadSessionState, saveSessionState } from './session'
 
-export type EditorMode = 'wysiwyg' | 'split' | 'source'
+export type EditorMode = 'split' | 'source' | 'ir'
 
 export interface FileInfo {
   path: string
@@ -10,390 +11,156 @@ export interface FileInfo {
   modified: boolean
 }
 
+export interface FolderItem {
+  name: string
+  path: string
+  isDirectory: boolean
+}
+
+/** 文件树节点 */
+export interface FileTreeNode {
+  name: string
+  path: string
+  isDirectory: boolean
+  isExpanded: boolean
+  isLoading: boolean
+  children: FileTreeNode[]
+}
+
+export interface TabInfo {
+  id: string
+  fileInfo: FileInfo | null
+  document: MdxDocument | null
+  content: string
+}
+
 /**
  * 文件状态管理 Store
- * 集成 MDX 文件操作功能
+ * 支持多标签页：tabs 数组管理所有打开的标签，activeTabId 指向当前激活标签
+ * 保留 currentFile / document / fileContent 作为向后兼容的 computed 代理
  */
 export const useFileStore = defineStore('file', () => {
-  // State
-  const currentFile = ref<FileInfo | null>(null)
-  const document = ref<MdxDocument | null>(null)
-  const fileContent = ref('')
-  const editorMode = ref<EditorMode>('wysiwyg')
+  // ====== Tab 多标签状态 ======
+  const tabs = ref<TabInfo[]>([])
+  const activeTabId = ref<string | null>(null)
+  let tabIdCounter = 0
+
+  // 向后兼容的代理 computed（从 activeTab 读取）
+  // 注意：Vue computed 对对象引用做缓存，直接修改 tab 属性不会触发下游更新。
+  // 使用 stateVersion 强制在属性变更时重新计算。
+  const activeTab = computed(() => tabs.value.find((t) => t.id === activeTabId.value) ?? null)
+  const stateVersion = ref(0)
+  const currentFile = computed<FileInfo | null>(() => {
+    stateVersion.value
+    return activeTab.value?.fileInfo ?? null
+  })
+  const document = computed<MdxDocument | null>(() => {
+    stateVersion.value
+    return activeTab.value?.document ?? null
+  })
+  const fileContent = computed<string>(() => {
+    stateVersion.value
+    return activeTab.value?.content ?? ''
+  })
+
+  // 编辑器状态
+  const DEFAULT_SIDEBAR_WIDTH = 220
+  const MIN_SIDEBAR_WIDTH = 180
+  const MAX_SIDEBAR_WIDTH = 420
+  const clampSidebarWidth = (width: number): number => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width))
+
+  const editorMode = ref<EditorMode>('ir')
+  const sessionEditorMode = loadSessionState()?.editorMode
+  if (sessionEditorMode === 'ir' || sessionEditorMode === 'source' || sessionEditorMode === 'split') {
+    editorMode.value = sessionEditorMode
+  }
+  const sidebarCollapsed = ref(false)
+  const savedSidebarWidth = loadSessionState()?.sidebarWidth
+  const sidebarWidth = ref(
+    typeof savedSidebarWidth === 'number' && Number.isFinite(savedSidebarWidth)
+      ? clampSidebarWidth(savedSidebarWidth)
+      : DEFAULT_SIDEBAR_WIDTH
+  )
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const recentFiles = ref<string[]>([])
   const wordCount = ref(0)
   const cursorLine = ref(1)
   const cursorColumn = ref(1)
+  const editorResetVersion = ref(0)
+
+  // 文件夹浏览状态
+  const openedFolderPath = ref<string | null>(null)
+  const folderItems = ref<FolderItem[]>([]) // 保留兼容
+  const folderHistory = ref<string[]>([]) // 保留兼容
+  const fileTree = ref<FileTreeNode[]>([]) // 树形结构
 
   // Getters
-  const hasFile = computed(() => document.value !== null)
-  const isModified = computed(() => currentFile.value?.modified ?? false)
-  /** 是否有未保存的修改（包括有文档但从未保存过的情况） */
+  const hasFile = computed(() => {
+    stateVersion.value
+    return activeTab.value !== null && activeTab.value.document !== null
+  })
+  const isModified = computed(() => {
+    stateVersion.value
+    return activeTab.value?.fileInfo?.modified ?? false
+  })
   const isDirty = computed(() => {
-    if (!document.value) return false
-    return isModified.value || !currentFile.value?.path
+    stateVersion.value
+    if (!activeTab.value?.document) return false
+    return (activeTab.value?.fileInfo?.modified ?? false) || !activeTab.value?.fileInfo?.path
   })
   const fileName = computed(() => {
-    if (document.value?.metadata.title && document.value.metadata.title !== '未命名文档') {
-      return `${document.value.metadata.title}.mdx`
+    stateVersion.value
+    const tab = activeTab.value
+    if (!tab) return '未命名.mdx'
+    if (tab.document?.metadata.title && tab.document.metadata.title !== '未命名文档') {
+      return `${tab.document.metadata.title}.mdx`
     }
-    return currentFile.value?.name ?? '未命名.mdx'
+    return tab.fileInfo?.name ?? '未命名.mdx'
   })
   const displayTitle = computed(() => {
+    stateVersion.value
     const name = fileName.value.replace('.mdx', '')
     return isModified.value ? `${name} *` : name
   })
-
-  // 获取图片资源列表
   const imageAssets = computed(() => {
-    return document.value?.assets.images || []
+    stateVersion.value
+    return activeTab.value?.document?.assets.images || []
   })
+  const hasMultipleTabs = computed(() => tabs.value.length > 1)
 
-  // Actions
-  /**
-   * 初始化文件状态
-   */
-  async function init(): Promise<void> {
-    await loadRecentFiles()
+  // ================ Tab 管理操作 ================
+
+  function createTabId(): string {
+    return `tab_${++tabIdCounter}`
   }
 
-  /**
-   * 设置当前文件
-   */
-  function setFile(file: FileInfo | null): void {
-    currentFile.value = file
-    fileContent.value = ''
-    error.value = null
+  /** 创建新 tab（不自动激活） */
+  function createTab(): TabInfo {
+    const id = createTabId()
+    const tab: TabInfo = { id, fileInfo: null, document: null, content: '' }
+    tabs.value.push(tab)
+    return tab
   }
 
-  /**
-   * 设置文档
-   */
-  function setDocument(doc: MdxDocument | null, path?: string): void {
-    document.value = doc
-    if (doc) {
-      fileContent.value = doc.content
-      if (path) {
-        currentFile.value = {
-          path,
-          name: path.split(/[/\\]/).pop() || '未命名.mdx',
-          modified: false
-        }
-      }
-      updateWordCount()
-    } else {
-      fileContent.value = ''
-      currentFile.value = null
-    }
+  /** 激活指定 tab */
+  function setActiveTab(tabId: string): void {
+    activeTabId.value = tabId
+    persistSession()
   }
 
-  /**
-   * 设置文件内容
-   */
-  function setContent(content: string): void {
-    fileContent.value = content
-    if (document.value) {
-      document.value.content = content
-    }
-    updateWordCount()
+  /** 查找已打开文件的 tab */
+  function findTabByPath(filePath: string): TabInfo | undefined {
+    return tabs.value.find((t) => t.fileInfo?.path === filePath)
   }
 
-  /**
-   * 更新文件内容
-   */
-  function updateContent(content: string): void {
-    fileContent.value = content
-    if (document.value) {
-      document.value.content = content
-    }
-    if (currentFile.value) {
-      currentFile.value.modified = true
-    }
-    updateWordCount()
-  }
+  /** 对指定 tab 执行保存确认 */
+  async function confirmSaveForTab(tab: TabInfo): Promise<'save' | 'discard' | 'cancel'> {
+    const isTabDirty = tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path)
+    if (!isTabDirty) return 'discard'
 
-  /**
-   * 标记文件为已保存
-   */
-  function markSaved(): void {
-    if (currentFile.value) {
-      currentFile.value.modified = false
-    }
-  }
+    const title = tab.document?.metadata.title || '未命名文档'
 
-  /**
-   * 设置编辑器模式
-   */
-  function setEditorMode(mode: EditorMode): void {
-    editorMode.value = mode
-  }
-
-  /**
-   * 设置光标位置
-   */
-  function setCursorPosition(line: number, column: number): void {
-    cursorLine.value = line
-    cursorColumn.value = column
-  }
-
-  /**
-   * 更新字数统计
-   */
-  function updateWordCount(): void {
-    const text = fileContent.value
-    // 移除空白字符后的字符数（中文字数统计方式）
-    wordCount.value = text.replace(/\s/g, '').length
-  }
-
-  /**
-   * 加载最近文件列表（从主进程读取）
-   */
-  async function loadRecentFiles(): Promise<void> {
-    try {
-      if (window.electronAPI?.getRecentFiles) {
-        const result = await window.electronAPI.getRecentFiles()
-        if (result.success && result.data) {
-          recentFiles.value = result.data
-        }
-      }
-    } catch {
-      recentFiles.value = []
-    }
-  }
-
-  /**
-   * 添加到最近文件（同步到主进程）
-   */
-  async function addToRecent(filePath: string): Promise<void> {
-    // 本地立即更新
-    const index = recentFiles.value.indexOf(filePath)
-    if (index > -1) {
-      recentFiles.value.splice(index, 1)
-    }
-    recentFiles.value.unshift(filePath)
-    if (recentFiles.value.length > 20) {
-      recentFiles.value = recentFiles.value.slice(0, 20)
-    }
-    // 通知主进程持久化
-    if (window.electronAPI) {
-      // 使用已有的 addImage API 模式调用 addRecent
-      try {
-        await window.electronAPI.getRecentFiles() // 触发主进程刷新
-      } catch {
-        // 忽略
-      }
-    }
-  }
-
-  /**
-   * 从最近列表移除文件
-   */
-  async function removeRecent(filePath: string): Promise<void> {
-    recentFiles.value = recentFiles.value.filter((p) => p !== filePath)
-    if (window.electronAPI?.removeRecentFile) {
-      await window.electronAPI.removeRecentFile(filePath)
-    }
-  }
-
-  /**
-   * 清空最近文件列表
-   */
-  async function clearRecent(): Promise<void> {
-    recentFiles.value = []
-    if (window.electronAPI?.clearRecentFiles) {
-      await window.electronAPI.clearRecentFiles()
-    }
-  }
-
-  /**
-   * 新建文件
-   */
-  async function newFile(): Promise<boolean> {
-    isLoading.value = true
-    error.value = null
-
-    try {
-      if (window.electronAPI) {
-        const result = await window.electronAPI.newFile()
-        if (result.success && result.data) {
-          const doc = result.data.document as MdxDocument
-          setDocument(doc, null as unknown as string)
-          currentFile.value = {
-            path: '',
-            name: '未命名.mdx',
-            modified: false
-          }
-          return true
-        }
-      }
-      // Fallback: 本地创建
-      const { createMdxDocument } = await import('../types/mdx')
-      setDocument(createMdxDocument('未命名文档', '# 新建文档\n\n开始编写...'))
-      currentFile.value = {
-        path: '',
-        name: '未命名.mdx',
-        modified: false
-      }
-      return true
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : '新建文件失败'
-      return false
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  /**
-   * 打开文件
-   */
-  async function openFile(filePath?: string): Promise<boolean> {
-    isLoading.value = true
-    error.value = null
-
-    try {
-      if (!window.electronAPI) {
-        error.value = 'Electron API 不可用'
-        return false
-      }
-
-      const result = await window.electronAPI.openFile(filePath)
-
-      if (result.success && result.data) {
-        const doc = result.data.document as MdxDocument
-        const filePath = result.data.filePath as string
-        setDocument(doc, filePath)
-        // 主进程已添加到最近列表，刷新前端缓存
-        await loadRecentFiles()
-        return true
-      } else if (result.error === '用户取消') {
-        return false
-      } else {
-        error.value = result.error || '打开文件失败'
-        return false
-      }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : '打开文件失败'
-      return false
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  /**
-   * 保存文件
-   */
-  async function saveFile(): Promise<boolean> {
-    isLoading.value = true
-    error.value = null
-
-    try {
-      if (!window.electronAPI) {
-        error.value = 'Electron API 不可用'
-        return false
-      }
-
-      if (!document.value) {
-        error.value = '没有打开的文档'
-        return false
-      }
-
-      const result = await window.electronAPI.saveFile(
-        fileContent.value,
-        document.value.metadata.title
-      )
-
-      if (result.success) {
-        markSaved()
-        return true
-      } else if (result.error === 'NEW_FILE') {
-        // 新文件需要另存为
-        return await saveAsFile()
-      } else {
-        error.value = result.error || '保存文件失败'
-        return false
-      }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : '保存文件失败'
-      return false
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  /**
-   * 另存为
-   */
-  async function saveAsFile(): Promise<boolean> {
-    isLoading.value = true
-    error.value = null
-
-    try {
-      if (!window.electronAPI) {
-        error.value = 'Electron API 不可用'
-        return false
-      }
-
-      if (!document.value) {
-        error.value = '没有打开的文档'
-        return false
-      }
-
-      const result = await window.electronAPI.saveAsFile(
-        fileContent.value,
-        document.value.metadata.title
-      )
-
-      if (result.success && result.data) {
-        const savePath = result.data as string
-        currentFile.value = {
-          path: savePath,
-          name: savePath.split(/[/\\]/).pop() || '未命名.mdx',
-          modified: false
-        }
-        // 主进程已添加到最近列表，刷新前端缓存
-        await loadRecentFiles()
-        return true
-      } else if (result.error === '用户取消') {
-        return false
-      } else {
-        error.value = result.error || '保存文件失败'
-        return false
-      }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : '保存文件失败'
-      return false
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  /**
-   * 关闭文件
-   */
-  async function closeFile(): Promise<boolean> {
-    try {
-      if (window.electronAPI) {
-        await window.electronAPI.closeFile()
-      }
-      setDocument(null)
-      return true
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : '关闭文件失败'
-      return false
-    }
-  }
-
-  /**
-   * 确认保存对话框
-   * 返回: 'save' | 'discard' | 'cancel'
-   * 使用 Electron 原生对话框，回退到 window.confirm
-   */
-  async function confirmSaveDialog(): Promise<'save' | 'discard' | 'cancel'> {
-    const title = document.value?.metadata.title || '未命名文档'
-
-    // 优先使用 Electron 原生对话框
     if (window.electronAPI?.showMessageBox) {
       try {
         const result = await window.electronAPI.showMessageBox({
@@ -417,39 +184,497 @@ export const useFileStore = defineStore('file', () => {
       }
     }
 
-    // 回退方案：使用 window.confirm
-    const confirmed = window.confirm(`"${title}" 有未保存的更改，是否保存？\n\n确定 = 不保存，取消 = 返回继续编辑`)
+    const confirmed = window.confirm(
+      `"${title}" 有未保存的更改，是否保存？\n\n确定 = 不保存，取消 = 返回继续编辑`
+    )
     return confirmed ? 'discard' : 'cancel'
   }
 
-  /**
-   * 在执行操作前确认保存
-   * 返回 true 表示可以继续执行操作，false 表示用户取消
-   */
+  /** 关闭指定 tab */
+  async function closeTab(tabId: string): Promise<boolean> {
+    const index = tabs.value.findIndex((t) => t.id === tabId)
+    if (index === -1) return true
+    const tab = tabs.value[index]
+
+    // 检查是否需要保存
+    const isTabDirty = tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path)
+    if (isTabDirty) {
+      const choice = await confirmSaveForTab(tab)
+      if (choice === 'cancel') return false
+      if (choice === 'save') {
+        // 切换到该 tab 并保存
+        activeTabId.value = tabId
+        const saved = await saveFile()
+        if (!saved) return false
+      }
+    }
+
+    // 从 tabs 中移除
+    tabs.value.splice(index, 1)
+    persistSession()
+
+    // 如果关闭的是当前激活的 tab，切换到邻居
+    if (activeTabId.value === tabId) {
+      if (tabs.value.length > 0) {
+        const nextIndex = Math.min(index, tabs.value.length - 1)
+        activeTabId.value = tabs.value[nextIndex].id
+      } else {
+        activeTabId.value = null
+      }
+      stateVersion.value++
+      editorResetVersion.value++
+    }
+
+    return true
+  }
+
+  // ================ 向后兼容的写入操作（代理到 activeTab） ================
+
+  function setFile(file: FileInfo | null): void {
+    const tab = activeTab.value
+    if (!tab) return
+    tab.fileInfo = file
+    if (!file) tab.content = ''
+    stateVersion.value++
+    error.value = null
+  }
+
+  function setDocument(doc: MdxDocument | null, path?: string): void {
+    const tab = activeTab.value
+    if (!tab) return
+    tab.document = doc
+    if (doc) {
+      tab.content = doc.content
+      if (path) {
+        tab.fileInfo = {
+          path,
+          name: path.split(/[/\\]/).pop() || '未命名.mdx',
+          modified: false
+        }
+      }
+      stateVersion.value++
+      updateWordCount()
+    } else {
+      tab.content = ''
+      tab.fileInfo = null
+      stateVersion.value++
+    }
+  }
+
+  function setContent(content: string): void {
+    const tab = activeTab.value
+    if (!tab) return
+    tab.content = content
+    if (tab.document) {
+      tab.document.content = content
+    }
+    stateVersion.value++
+    updateWordCount()
+  }
+
+  function updateContent(content: string): void {
+    const tab = activeTab.value
+    if (!tab) return
+    tab.content = content
+    if (tab.document) {
+      tab.document.content = content
+    }
+    if (tab.fileInfo) {
+      tab.fileInfo.modified = true
+    }
+    stateVersion.value++
+    updateWordCount()
+  }
+
+  function markSaved(): void {
+    const tab = activeTab.value
+    if (tab?.fileInfo) {
+      tab.fileInfo.modified = false
+    }
+    stateVersion.value++
+  }
+
+  // ================ 其余状态操作 ================
+
+  function setEditorMode(mode: EditorMode): void {
+    editorMode.value = mode
+    persistSession()
+  }
+
+  function toggleSidebar(): void {
+    sidebarCollapsed.value = !sidebarCollapsed.value
+    persistSession()
+  }
+
+  function setSidebarWidth(width: number, persist = true): void {
+    if (!Number.isFinite(width)) return
+    sidebarWidth.value = clampSidebarWidth(width)
+    if (persist) persistSession()
+  }
+
+  // ================ 会话持久化 ================
+
+  function persistSession(): void {
+    saveSessionState({
+      openedFolderPath: openedFolderPath.value,
+      openFilePaths: tabs.value.map((t) => t.fileInfo?.path).filter((p): p is string => !!p),
+      activeFilePath: activeTab.value?.fileInfo?.path ?? null,
+      sidebarCollapsed: sidebarCollapsed.value,
+      sidebarWidth: sidebarWidth.value,
+      editorMode: editorMode.value
+    })
+  }
+
+  async function restoreSession(): Promise<void> {
+    const state = loadSessionState()
+    if (!state) return
+
+    if (state.editorMode === 'ir' || state.editorMode === 'source' || state.editorMode === 'split') {
+      editorMode.value = state.editorMode
+    }
+    sidebarCollapsed.value = state.sidebarCollapsed === true
+    if (typeof state.sidebarWidth === 'number' && Number.isFinite(state.sidebarWidth)) {
+      sidebarWidth.value = clampSidebarWidth(state.sidebarWidth)
+    }
+
+    if (state.openedFolderPath) {
+      const success = await readFolder(state.openedFolderPath)
+      if (success) {
+        const folderName = state.openedFolderPath.split(/[/\\]/).pop() || state.openedFolderPath
+        fileTree.value = [
+          {
+            name: folderName,
+            path: state.openedFolderPath,
+            isDirectory: true,
+            isExpanded: true,
+            isLoading: false,
+            children: folderItems.value.map((item) => ({
+              name: item.name,
+              path: item.path,
+              isDirectory: item.isDirectory,
+              isExpanded: false,
+              isLoading: false,
+              children: []
+            }))
+          }
+        ]
+      }
+    }
+
+    for (const filePath of state.openFilePaths) {
+      await openFile(filePath)
+    }
+
+    if (state.activeFilePath) {
+      const tab = findTabByPath(state.activeFilePath)
+      if (tab) {
+        activeTabId.value = tab.id
+      }
+    }
+  }
+
+  function setCursorPosition(line: number, column: number): void {
+    cursorLine.value = line
+    cursorColumn.value = column
+  }
+
+  function updateWordCount(): void {
+    const text = fileContent.value
+    wordCount.value = text.replace(/\s/g, '').length
+  }
+
+  // ================ 最近文件 ================
+
+  async function loadRecentFiles(): Promise<void> {
+    try {
+      if (window.electronAPI?.getRecentFiles) {
+        const result = await window.electronAPI.getRecentFiles()
+        if (result.success && result.data) {
+          recentFiles.value = result.data
+        }
+      }
+    } catch {
+      recentFiles.value = []
+    }
+  }
+
+  async function removeRecent(filePath: string): Promise<void> {
+    recentFiles.value = recentFiles.value.filter((p) => p !== filePath)
+    if (window.electronAPI?.removeRecentFile) {
+      await window.electronAPI.removeRecentFile(filePath)
+    }
+  }
+
+  async function clearRecent(): Promise<void> {
+    recentFiles.value = []
+    if (window.electronAPI?.clearRecentFiles) {
+      await window.electronAPI.clearRecentFiles()
+    }
+  }
+
+  // ================ 新建 / 打开 / 保存 / 关闭 ================
+
+  async function init(): Promise<void> {
+    await loadRecentFiles()
+    await restoreSession()
+  }
+
+  async function newFile(): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const tab = createTab()
+
+      if (window.electronAPI) {
+        const result = await window.electronAPI.newFile()
+        if (result.success && result.data) {
+          const doc = result.data.document as MdxDocument
+          tab.document = doc
+          tab.content = doc.content
+          tab.fileInfo = {
+            path: '',
+            name: '未命名.mdx',
+            modified: false
+          }
+          activeTabId.value = tab.id
+          return true
+        }
+      }
+
+      // Fallback: 本地创建
+      const { createMdxDocument } = await import('../types/mdx')
+      tab.document = createMdxDocument('未命名文档', '')
+      tab.content = tab.document.content
+      tab.fileInfo = {
+        path: '',
+        name: '未命名.mdx',
+        modified: false
+      }
+      activeTabId.value = tab.id
+      return true
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '新建文件失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function openFile(filePath?: string): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      if (!window.electronAPI) {
+        error.value = 'Electron API 不可用'
+        return false
+      }
+
+      // 如果指定了路径，检查是否已在某 tab 中打开
+      if (filePath) {
+        const existing = findTabByPath(filePath)
+        if (existing) {
+          activeTabId.value = existing.id
+          return true
+        }
+      }
+
+      const result = await window.electronAPI.openFile(filePath)
+
+      if (result.success && result.data) {
+        const doc = result.data.document as MdxDocument
+        const fPath = result.data.filePath as string
+
+        // 再次检查（IPC 可能解析了路径）
+        const existing = findTabByPath(fPath)
+        if (existing) {
+          activeTabId.value = existing.id
+          return true
+        }
+
+        // 创建新 tab
+        const tab = createTab()
+        tab.document = doc
+        tab.content = doc.content
+        tab.fileInfo = {
+          path: fPath,
+          name: fPath.split(/[/\\]/).pop() || '未命名.mdx',
+          modified: false
+        }
+        activeTabId.value = tab.id
+
+        await loadRecentFiles()
+        persistSession()
+        return true
+      } else if (result.error === '用户取消') {
+        return false
+      } else {
+        error.value = result.error || '打开文件失败'
+        return false
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '打开文件失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function saveFile(): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      if (!window.electronAPI) {
+        error.value = 'Electron API 不可用'
+        return false
+      }
+
+      const tab = activeTab.value
+      if (!tab || !tab.document) {
+        error.value = '没有打开的文档'
+        return false
+      }
+
+      const result = await window.electronAPI.saveFile(tab.content, tab.document.metadata.title)
+
+      if (result.success) {
+        markSaved()
+        return true
+      } else if (result.error === 'NEW_FILE') {
+        return await saveAsFile()
+      } else {
+        error.value = result.error || '保存文件失败'
+        return false
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '保存文件失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function saveAsFile(): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      if (!window.electronAPI) {
+        error.value = 'Electron API 不可用'
+        return false
+      }
+
+      const tab = activeTab.value
+      if (!tab || !tab.document) {
+        error.value = '没有打开的文档'
+        return false
+      }
+
+      const result = await window.electronAPI.saveAsFile(tab.content, tab.document.metadata.title)
+
+      if (result.success && result.data) {
+        const savePath = result.data as string
+        if (tab.fileInfo) {
+          tab.fileInfo.path = savePath
+          tab.fileInfo.name = savePath.split(/[/\\]/).pop() || '未命名.mdx'
+          tab.fileInfo.modified = false
+        } else {
+          tab.fileInfo = {
+            path: savePath,
+            name: savePath.split(/[/\\]/).pop() || '未命名.mdx',
+            modified: false
+          }
+        }
+        await loadRecentFiles()
+        return true
+      } else if (result.error === '用户取消') {
+        return false
+      } else {
+        error.value = result.error || '保存文件失败'
+        return false
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '保存文件失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function closeFile(): Promise<boolean> {
+    if (!activeTabId.value) return true
+    return closeTab(activeTabId.value)
+  }
+
+  // ================ 保存确认对话框 ================
+
+  async function confirmSaveDialog(): Promise<'save' | 'discard' | 'cancel'> {
+    const tab = activeTab.value
+    const title = tab?.document?.metadata.title || '未命名文档'
+
+    if (window.electronAPI?.showMessageBox) {
+      try {
+        const result = await window.electronAPI.showMessageBox({
+          type: 'warning',
+          title: '保存更改',
+          message: `是否将更改保存到"${title}"？`,
+          detail: '如果不保存，你的更改将会丢失。',
+          buttons: ['保存', '不保存', '取消'],
+          defaultId: 0,
+          cancelId: 2,
+          noLink: true
+        })
+        if (result.success && result.data !== undefined) {
+          const choice = result.data as number
+          if (choice === 0) return 'save'
+          if (choice === 1) return 'discard'
+          return 'cancel'
+        }
+      } catch {
+        // 回退
+      }
+    }
+
+    const confirmed = window.confirm(
+      `"${title}" 有未保存的更改，是否保存？\n\n确定 = 不保存，取消 = 返回继续编辑`
+    )
+    return confirmed ? 'discard' : 'cancel'
+  }
+
   async function confirmSaveBeforeAction(): Promise<boolean> {
     if (!isDirty.value) return true
 
     const choice = await confirmSaveDialog()
 
-    if (choice === 'cancel') {
-      return false
-    }
-
+    if (choice === 'cancel') return false
     if (choice === 'save') {
       const saved = await saveFile()
-      if (!saved) {
-        // 保存失败或用户取消了另存为
-        return false
-      }
+      if (!saved) return false
     }
-
-    // 'discard' - 不保存，继续操作
     return true
   }
 
-  /**
-   * 导入 Markdown 文件
-   */
+  /** 关闭窗口前遍历所有脏 tab 逐一确认 */
+  async function confirmSaveBeforeClose(): Promise<boolean> {
+    for (const tab of tabs.value) {
+      const isTabDirty = tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path)
+      if (!isTabDirty) continue
+
+      const choice = await confirmSaveForTab(tab)
+      if (choice === 'cancel') return false
+      if (choice === 'save') {
+        activeTabId.value = tab.id
+        const saved = await saveFile()
+        if (!saved) return false
+      }
+    }
+    return true
+  }
+
+  // ================ 导入 / 导出 ================
+
   async function importMarkdown(): Promise<boolean> {
     isLoading.value = true
     error.value = null
@@ -460,14 +685,37 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
 
-      const result = await window.electronAPI.importMd()
+      // 若已打开文件夹，传入文件夹路径，主进程将自动保存到该文件夹
+      const targetFolder = openedFolderPath.value || undefined
+      const result = await window.electronAPI.importMd(undefined, targetFolder)
 
       if (result.success && result.data) {
         const doc = result.data.document as MdxDocument
-        const filePath = result.data.filePath as string
-        setDocument(doc, filePath)
-        // 刷新最近文件列表
+        const fPath = result.data.filePath as string
+
+        const existing = findTabByPath(fPath)
+        if (existing) {
+          activeTabId.value = existing.id
+          return true
+        }
+
+        const tab = createTab()
+        tab.document = doc
+        tab.content = doc.content
+        tab.fileInfo = {
+          path: fPath,
+          name: fPath.split(/[/\\]/).pop() || '未命名.mdx',
+          modified: false
+        }
+        activeTabId.value = tab.id
+
         await loadRecentFiles()
+
+        // 刷新文件夹视图以显示新导入的文件
+        if (openedFolderPath.value) {
+          await readFolder(openedFolderPath.value)
+        }
+
         return true
       } else if (result.error === '用户取消') {
         return false
@@ -483,9 +731,82 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  /**
-   * 导出为 Markdown
-   */
+  async function importFolder(): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      if (!window.electronAPI) {
+        error.value = 'Electron API 不可用'
+        return false
+      }
+
+      // 若已打开文件夹，将其作为默认目标文件夹
+      const targetFolder = openedFolderPath.value || undefined
+      const result = await window.electronAPI.importFolder(undefined, targetFolder)
+
+      if (result.success && result.data) {
+        const data = result.data as {
+          imported: Array<{ source: string; target: string }>
+          failed: Array<{ source: string; error: string }>
+          sourceDir: string
+          targetDir: string
+        }
+
+        // 刷新文件夹视图以显示新导入的文件
+        if (openedFolderPath.value && openedFolderPath.value === data.targetDir) {
+          // 目标文件夹就是当前打开的文件夹，直接刷新
+          await readFolder(openedFolderPath.value)
+        } else if (data.targetDir) {
+          // 未打开文件夹或打开了其他文件夹，自动打开目标文件夹
+          const success = await readFolder(data.targetDir)
+          if (success) {
+            const folderName = data.targetDir.split(/[/\\]/).pop() || data.targetDir
+            fileTree.value = [
+              {
+                name: folderName,
+                path: data.targetDir,
+                isDirectory: true,
+                isExpanded: true,
+                isLoading: false,
+                children: folderItems.value.map((item: FolderItem) => ({
+                  name: item.name,
+                  path: item.path,
+                  isDirectory: item.isDirectory,
+                  isExpanded: false,
+                  isLoading: false,
+                  children: []
+                }))
+              }
+            ]
+            persistSession()
+          }
+        }
+
+        // 显示导入结果提示
+        const importedCount = data.imported.length
+        const failedCount = data.failed.length
+        if (failedCount > 0) {
+          error.value = `导入完成：成功 ${importedCount} 个，失败 ${failedCount} 个`
+        } else {
+          console.log(`批量导入完成：${importedCount} 个文件`)
+        }
+
+        return true
+      } else if (result.error === '用户取消') {
+        return false
+      } else {
+        error.value = result.error || '批量导入失败'
+        return false
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '批量导入失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function exportMarkdown(): Promise<boolean> {
     isLoading.value = true
     error.value = null
@@ -496,12 +817,13 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
 
-      if (!currentFile.value?.path) {
+      const tab = activeTab.value
+      if (!tab?.fileInfo?.path) {
         error.value = '请先保存文件'
         return false
       }
 
-      const result = await window.electronAPI.exportMd(currentFile.value.path)
+      const result = await window.electronAPI.exportMd(tab.fileInfo.path)
 
       if (result.success) {
         return true
@@ -517,7 +839,8 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  // 图片压缩设置
+  // ================ 图片 / 资源管理 ================
+
   const imageCompressSettings = ref({
     enabled: true,
     quality: 85,
@@ -525,28 +848,22 @@ export const useFileStore = defineStore('file', () => {
     maxHeight: 1080
   })
 
-  /**
-   * 设置图片压缩选项
-   */
   function setImageCompressSettings(settings: Partial<typeof imageCompressSettings.value>): void {
     imageCompressSettings.value = { ...imageCompressSettings.value, ...settings }
   }
 
-  /**
-   * 添加图片到文档
-   */
   async function addImage(
     file: File,
     options?: { compress?: boolean; quality?: number; maxWidth?: number; maxHeight?: number }
   ): Promise<{ success: boolean; path?: string; asset?: MdxImageAsset; error?: string }> {
     try {
-      if (!window.electronAPI || !document.value) {
+      const tab = activeTab.value
+      if (!window.electronAPI || !tab?.document) {
         return { success: false, error: '无法添加图片' }
       }
 
       const arrayBuffer = await file.arrayBuffer()
 
-      // 合并默认设置和传入选项
       const compressOptions = {
         compress: options?.compress ?? imageCompressSettings.value.enabled,
         quality: options?.quality ?? imageCompressSettings.value.quality,
@@ -562,12 +879,10 @@ export const useFileStore = defineStore('file', () => {
       )
 
       if (result.success && result.data) {
-        // 更新文档中的资源列表
         const { asset } = result.data as { asset: MdxImageAsset; relativePath: string }
-        document.value.assets.images.push(asset)
-        // 标记文档已修改
-        if (currentFile.value) {
-          currentFile.value.modified = true
+        tab.document.assets.images.push(asset)
+        if (tab.fileInfo) {
+          tab.fileInfo.modified = true
         }
         return { success: true, path: asset.path, asset }
       } else {
@@ -578,29 +893,26 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  /**
-   * 获取图片数据
-   */
-  async function getImage(imagePath: string): Promise<{ success: boolean; data?: string; error?: string }> {
+  async function getImage(
+    imagePath: string,
+    filePath?: string
+  ): Promise<{ success: boolean; data?: string; error?: string }> {
     try {
       if (!window.electronAPI) {
         return { success: false, error: 'Electron API 不可用' }
       }
 
-      const result = await window.electronAPI.getImage(imagePath)
+      const imageFilePath = filePath ?? activeTab.value?.fileInfo?.path ?? undefined
+      const result = await window.electronAPI.getImage(imagePath, imageFilePath)
       if (result.success && result.data) {
-        // Electron IPC 传输 Buffer 会序列化为 { type: 'Buffer', data: number[] }
         let byteArray: Uint8Array
         const bufferData = result.data.buffer as unknown
 
         if (bufferData instanceof Uint8Array) {
-          // 已经是 Uint8Array
           byteArray = bufferData
         } else if (Array.isArray(bufferData)) {
-          // 是普通数组
           byteArray = new Uint8Array(bufferData)
         } else if (bufferData && typeof bufferData === 'object') {
-          // 是 { type: 'Buffer', data: number[] } 格式
           const bufferObj = bufferData as { type?: string; data?: number[] }
           if (bufferObj.data && Array.isArray(bufferObj.data)) {
             byteArray = new Uint8Array(bufferObj.data)
@@ -611,7 +923,6 @@ export const useFileStore = defineStore('file', () => {
           return { success: false, error: '图片数据格式不正确' }
         }
 
-        // 将 Uint8Array 转换为 Data URL
         let binary = ''
         for (let i = 0; i < byteArray.byteLength; i++) {
           binary += String.fromCharCode(byteArray[i])
@@ -628,31 +939,27 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  /**
-   * 删除资源
-   */
   async function removeAsset(assetId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!window.electronAPI || !document.value) {
+      const tab = activeTab.value
+      if (!window.electronAPI || !tab?.document) {
         return { success: false, error: '无法删除资源' }
       }
 
       const result = await window.electronAPI.removeAsset(assetId)
       if (result.success) {
-        // 从前端状态中移除
-        const imageIndex = document.value.assets.images.findIndex(img => img.id === assetId)
+        const imageIndex = tab.document.assets.images.findIndex((img) => img.id === assetId)
         if (imageIndex > -1) {
-          document.value.assets.images.splice(imageIndex, 1)
+          tab.document.assets.images.splice(imageIndex, 1)
         }
-        if (document.value.assets.attachments) {
-          const attIndex = document.value.assets.attachments.findIndex(att => att.id === assetId)
+        if (tab.document.assets.attachments) {
+          const attIndex = tab.document.assets.attachments.findIndex((att) => att.id === assetId)
           if (attIndex > -1) {
-            document.value.assets.attachments.splice(attIndex, 1)
+            tab.document.assets.attachments.splice(attIndex, 1)
           }
         }
-        // 标记文档已修改
-        if (currentFile.value) {
-          currentFile.value.modified = true
+        if (tab.fileInfo) {
+          tab.fileInfo.modified = true
         }
         return { success: true }
       } else {
@@ -663,19 +970,15 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  /**
-   * 刷新资源列表
-   */
   async function refreshAssets(): Promise<boolean> {
     try {
-      if (!window.electronAPI || !document.value) {
-        return false
-      }
+      const tab = activeTab.value
+      if (!window.electronAPI || !tab?.document) return false
 
       const result = await window.electronAPI.listAssets()
       if (result.success && result.data) {
-        document.value.assets.images = result.data.images
-        document.value.assets.attachments = result.data.attachments
+        tab.document.assets.images = result.data.images
+        tab.document.assets.attachments = result.data.attachments
         return true
       }
       return false
@@ -684,12 +987,12 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  /**
-   * 添加附件到文档
-   */
-  async function addAttachment(file: File): Promise<{ success: boolean; path?: string; error?: string }> {
+  async function addAttachment(
+    file: File
+  ): Promise<{ success: boolean; path?: string; error?: string }> {
     try {
-      if (!window.electronAPI || !document.value) {
+      const tab = activeTab.value
+      if (!window.electronAPI || !tab?.document) {
         return { success: false, error: '无法添加附件' }
       }
 
@@ -697,9 +1000,8 @@ export const useFileStore = defineStore('file', () => {
       const result = await window.electronAPI.addAttachment(file.name, file.type, arrayBuffer)
 
       if (result.success && result.data) {
-        // 标记文档已修改
-        if (currentFile.value) {
-          currentFile.value.modified = true
+        if (tab.fileInfo) {
+          tab.fileInfo.modified = true
         }
         const { relativePath } = result.data as { relativePath: string }
         return { success: true, path: relativePath }
@@ -711,28 +1013,26 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  /**
-   * 检测孤立资源（未被引用的图片/附件）
-   */
-  function detectOrphanAssets(): Array<{ id: string; filename: string; type: 'image' | 'attachment' }> {
-    if (!document.value) return []
+  function detectOrphanAssets(): Array<{
+    id: string
+    filename: string
+    type: 'image' | 'attachment'
+  }> {
+    const tab = activeTab.value
+    if (!tab?.document) return []
 
-    const content = fileContent.value
+    const content = tab.content
     const orphans: Array<{ id: string; filename: string; type: 'image' | 'attachment' }> = []
 
-    // 检查图片
-    for (const image of document.value.assets.images) {
-      // 检查 Markdown 中是否引用了该图片
+    for (const image of tab.document.assets.images) {
       const imagePattern = new RegExp(`!\\[.*?\\]\\(${escapeRegExp(image.path)}\\)`, 'i')
       if (!imagePattern.test(content)) {
         orphans.push({ id: image.id, filename: image.filename, type: 'image' })
       }
     }
 
-    // 检查附件
-    if (document.value.assets.attachments) {
-      for (const attachment of document.value.assets.attachments) {
-        // 检查 Markdown 中是否引用了该附件
+    if (tab.document.assets.attachments) {
+      for (const attachment of tab.document.assets.attachments) {
         const linkPattern = new RegExp(`\\[.*?\\]\\(${escapeRegExp(attachment.path)}\\)`, 'i')
         if (!linkPattern.test(content)) {
           orphans.push({ id: attachment.id, filename: attachment.filename, type: 'attachment' })
@@ -743,40 +1043,37 @@ export const useFileStore = defineStore('file', () => {
     return orphans
   }
 
-  /**
-   * 清理孤立资源
-   */
-  async function cleanupOrphanAssets(): Promise<{ success: boolean; removed: number; error?: string }> {
+  async function cleanupOrphanAssets(): Promise<{
+    success: boolean
+    removed: number
+    error?: string
+  }> {
     const orphans = detectOrphanAssets()
     let removed = 0
 
     for (const orphan of orphans) {
       const result = await removeAsset(orphan.id)
-      if (result.success) {
-        removed++
-      }
+      if (result.success) removed++
     }
 
     return { success: true, removed }
   }
 
-  /**
-   * 转义正则表达式特殊字符
-   */
   function escapeRegExp(string: string): string {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   }
 
-  /**
-   * 重命名图片并更新引用
-   */
-  async function renameImage(assetId: string, newFilename: string): Promise<{ success: boolean; error?: string }> {
+  async function renameImage(
+    assetId: string,
+    newFilename: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!document.value) {
+      const tab = activeTab.value
+      if (!tab?.document) {
         return { success: false, error: '没有打开的文档' }
       }
 
-      const image = document.value.assets.images.find(img => img.id === assetId)
+      const image = tab.document.assets.images.find((img) => img.id === assetId)
       if (!image) {
         return { success: false, error: '图片不存在' }
       }
@@ -784,19 +1081,17 @@ export const useFileStore = defineStore('file', () => {
       const oldPath = image.path
       const newPath = `assets/images/${newFilename}`
 
-      // 更新文档中的资源路径
       image.filename = newFilename
       image.path = newPath
 
-      // 更新 Markdown 内容中的引用
       const oldPattern = new RegExp(`(!\\[.*?\\]\\()${escapeRegExp(oldPath)}(\\))`, 'g')
-      fileContent.value = fileContent.value.replace(oldPattern, `$1${newPath}$2`)
-      document.value.content = fileContent.value
+      tab.content = tab.content.replace(oldPattern, `$1${newPath}$2`)
+      tab.document.content = tab.content
 
-      // 标记文档已修改
-      if (currentFile.value) {
-        currentFile.value.modified = true
+      if (tab.fileInfo) {
+        tab.fileInfo.modified = true
       }
+      stateVersion.value++
 
       return { success: true }
     } catch (err) {
@@ -804,18 +1099,280 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
+  // ================ 文件夹浏览 ================
+
+  async function openFolder(): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      if (!window.electronAPI) {
+        error.value = 'Electron API 不可用'
+        return false
+      }
+
+      const dialogResult = await window.electronAPI.showOpenDialog({
+        properties: ['openDirectory'],
+        title: '选择文件夹'
+      })
+
+      if (!dialogResult.success || !dialogResult.data || dialogResult.data.length === 0) {
+        return false
+      }
+
+      const dirPath = dialogResult.data[0]
+      const success = await readFolder(dirPath)
+
+      // 初始化文件树
+      if (success) {
+        const folderName = dirPath.split(/[/\\]/).pop() || dirPath
+        fileTree.value = [
+          {
+            name: folderName,
+            path: dirPath,
+            isDirectory: true,
+            isExpanded: true,
+            isLoading: false,
+            children: folderItems.value.map((item) => ({
+              name: item.name,
+              path: item.path,
+              isDirectory: item.isDirectory,
+              isExpanded: false,
+              isLoading: false,
+              children: []
+            }))
+          }
+        ]
+        persistSession()
+      }
+
+      return success
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '打开文件夹失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function readFolder(dirPath: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+
+      const result = await window.electronAPI.readFolder(dirPath)
+      if (result.success && result.data) {
+        openedFolderPath.value = dirPath
+        folderItems.value = result.data
+
+        // 同步更新 fileTree 根节点的子节点，使侧边栏文件树即时刷新
+        if (fileTree.value.length > 0 && fileTree.value[0].path === dirPath) {
+          fileTree.value[0].children = result.data.map((item: FolderItem) => ({
+            name: item.name,
+            path: item.path,
+            isDirectory: item.isDirectory,
+            isExpanded: false,
+            isLoading: false,
+            children: []
+          }))
+        }
+
+        return true
+      }
+      return false
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '读取文件夹失败'
+      return false
+    }
+  }
+
+  /** 加载指定路径的子文件夹内容 */
+  async function loadChildren(node: FileTreeNode): Promise<void> {
+    if (!node.isDirectory || node.isLoading) return
+
+    node.isLoading = true
+    try {
+      const result = await window.electronAPI?.readFolder(node.path)
+      if (result?.success && result.data) {
+        node.children = result.data.map((item: FolderItem) => ({
+          name: item.name,
+          path: item.path,
+          isDirectory: item.isDirectory,
+          isExpanded: false,
+          isLoading: false,
+          children: []
+        }))
+      }
+    } catch {
+      // 忽略错误
+    } finally {
+      node.isLoading = false
+    }
+  }
+
+  /** 展开节点（如未加载则先加载） */
+  async function expandNode(node: FileTreeNode): Promise<void> {
+    node.isExpanded = true
+    if (node.isDirectory && node.children.length === 0) {
+      await loadChildren(node)
+    }
+  }
+
+  /** 折叠节点 */
+  function collapseNode(node: FileTreeNode): void {
+    node.isExpanded = false
+  }
+
+  /** 切换展开/折叠状态 */
+  async function toggleNode(node: FileTreeNode): Promise<void> {
+    if (node.isExpanded) {
+      collapseNode(node)
+    } else {
+      await expandNode(node)
+    }
+  }
+
+  function closeFolder(): void {
+    openedFolderPath.value = null
+    folderItems.value = []
+    folderHistory.value = []
+    fileTree.value = []
+    persistSession()
+  }
+
+  // 保留兼容的导航方法（内部自动转换为树操作）
+  async function navigateToFolder(dirPath: string): Promise<boolean> {
+    return await readFolder(dirPath)
+  }
+
+  async function navigateUp(): Promise<boolean> {
+    if (!openedFolderPath.value) return false
+    const parts = openedFolderPath.value.split(/[/\\]/)
+    parts.pop()
+    const parentPath = parts.join('/')
+    if (!parentPath || parentPath === openedFolderPath.value) return false
+    return await readFolder(parentPath)
+  }
+
+  // ================ 文件/文件夹 CRUD（上下文菜单） ================
+
+  async function createFile(dirPath: string, name: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result = await window.electronAPI.createFile(dirPath, name)
+      if (result.success && result.data?.path) {
+        await readFolder(openedFolderPath.value!)
+        return await openFile(result.data.path)
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  async function createFolder(parentPath: string, name: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result = await window.electronAPI.createFolder(parentPath, name)
+      if (result.success) {
+        await readFolder(openedFolderPath.value!)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  async function renameItem(oldPath: string, newName: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result = await window.electronAPI.renameFile(oldPath, newName)
+      if (result.success) {
+        // 更新所有匹配的 tab 中的 fileInfo
+        for (const tab of tabs.value) {
+          if (tab.fileInfo?.path === oldPath) {
+            tab.fileInfo.path = result.data!.path
+            tab.fileInfo.name = newName
+          }
+        }
+        await readFolder(openedFolderPath.value!)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  async function deleteItem(targetPath: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result = await window.electronAPI.deleteFile(targetPath)
+      if (result.success) {
+        // 一次性移除匹配的 tab，避免编辑器收到删除过程中的中间状态
+        const activeIndex = tabs.value.findIndex((tab) => tab.id === activeTabId.value)
+        const matchingTabs = tabs.value.filter((tab) => tab.fileInfo?.path === targetPath)
+        const matchingIds = new Set(matchingTabs.map((tab) => tab.id))
+        const activeTabDeleted = matchingIds.has(activeTabId.value || '')
+
+        if (matchingIds.size > 0) {
+          tabs.value = tabs.value.filter((tab) => !matchingIds.has(tab.id))
+
+          if (activeTabDeleted) {
+            const nextIndex = activeIndex >= 0 ? Math.min(activeIndex, tabs.value.length - 1) : 0
+            activeTabId.value = tabs.value[nextIndex]?.id ?? null
+            editorResetVersion.value++
+          }
+          stateVersion.value++
+          persistSession()
+        }
+
+        await readFolder(openedFolderPath.value!)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  function copyPath(filePath: string): void {
+    try {
+      navigator.clipboard.writeText(filePath)
+    } catch {
+      // 忽略
+    }
+  }
+
+  // ================ 暴露的接口 ================
+
   return {
-    // State
+    // Tab 状态
+    tabs,
+    activeTabId,
+
+    // 向后兼容的状态（computed proxy）
     currentFile,
     document,
     fileContent,
+
+    // 编辑器状态
     editorMode,
+    sidebarCollapsed,
+    sidebarWidth,
     isLoading,
     error,
     recentFiles,
     wordCount,
     cursorLine,
     cursorColumn,
+    editorResetVersion,
+
+    // 文件夹浏览
+    openedFolderPath,
+    folderItems,
+    fileTree,
+
     // Getters
     hasFile,
     isModified,
@@ -824,16 +1381,30 @@ export const useFileStore = defineStore('file', () => {
     displayTitle,
     imageAssets,
     imageCompressSettings,
-    // Actions
-    init,
+    hasMultipleTabs,
+
+    // Tab 操作
+    setActiveTab,
+    closeTab,
+    confirmSaveForTab,
+    confirmSaveBeforeClose,
+
+    // 向后兼容的写入操作
     setFile,
     setDocument,
     setContent,
     updateContent,
     markSaved,
+
+    // 编辑器操作
     setEditorMode,
+    toggleSidebar,
+    setSidebarWidth,
     setCursorPosition,
     setImageCompressSettings,
+
+    // 文件操作
+    init,
     newFile,
     openFile,
     saveFile,
@@ -842,7 +1413,10 @@ export const useFileStore = defineStore('file', () => {
     confirmSaveDialog,
     confirmSaveBeforeAction,
     importMarkdown,
+    importFolder,
     exportMarkdown,
+
+    // 资源管理
     addImage,
     getImage,
     removeAsset,
@@ -851,7 +1425,27 @@ export const useFileStore = defineStore('file', () => {
     detectOrphanAssets,
     cleanupOrphanAssets,
     renameImage,
+
+    // 最近文件
     removeRecent,
-    clearRecent
+    clearRecent,
+
+    // 文件夹操作
+    openFolder,
+    readFolder,
+    closeFolder,
+    navigateToFolder,
+    navigateUp,
+    expandNode,
+    collapseNode,
+    toggleNode,
+    loadChildren,
+
+    // 上下文菜单操作
+    createFile,
+    createFolder,
+    renameItem,
+    deleteItem,
+    copyPath
   }
 })

@@ -1,9 +1,20 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import FileExplorer from '../sidebar/FileExplorer.vue'
-import AssetManager from '../sidebar/AssetManager.vue'
+import { useFileStore } from '../../stores/file'
 
-type PanelType = 'files' | 'assets'
+const fileStore = useFileStore()
+
+const MIN_SIDEBAR_WIDTH = 180
+const MAX_SIDEBAR_WIDTH = 420
+const COLLAPSED_SIDEBAR_WIDTH = 48
+const sidebarStyle = computed(() => ({
+  width: `${props.collapsed ? COLLAPSED_SIDEBAR_WIDTH : fileStore.sidebarWidth}px`
+}))
+const resizeHandleRef = ref<HTMLElement | null>(null)
+const isResizing = ref(false)
+let resizeStartX = 0
+let resizeStartWidth = 0
 
 interface Props {
   collapsed?: boolean
@@ -17,27 +28,73 @@ const emit = defineEmits<{
   toggle: []
 }>()
 
-const activePanel = ref<PanelType>('files')
-
-/**
- * 切换面板
- */
-function switchPanel(panel: PanelType): void {
-  activePanel.value = panel
-}
-
 /**
  * 切换侧边栏折叠状态
  */
 function toggleSidebar(): void {
   emit('toggle')
 }
+
+function updateSidebarWidth(width: number, persist = false): void {
+  fileStore.setSidebarWidth(width, persist)
+}
+
+function handleResizeMove(event: PointerEvent): void {
+  if (!isResizing.value) return
+  updateSidebarWidth(resizeStartWidth + event.clientX - resizeStartX)
+}
+
+function stopResize(): void {
+  if (!isResizing.value) return
+  isResizing.value = false
+  document.removeEventListener('pointermove', handleResizeMove)
+  document.removeEventListener('pointerup', stopResize)
+  document.removeEventListener('pointercancel', stopResize)
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+  updateSidebarWidth(fileStore.sidebarWidth, true)
+}
+
+function startResize(event: PointerEvent): void {
+  if (event.button !== 0 || props.collapsed) return
+  event.preventDefault()
+  resizeStartX = event.clientX
+  resizeStartWidth = fileStore.sidebarWidth
+  isResizing.value = true
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+  document.addEventListener('pointermove', handleResizeMove)
+  document.addEventListener('pointerup', stopResize)
+  document.addEventListener('pointercancel', stopResize)
+  resizeHandleRef.value?.setPointerCapture(event.pointerId)
+}
+
+function handleResizeKeydown(event: KeyboardEvent): void {
+  let nextWidth: number | null = null
+  if (event.key === 'ArrowLeft') nextWidth = fileStore.sidebarWidth - 10
+  if (event.key === 'ArrowRight') nextWidth = fileStore.sidebarWidth + 10
+  if (event.key === 'Home') nextWidth = MIN_SIDEBAR_WIDTH
+  if (event.key === 'End') nextWidth = MAX_SIDEBAR_WIDTH
+  if (nextWidth === null) return
+  event.preventDefault()
+  updateSidebarWidth(nextWidth, true)
+}
+
+onUnmounted(stopResize)
+
+/**
+ * 打开文件夹
+ */
+function openFolder(): void {
+  fileStore.openFolder()
+}
 </script>
 
 <template>
   <aside
     class="sidebar"
-    :class="{ collapsed: props.collapsed }"
+    :class="{ collapsed: props.collapsed, 'is-resizing': isResizing }"
+    :style="sidebarStyle"
   >
     <!-- 折叠状态下的图标栏 -->
     <div
@@ -46,8 +103,8 @@ function toggleSidebar(): void {
     >
       <button
         class="collapsed-btn"
-        :class="{ active: activePanel === 'files' }"
-        @click="switchPanel('files')"
+        title="新建文件"
+        @click="fileStore.newFile()"
       >
         <svg
           viewBox="0 0 24 24"
@@ -56,37 +113,43 @@ function toggleSidebar(): void {
         >
           <path
             stroke-width="2"
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            d="M12 4v16m8-8H4"
           />
         </svg>
       </button>
       <button
         class="collapsed-btn"
-        :class="{ active: activePanel === 'assets' }"
-        @click="switchPanel('assets')"
+        title="打开文件"
+        @click="fileStore.openFile()"
       >
         <svg
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
         >
-          <rect
-            x="3"
-            y="3"
-            width="18"
-            height="18"
-            rx="2"
+          <path
             stroke-width="2"
-          />
-          <circle
-            cx="8.5"
-            cy="8.5"
-            r="1.5"
-            fill="currentColor"
+            d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
           />
           <path
             stroke-width="2"
-            d="M21 15l-5-5L5 21"
+            d="M14 2v6h6"
+          />
+        </svg>
+      </button>
+      <button
+        class="collapsed-btn"
+        title="打开文件夹"
+        @click="openFolder"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
           />
         </svg>
       </button>
@@ -109,86 +172,25 @@ function toggleSidebar(): void {
       </button>
     </div>
 
-    <!-- 展开状态下的完整侧边栏 -->
-    <template v-else>
-      <!-- 面板切换标签 -->
-      <div class="sidebar-tabs">
-        <button
-          class="tab-btn"
-          :class="{ active: activePanel === 'files' }"
-          @click="switchPanel('files')"
-        >
-          <svg
-            class="tab-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <path
-              stroke-width="2"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
-          <span>文件</span>
-        </button>
-        <button
-          class="tab-btn"
-          :class="{ active: activePanel === 'assets' }"
-          @click="switchPanel('assets')"
-        >
-          <svg
-            class="tab-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <rect
-              x="3"
-              y="3"
-              width="18"
-              height="18"
-              rx="2"
-              stroke-width="2"
-            />
-            <circle
-              cx="8.5"
-              cy="8.5"
-              r="1.5"
-              fill="currentColor"
-            />
-            <path
-              stroke-width="2"
-              d="M21 15l-5-5L5 21"
-            />
-          </svg>
-          <span>资源</span>
-        </button>
-      </div>
-
-      <!-- 折叠按钮 -->
-      <button
-        class="collapse-btn"
-        title="收起侧边栏"
-        @click="toggleSidebar"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-        >
-          <path
-            stroke-width="2"
-            d="M11 17l-5-5 5-5M18 17l-5-5 5-5"
-          />
-        </svg>
-      </button>
-
-      <!-- 面板内容 -->
-      <div class="sidebar-content">
-        <FileExplorer v-show="activePanel === 'files'" />
-        <AssetManager v-show="activePanel === 'assets'" />
-      </div>
-    </template>
+    <!-- 展开状态：显示资源管理器 -->
+    <FileExplorer
+      v-else
+      @collapse="toggleSidebar"
+    />
+    <div
+      v-if="!props.collapsed"
+      ref="resizeHandleRef"
+      class="sidebar-resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整侧边栏宽度"
+      :aria-valuemin="MIN_SIDEBAR_WIDTH"
+      :aria-valuemax="MAX_SIDEBAR_WIDTH"
+      :aria-valuenow="fileStore.sidebarWidth"
+      tabindex="0"
+      @pointerdown="startResize"
+      @keydown="handleResizeKeydown"
+    />
   </aside>
 </template>
 
@@ -196,7 +198,6 @@ function toggleSidebar(): void {
 .sidebar {
   display: flex;
   flex-direction: column;
-  width: var(--sidebar-width);
   background-color: var(--color-bg-primary);
   border-right: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -204,8 +205,12 @@ function toggleSidebar(): void {
   position: relative;
 }
 
+.sidebar.is-resizing {
+  transition: none;
+}
+
 .sidebar.collapsed {
-  width: 48px;
+  width: 48px !important;
 }
 
 /* 折叠状态下的图标栏 */
@@ -236,11 +241,6 @@ function toggleSidebar(): void {
   color: var(--color-text);
 }
 
-.collapsed-btn.active {
-  color: var(--color-primary);
-  background-color: var(--color-primary-light);
-}
-
 .collapsed-btn svg {
   width: 20px;
   height: 20px;
@@ -253,76 +253,21 @@ function toggleSidebar(): void {
   margin: 8px 0;
 }
 
-/* 展开状态下的样式 */
-.sidebar-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.tab-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.tab-btn:hover {
-  color: var(--color-text);
-  background-color: var(--color-bg-secondary);
-}
-
-.tab-btn.active {
-  color: var(--color-primary);
-  border-bottom: 2px solid var(--color-primary);
-  margin-bottom: -1px;
-}
-
-.tab-icon {
-  width: 16px;
-  height: 16px;
-}
-
-.collapse-btn {
+.sidebar-resize-handle {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--color-text-tertiary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.2s;
-  z-index: 10;
+  top: 0;
+  right: -2px;
+  bottom: 0;
+  z-index: 3;
+  width: 4px;
+  cursor: col-resize;
+  touch-action: none;
 }
 
-.collapse-btn:hover {
-  background-color: var(--color-bg-secondary);
-  color: var(--color-text);
-}
-
-.collapse-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-.sidebar-content {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:focus-visible {
+  background: var(--color-primary);
+  opacity: 0.5;
+  outline: none;
 }
 </style>

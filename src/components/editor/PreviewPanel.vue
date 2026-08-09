@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 // Emits
 const emit = defineEmits<{
-  (e: 'scroll', scrollTop: number, scrollHeight: number): void
+  (e: 'scroll', ratio: number): void
 }>()
 
 // Store
@@ -131,21 +131,23 @@ async function applyCodeHighlight(): Promise<void> {
  */
 function handleScroll(): void {
   if (!previewRef.value || !props.enableScrollSync) return
-  
+
   const container = previewRef.value.parentElement
   if (!container) return
-  
-  emit('scroll', container.scrollTop, container.scrollHeight)
+
+  const maxScroll = container.scrollHeight - container.clientHeight
+  const ratio = maxScroll > 0 ? container.scrollTop / maxScroll : 0
+  emit('scroll', ratio)
 }
 
 /**
- * 滚动到指定位置
+ * 滚动到指定比例位置 (0-1)
  */
-function scrollTo(position: number): void {
+function scrollTo(ratio: number): void {
   const container = previewRef.value?.parentElement
-  if (container) {
-    container.scrollTop = position
-  }
+  if (!container) return
+  const maxScroll = container.scrollHeight - container.clientHeight
+  container.scrollTop = ratio * maxScroll
 }
 
 /**
@@ -171,9 +173,13 @@ function scrollToLine(line: number): void {
 async function loadImages(): Promise<void> {
   if (!previewRef.value || !fileStore.document) return
 
+  const filePath = fileStore.currentFile?.path || undefined
   const images = previewRef.value.querySelectorAll('img')
-  
+
   for (const img of images) {
+    // 标签页切换后，放弃旧文档的剩余图片请求
+    if ((fileStore.currentFile?.path || undefined) !== filePath) return
+
     const src = img.getAttribute('src')
     if (!src) continue
 
@@ -182,17 +188,21 @@ async function loadImages(): Promise<void> {
       continue
     }
 
+    const cacheKey = `${filePath ?? ''}:${src}`
+
     // 从缓存获取
-    if (imageCache.has(src)) {
-      img.src = imageCache.get(src)!
+    if (imageCache.has(cacheKey)) {
+      img.src = imageCache.get(cacheKey)!
       continue
     }
 
     // 异步加载图片数据
     try {
-      const result = await fileStore.getImage(src)
+      const result = await fileStore.getImage(src, filePath)
       if (result.success && result.data) {
-        imageCache.set(src, result.data)
+        // 请求返回期间可能已经切换到其他标签页
+        if ((fileStore.currentFile?.path || undefined) !== filePath) return
+        imageCache.set(cacheKey, result.data)
         img.src = result.data
       } else {
         // 图片加载失败，显示占位符
@@ -240,11 +250,12 @@ defineExpose({
 
 <template>
   <div class="preview-container">
-    <div class="preview-header">
-      <span class="preview-title">预览</span>
+    <div
+      v-if="!isShikiReady"
+      class="preview-header"
+    >
       <div class="preview-actions">
-        <button 
-          v-if="!isShikiReady" 
+        <button
           class="preview-status"
           title="代码高亮加载中"
         >
@@ -268,7 +279,7 @@ defineExpose({
 
 <style scoped>
 .preview-container {
-  flex: 1;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background-color: var(--color-bg-primary);
@@ -279,17 +290,13 @@ defineExpose({
 .preview-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
+  justify-content: flex-end;
+  padding: 4px 16px;
   background-color: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
-}
-
-.preview-title {
-  font-weight: 600;
 }
 
 .preview-actions {

@@ -7,12 +7,12 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import * as path from 'path'
 import { IPC_CHANNELS } from './channels'
-import type { MdxDocument, MdxResult } from '../mdx/schema'
+import type { MdxDocument } from '../mdx/schema'
 import { createMdxDocument } from '../mdx/schema'
-import { openMdx, cleanupTempDir, calculateChecksum } from '../mdx/reader'
-import { saveMdx, saveAsMdx, createMdx, validateFilePath } from '../mdx/writer'
-import { importFromMarkdown, importAndSaveAsMdx } from '../mdx/import'
-import { exportMdxFile, exportToMarkdown } from '../mdx/export'
+import { openMdx, cleanupTempDir, cleanupAllTempDirs } from '../mdx/reader'
+import { saveMdx, validateFilePath } from '../mdx/writer'
+import { importAndSaveAsMdx } from '../mdx/import'
+import { exportMdxFile } from '../mdx/export'
 import { addRecentFile as addRecent } from './file-handlers'
 
 // 存储当前打开的文档信息
@@ -30,6 +30,17 @@ const currentDoc: OpenedDocument = {
   isModified: false
 }
 
+// 多标签页共用同一个主进程，通过文件路径定位各文档的资源目录
+const tempDirsByFile = new Map<string, string>()
+
+function normalizeFilePath(filePath: string): string {
+  return path.normalize(path.resolve(filePath))
+}
+
+function registerTempDir(filePath: string, tempDir: string): void {
+  tempDirsByFile.set(normalizeFilePath(filePath), tempDir)
+}
+
 /**
  * 注册 MDX 操作 IPC handlers
  */
@@ -37,11 +48,6 @@ export function registerMdxHandlers(): void {
   // 创建新文件
   ipcMain.handle(IPC_CHANNELS.FILE.NEW, async () => {
     try {
-      // 清理之前的临时目录
-      if (currentDoc.tempDir) {
-        cleanupTempDir(currentDoc.tempDir)
-      }
-
       // 创建新的空白文档
       currentDoc.document = createMdxDocument('未命名文档', '')
       currentDoc.filePath = null
@@ -84,12 +90,8 @@ export function registerMdxHandlers(): void {
         targetPath = result.filePaths[0]
       }
 
-      // 清理之前的临时目录
-      if (currentDoc.tempDir) {
-        cleanupTempDir(currentDoc.tempDir)
-      }
-
       // 打开 MDX 文件
+      // createTempDirForFile 会自动清理并重建该文件对应的临时目录
       const result = openMdx(targetPath)
 
       if (!result.success || !result.data) {
@@ -103,6 +105,7 @@ export function registerMdxHandlers(): void {
       currentDoc.filePath = targetPath
       currentDoc.tempDir = tempDir
       currentDoc.isModified = false
+      registerTempDir(targetPath, tempDir)
 
       // 添加到最近文件列表
       addRecent(targetPath)
@@ -217,17 +220,17 @@ export function registerMdxHandlers(): void {
         // 添加到最近文件列表
         addRecent(targetPath)
 
-        // 清理旧临时目录，打开新的
-        if (currentDoc.tempDir) {
-          cleanupTempDir(currentDoc.tempDir)
-        }
+        // 重新打开以更新临时目录（createTempDirForFile 会自动清理并重建）
         const openResult = openMdx(targetPath)
         if (openResult.success && openResult.data) {
           currentDoc.tempDir = openResult.data.tempDir
+          registerTempDir(targetPath, openResult.data.tempDir)
         }
       }
 
-      return saveResult
+      return saveResult.success
+        ? { ...saveResult, data: targetPath }
+        : saveResult
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
       return { success: false, error: errorMessage }
@@ -265,11 +268,118 @@ export function registerMdxHandlers(): void {
     return saveMdx(filePath, document)
   })
 
+  // 从文件夹批量导入 Markdown
+  ipcMain.handle(IPC_CHANNELS.MDX.IMPORT_FOLDER, async (_, sourceFolder?: string, targetFolder?: string) => {
+    try {
+      let sourceDir = sourceFolder
+      let targetDir = targetFolder
+
+      // 选择源文件夹
+      if (!sourceDir) {
+        const { dialog } = await import('electron')
+        const window = BrowserWindow.getFocusedWindow()
+        const result = await dialog.showOpenDialog(window!, {
+          properties: ['openDirectory'],
+          title: '选择要导入的 Markdown 文件夹'
+        })
+        if (result.canceled || result.filePaths.length === 0) {
+          return { success: false, error: '用户取消' }
+        }
+        sourceDir = result.filePaths[0]
+      }
+
+      // 选择目标文件夹
+      if (!targetDir) {
+        const { dialog } = await import('electron')
+        const window = BrowserWindow.getFocusedWindow()
+        const result = await dialog.showOpenDialog(window!, {
+          properties: ['openDirectory'],
+          title: '选择保存 .mdx 文件的目标文件夹'
+        })
+        if (result.canceled || result.filePaths.length === 0) {
+          return { success: false, error: '用户取消' }
+        }
+        targetDir = result.filePaths[0]
+      }
+
+      // 递归扫描所有 .md 文件
+      const fs = await import('fs')
+      const path = await import('path')
+
+      function findMarkdownFiles(dir: string, baseDir: string): Array<{ relativePath: string; fullPath: string }> {
+        const results: Array<{ relativePath: string; fullPath: string }> = []
+        const entries = fs.readdirSync(dir, { withFileTypes: true })
+
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name)
+          if (entry.isDirectory()) {
+            results.push(...findMarkdownFiles(fullPath, baseDir))
+          } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+            const relativePath = path.relative(baseDir, fullPath)
+            results.push({ relativePath, fullPath })
+          }
+        }
+
+        return results
+      }
+
+      const mdFiles = findMarkdownFiles(sourceDir, sourceDir)
+
+      if (mdFiles.length === 0) {
+        return { success: false, error: '所选文件夹中没有找到 Markdown 文件' }
+      }
+
+      const imported: Array<{ source: string; target: string }> = []
+      const failed: Array<{ source: string; error: string }> = []
+
+      for (const { relativePath, fullPath } of mdFiles) {
+        // 计算目标路径：保持相对目录结构，将 .md 替换为 .mdx
+        const relativeDir = path.dirname(relativePath)
+        const baseName = path.basename(relativePath, '.md')
+        const targetSubDir = path.join(targetDir, relativeDir)
+        let targetFilePath = path.join(targetSubDir, `${baseName}.mdx`)
+
+        // 确保目标子目录存在
+        fs.mkdirSync(targetSubDir, { recursive: true })
+
+        // 处理同名冲突
+        if (fs.existsSync(targetFilePath)) {
+          let counter = 1
+          while (fs.existsSync(path.join(targetSubDir, `${baseName}_${counter}.mdx`))) {
+            counter++
+          }
+          targetFilePath = path.join(targetSubDir, `${baseName}_${counter}.mdx`)
+        }
+
+        // 导入并保存为 .mdx
+        const importResult = await importAndSaveAsMdx(targetFilePath, fullPath)
+
+        if (importResult.success) {
+          imported.push({ source: fullPath, target: targetFilePath })
+        } else {
+          failed.push({ source: fullPath, error: importResult.error || '导入失败' })
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          imported,
+          failed,
+          sourceDir,
+          targetDir
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: `批量导入失败: ${errorMessage}` }
+    }
+  })
+
   // 导入 Markdown
-  ipcMain.handle(IPC_CHANNELS.MDX.IMPORT_MD, async (_, mdFilePath?: string, targetPath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.MDX.IMPORT_MD, async (_, mdFilePath?: string, targetFolder?: string) => {
     try {
       let sourcePath = mdFilePath
-      let savePath = targetPath
 
       // 如果没有提供源文件路径，显示打开对话框
       if (!sourcePath) {
@@ -289,8 +399,26 @@ export function registerMdxHandlers(): void {
         sourcePath = result.filePaths[0]
       }
 
-      // 如果没有提供目标路径，显示保存对话框
-      if (!savePath) {
+      // 确定保存路径
+      let savePath: string
+
+      if (targetFolder) {
+        // 已打开文件夹：自动生成保存路径，跳过保存对话框
+        const fs = await import('fs')
+        const baseName = path.basename(sourcePath!, '.md')
+        let candidatePath = path.join(targetFolder, `${baseName}.mdx`)
+
+        // 处理同名冲突
+        if (fs.existsSync(candidatePath)) {
+          let counter = 1
+          while (fs.existsSync(path.join(targetFolder, `${baseName}_${counter}.mdx`))) {
+            counter++
+          }
+          candidatePath = path.join(targetFolder, `${baseName}_${counter}.mdx`)
+        }
+        savePath = candidatePath
+      } else {
+        // 未打开文件夹：显示保存对话框让用户选择
         const { dialog } = await import('electron')
         const window = BrowserWindow.getFocusedWindow()
         const defaultName = sourcePath!.split(/[/\\]/).pop()?.replace('.md', '.mdx') || '未命名文档.mdx'
@@ -311,8 +439,28 @@ export function registerMdxHandlers(): void {
       }
 
       // 导入并保存
-      const result = await importAndSaveAsMdx(savePath, sourcePath)
-      return result
+      const importResult = await importAndSaveAsMdx(savePath, sourcePath)
+
+      if (importResult.success && importResult.data) {
+        // 更新当前文档状态
+        currentDoc.document = importResult.data.document
+        currentDoc.filePath = savePath
+        currentDoc.tempDir = importResult.data.tempDir
+        currentDoc.isModified = false
+        registerTempDir(savePath, importResult.data.tempDir)
+
+        addRecent(savePath)
+
+        return {
+          success: true,
+          data: {
+            document: importResult.data.document,
+            filePath: savePath
+          }
+        }
+      }
+
+      return importResult
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
       return { success: false, error: errorMessage }
@@ -368,7 +516,6 @@ export function registerMdxHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.APP.CLOSE_CONFIRMED, () => {
     setCloseConfirmed(true)
     // 触发窗口关闭
-    const { BrowserWindow } = require('electron') as typeof import('electron')
     const win = BrowserWindow.getFocusedWindow()
     if (win) {
       win.close()
@@ -383,16 +530,13 @@ export function registerMdxHandlers(): void {
         return { success: false, error: '没有打开的文档' }
       }
 
-      let buffer = Buffer.from(data)
+      let buffer: Buffer<ArrayBufferLike> = Buffer.from(data)
 
       // 如果需要压缩，调用压缩功能
       if (options?.compress) {
         try {
           const sharp = await import('sharp')
           let sharpInstance = sharp.default(buffer)
-
-          // 获取图片元数据
-          const metadata = await sharpInstance.metadata()
 
           // 调整尺寸
           if (options.maxWidth || options.maxHeight) {
@@ -447,15 +591,18 @@ export function registerMdxHandlers(): void {
   })
 
   // 获取图片数据
-  ipcMain.handle(IPC_CHANNELS.MDX.GET_IMAGE, async (_, imagePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.MDX.GET_IMAGE, async (_, imagePath: string, filePath?: string) => {
     try {
-      if (!currentDoc.tempDir) {
+      const tempDir = filePath
+        ? tempDirsByFile.get(normalizeFilePath(filePath))
+        : currentDoc.tempDir
+      if (!tempDir) {
         return { success: false, error: '没有打开的文档' }
       }
 
       const fs = await import('fs')
       const path = await import('path')
-      const fullPath = path.join(currentDoc.tempDir, imagePath)
+      const fullPath = path.join(tempDir, imagePath)
 
       if (!fs.existsSync(fullPath)) {
         return { success: false, error: '图片不存在' }
@@ -647,9 +794,9 @@ export function isCloseConfirmed(): boolean {
  * 清理所有临时资源
  */
 export function cleanupAll(): void {
-  if (currentDoc.tempDir) {
-    cleanupTempDir(currentDoc.tempDir)
-  }
+  // 清理所有临时目录
+  cleanupAllTempDirs()
+
   currentDoc.document = null
   currentDoc.filePath = null
   currentDoc.tempDir = null

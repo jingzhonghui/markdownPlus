@@ -11,7 +11,7 @@ interface Props {
   isLink: boolean
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
 const emit = defineEmits<{
   bold: []

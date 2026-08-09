@@ -220,4 +220,120 @@ export function registerFileHandlers(): void {
       return { success: false, error: errorMessage }
     }
   })
+
+  // 读取文件夹内容
+  ipcMain.handle(IPC_CHANNELS.FOLDER.READ, async (_, dirPath: string) => {
+    try {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+      const items: Array<{ name: string; path: string; isDirectory: boolean }> = []
+
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name)
+        if (entry.isDirectory()) {
+          items.push({ name: entry.name, path: fullPath, isDirectory: true })
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase()
+          if (ext === '.mdx' || ext === '.md') {
+            items.push({ name: entry.name, path: fullPath, isDirectory: false })
+          }
+        }
+      }
+
+      // 排序：文件夹在前，文件在后，各自按名称字母排序
+      items.sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) {
+          return a.isDirectory ? -1 : 1
+        }
+        return a.name.localeCompare(b.name)
+      })
+
+      return { success: true, data: items }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 创建新文件
+  ipcMain.handle(IPC_CHANNELS.FILE.CREATE, async (_, { dirPath, name }: { dirPath: string; name: string }) => {
+    try {
+      const fullPath = path.join(dirPath, name)
+      if (fs.existsSync(fullPath)) {
+        return { success: false, error: '文件已存在' }
+      }
+      const ext = path.extname(fullPath).toLowerCase()
+      if (ext === '.mdx') {
+        // 创建空的 .mdx 文件（简单的 ZIP 结构）
+        const AdmZip = await import('adm-zip')
+        const zip = new AdmZip.default()
+        const mdxJson = JSON.stringify({
+          version: '1.0',
+          created_at: new Date().toISOString(),
+          modified_at: new Date().toISOString(),
+          title: name.replace(/\.mdx$/i, ''),
+          encoding: 'UTF-8',
+          content_file: 'content.md',
+          assets: { images: [] },
+          settings: { editor_theme: 'default', preview_style: 'github' }
+        }, null, 2)
+        zip.addFile('mdx.json', Buffer.from(mdxJson, 'utf-8'))
+        zip.addFile('content.md', Buffer.from('', 'utf-8'))
+        zip.writeZip(fullPath)
+      } else {
+        // 普通的 .md 文件
+        fs.writeFileSync(fullPath, '', 'utf-8')
+      }
+      return { success: true, data: { path: fullPath } }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 创建新文件夹
+  ipcMain.handle(IPC_CHANNELS.FOLDER.CREATE, async (_, { parentPath, name }: { parentPath: string; name: string }) => {
+    try {
+      const fullPath = path.join(parentPath, name)
+      if (fs.existsSync(fullPath)) {
+        return { success: false, error: '文件夹已存在' }
+      }
+      fs.mkdirSync(fullPath, { recursive: true })
+      return { success: true, data: { path: fullPath } }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 重命名文件/文件夹
+  ipcMain.handle(IPC_CHANNELS.FILE.RENAME, async (_, { oldPath, newName }: { oldPath: string; newName: string }) => {
+    try {
+      const dir = path.dirname(oldPath)
+      const newPath = path.join(dir, newName)
+      if (fs.existsSync(newPath)) {
+        return { success: false, error: '目标已存在' }
+      }
+      fs.renameSync(oldPath, newPath)
+      return { success: true, data: { path: newPath } }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 删除文件/文件夹
+  ipcMain.handle(IPC_CHANNELS.FILE.DELETE, async (_, { targetPath }: { targetPath: string }) => {
+    try {
+      const stat = fs.statSync(targetPath)
+      if (stat.isDirectory()) {
+        fs.rmSync(targetPath, { recursive: true, force: true })
+      } else {
+        fs.unlinkSync(targetPath)
+      }
+      return { success: true }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
 }

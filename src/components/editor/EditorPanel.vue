@@ -209,6 +209,8 @@ function onPreviewScroll(ratio: number): void {
 <style scoped>
 .editor-panel {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -338,10 +340,16 @@ function onPreviewScroll(ratio: number): void {
 /* Splitpanes 主题适配 */
 .splitpanes-theme {
   flex: 1;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
   display: flex;
+  overflow: hidden;
 }
 
 .splitpanes-theme :deep(.splitpanes__pane) {
+  min-width: 0;
+  min-height: 0;
   background-color: var(--color-bg-primary);
   overflow: hidden;
   display: flex;

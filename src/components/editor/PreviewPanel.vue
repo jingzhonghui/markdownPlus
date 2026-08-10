@@ -280,6 +280,8 @@ defineExpose({
 <style scoped>
 .preview-container {
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background-color: var(--color-bg-primary);

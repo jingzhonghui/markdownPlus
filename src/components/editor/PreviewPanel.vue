@@ -101,7 +101,7 @@ async function applyCodeHighlight(): Promise<void> {
   for (const codeBlock of codeBlocks) {
     const element = codeBlock as HTMLElement
     const className = element.className
-    const match = className.match(/language-(\w+)/)
+    const match = className.match(/language-([\w+#.-]+)/)
     const lang = match ? match[1] : 'text'
     const code = element.textContent || ''
 
@@ -111,17 +111,16 @@ async function applyCodeHighlight(): Promise<void> {
         theme: shikiTheme.value
       })
       
-      // 提取高亮后的代码内容（去掉外层的 pre 标签）
+      // 用 Shiki 的完整 pre 结构替换原节点，保留主题变量和行内 token 样式。
       const tempDiv = document.createElement('div')
       tempDiv.innerHTML = highlighted
       const preElement = tempDiv.querySelector('pre')
       if (preElement) {
-        element.innerHTML = preElement.innerHTML
-        element.className = `shiki ${className}`
+        const currentPre = element.closest('pre')
+        if (currentPre) currentPre.replaceWith(preElement)
       }
     } catch {
       // 如果语言不支持，保持原样
-      element.className = `shiki ${className}`
     }
   }
 }
@@ -280,6 +279,8 @@ defineExpose({
 <style scoped>
 .preview-container {
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background-color: var(--color-bg-primary);

@@ -11,8 +11,9 @@ import {
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { storeToRefs } from 'pinia'
-import { EditorView } from 'prosemirror-view'
+import { Decoration, DecorationSet, EditorView } from 'prosemirror-view'
 import { EditorState } from 'prosemirror-state'
+import { Plugin as ProseMirrorPlugin, PluginKey } from 'prosemirror-state'
 import {
   markdownSchema,
   parseMarkdown,
@@ -21,20 +22,19 @@ import {
   createDocumentChangePlugin,
   taskListClickPlugin,
   toggleHeading,
-  insertImage,
   insertLink,
   createIRPlugin,
   irPluginKey,
   createPastePlugin,
 } from '../../utils/prosemirror'
 import type { IRPluginState } from '../../utils/prosemirror'
-import { TextSelection, Plugin as ProseMirrorPlugin, PluginKey } from 'prosemirror-state'
-import { Decoration, DecorationSet } from 'prosemirror-view'
+import { NodeSelection, TextSelection } from 'prosemirror-state'
 import { wrapIn, setBlockType } from 'prosemirror-commands'
 import { wrapInList } from 'prosemirror-schema-list'
+import type { Node as ProseMirrorNode } from 'prosemirror-model'
 import katex from 'katex'
-import { createHighlighter, type BundledLanguage, type Highlighter } from 'shiki'
-import type { NodeView } from 'prosemirror-view'
+import type { NodeView, ViewMutationRecord } from 'prosemirror-view'
+import { createHighlighter, type Highlighter } from 'shiki'
 import {
   addColumnBefore,
   addColumnAfter,
@@ -116,99 +116,8 @@ let editorTabId: string | null = null
 const isDragging = ref(false)
 const showMarkers = ref(false)
 const imageCache = new Map<string, string>()
-
-const syntaxHighlightKey = new PluginKey<DecorationSet>('ir-syntax-highlight')
-let syntaxHighlighter: Highlighter | null = null
+const shikiHighlighter = shallowRef<Highlighter | null>(null)
 let highlightRequest = 0
-
-function createSyntaxHighlightPlugin(): ProseMirrorPlugin<DecorationSet> {
-  return new ProseMirrorPlugin<DecorationSet>({
-    key: syntaxHighlightKey,
-    state: {
-      init: () => DecorationSet.empty,
-      apply(tr, decorations) {
-        const replacement = tr.getMeta(syntaxHighlightKey) as DecorationSet | undefined
-        if (replacement) return replacement
-        return decorations.map(tr.mapping, tr.doc)
-      }
-    },
-    props: {
-      decorations(state) {
-        return syntaxHighlightKey.getState(state) || DecorationSet.empty
-      }
-    },
-    view: () => ({
-      update: (view, prevState) => {
-        if (!prevState.doc.eq(view.state.doc)) scheduleSyntaxHighlight(view)
-      }
-    })
-  })
-}
-
-function scheduleSyntaxHighlight(view: EditorView): void {
-  if (!syntaxHighlighter) return
-  const request = ++highlightRequest
-  setTimeout(() => {
-    if (request !== highlightRequest || view.isDestroyed) return
-    const decorations: Decoration[] = []
-
-    view.state.doc.descendants((node, pos) => {
-      if (node.type.name !== 'code_block') return
-      const language = normalizeCodeLanguage(node.attrs.language as string)
-      try {
-        const result = syntaxHighlighter!.codeToTokens(node.textContent, {
-          lang: language,
-          theme: themeStore.isDark ? 'github-dark' : 'github-light'
-        })
-        for (const line of result.tokens) {
-          for (const token of line) {
-            const from = pos + 1 + token.offset
-            const to = from + token.content.length
-            if (token.color && to > from) {
-              decorations.push(Decoration.inline(from, to, { style: `color: ${token.color}` }))
-            }
-          }
-        }
-      } catch {
-        // Unsupported languages keep the default code-block color.
-      }
-    })
-
-    view.dispatch(view.state.tr.setMeta(syntaxHighlightKey, DecorationSet.create(view.state.doc, decorations)))
-  }, 0)
-}
-
-function normalizeCodeLanguage(language: string): BundledLanguage | 'text' {
-  const aliases: Record<string, BundledLanguage> = {
-    js: 'javascript',
-    ts: 'typescript',
-    sh: 'bash',
-    shell: 'bash',
-    yml: 'yaml',
-    md: 'markdown',
-    py: 'python'
-  }
-  const normalized = language.toLowerCase()
-  return aliases[normalized] || (normalized as BundledLanguage) || 'text'
-}
-
-async function initSyntaxHighlighter(): Promise<void> {
-  try {
-    syntaxHighlighter = await createHighlighter({
-      themes: ['github-light', 'github-dark'],
-      langs: [
-        'javascript', 'typescript', 'python', 'go', 'rust', 'java',
-        'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin',
-        'html', 'css', 'scss', 'json', 'yaml', 'xml', 'sql',
-        'bash', 'powershell', 'dockerfile', 'markdown', 'vue',
-        'svelte', 'astro', 'lua', 'perl', 'haskell', 'r', 'dart'
-      ]
-    })
-    if (viewRef.value) scheduleSyntaxHighlight(viewRef.value)
-  } catch (error) {
-    console.error('[IrEditor] Shiki 初始化失败:', error)
-  }
-}
 
 const CLOSE_ALL_CONTEXT_MENUS_EVENT = 'markdown-plus:close-context-menus'
 
@@ -219,6 +128,213 @@ function focusEditor(): void {
   // 先让浏览器产生真实的 focus 事件，再让 ProseMirror 同步 selection。
   view.dom.focus({ preventScroll: true })
   view.focus()
+}
+
+const supportedCodeLanguages = [
+  { value: '', label: '纯文本' },
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'typescript', label: 'TypeScript' },
+  { value: 'python', label: 'Python' },
+  { value: 'java', label: 'Java' },
+  { value: 'c', label: 'C' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'csharp', label: 'C#' },
+  { value: 'go', label: 'Go' },
+  { value: 'rust', label: 'Rust' },
+  { value: 'html', label: 'HTML' },
+  { value: 'css', label: 'CSS' },
+  { value: 'scss', label: 'SCSS' },
+  { value: 'json', label: 'JSON' },
+  { value: 'yaml', label: 'YAML' },
+  { value: 'xml', label: 'XML' },
+  { value: 'sql', label: 'SQL' },
+  { value: 'bash', label: 'Bash' },
+  { value: 'powershell', label: 'PowerShell' },
+  { value: 'markdown', label: 'Markdown' },
+  { value: 'vue', label: 'Vue' },
+  { value: 'svelte', label: 'Svelte' },
+  { value: 'lua', label: 'Lua' },
+  { value: 'ruby', label: 'Ruby' },
+  { value: 'php', label: 'PHP' },
+  { value: 'swift', label: 'Swift' },
+  { value: 'kotlin', label: 'Kotlin' },
+  { value: 'dockerfile', label: 'Dockerfile' },
+  { value: 'text', label: '纯文本' }
+]
+
+function normalizeCodeLanguage(language: string): string {
+  const aliases: Record<string, string> = {
+    'c++': 'cpp',
+    'c#': 'csharp',
+    js: 'javascript',
+    ts: 'typescript',
+    py: 'python',
+    sh: 'bash',
+    shell: 'bash'
+  }
+  return aliases[language.toLowerCase()] || language.toLowerCase()
+}
+
+class CodeBlockView implements NodeView {
+  dom: HTMLElement
+  contentDOM: HTMLElement
+  private select: HTMLSelectElement
+  private view: EditorView
+  private getPos: () => number
+
+  constructor(node: ProseMirrorNode, view: EditorView, getPos: () => number) {
+    this.view = view
+    this.getPos = getPos
+    this.dom = document.createElement('pre')
+    this.dom.className = 'ir-code-block'
+    this.select = document.createElement('select')
+    this.select.className = 'ir-code-language'
+    this.select.title = '选择代码语言'
+    for (const language of supportedCodeLanguages) {
+      const option = document.createElement('option')
+      option.value = language.value
+      option.textContent = language.label
+      this.select.appendChild(option)
+    }
+    this.select.value = normalizeCodeLanguage(node.attrs.language || '')
+    this.select.addEventListener('mousedown', (event) => event.stopPropagation())
+    this.select.addEventListener('change', this.handleLanguageChange)
+    this.dom.appendChild(this.select)
+    this.contentDOM = document.createElement('code')
+    this.contentDOM.className = node.attrs.language ? `language-${node.attrs.language}` : ''
+    this.dom.appendChild(this.contentDOM)
+  }
+
+  private handleLanguageChange = (): void => {
+    const language = this.select.value
+    this.view.dispatch(this.view.state.tr.setNodeMarkup(this.getPos(), undefined, { language }))
+    this.view.focus()
+  }
+
+  update(node: ProseMirrorNode): boolean {
+    if (node.type.name !== 'code_block') return false
+    this.select.value = normalizeCodeLanguage(node.attrs.language || '')
+    this.contentDOM.className = node.attrs.language ? `language-${node.attrs.language}` : ''
+    return true
+  }
+
+  stopEvent(event: Event): boolean {
+    return event.target === this.select || this.select.contains(event.target as Node)
+  }
+
+  ignoreMutation(mutation: ViewMutationRecord): boolean {
+    return mutation.type !== 'selection' && !this.contentDOM.contains(mutation.target)
+  }
+}
+
+const codeHighlightKey = new PluginKey<DecorationSet>('ir-code-highlight')
+
+function createCodeHighlightPlugin(): ProseMirrorPlugin {
+  return new ProseMirrorPlugin<DecorationSet>({
+    key: codeHighlightKey,
+    state: {
+      init: () => DecorationSet.empty,
+      apply(tr, decorations) {
+        const meta = tr.getMeta(codeHighlightKey)
+        if (meta instanceof DecorationSet) return meta
+        return decorations.map(tr.mapping, tr.doc)
+      }
+    },
+    view(view) {
+      let scheduled = false
+
+      const schedule = (): void => {
+        if (scheduled) return
+        scheduled = true
+        queueMicrotask(() => {
+          scheduled = false
+          void updateCodeHighlights(view)
+        })
+      }
+
+      schedule()
+      return {
+        update(updatedView, previousState) {
+          // 高亮结果本身通过 decoration 事务写回，不应再次触发高亮。
+          if (!updatedView.state.doc.eq(previousState.doc)) schedule()
+        }
+      }
+    },
+    props: {
+      decorations(state) {
+        return codeHighlightKey.getState(state) || DecorationSet.empty
+      }
+    }
+  })
+}
+
+async function updateCodeHighlights(view: EditorView): Promise<void> {
+  const highlighter = shikiHighlighter.value
+  if (!highlighter || view.isDestroyed) return
+
+  const request = ++highlightRequest
+  const decorations: Decoration[] = []
+  const theme = themeStore.isDark ? 'github-dark' : 'github-light'
+  const codeBlocks: Array<{ node: typeof view.state.doc; pos: number }> = []
+
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'code_block') codeBlocks.push({ node: node as typeof view.state.doc, pos })
+  })
+
+  for (const { node, pos } of codeBlocks) {
+    const language = normalizeCodeLanguage(node.attrs.language || 'text')
+    const code = node.textContent
+    try {
+      const tokenLines = await highlighter.codeToTokensBase(code, {
+        lang: language as import('shiki').BundledLanguage,
+        theme
+      }) as Array<Array<{
+        content: string
+        color?: string
+        fontStyle?: number
+      }>>
+      let offset = 0
+
+      for (const line of tokenLines) {
+        for (const token of line) {
+          const length = token.content.length
+          if (length > 0 && token.color) {
+            const styles = [`color: ${token.color}`]
+            if (token.fontStyle === 1 || token.fontStyle === 3) styles.push('font-style: italic')
+            if (token.fontStyle === 2 || token.fontStyle === 3) styles.push('font-weight: 700')
+            decorations.push(Decoration.inline(pos + 1 + offset, pos + 1 + offset + length, {
+              style: styles.join('; ')
+            }))
+          }
+          offset += length
+        }
+        offset += 1
+      }
+    } catch {
+      // 未知语言保持编辑器默认文本颜色。
+    }
+  }
+
+  if (request !== highlightRequest || view.isDestroyed) return
+  view.dispatch(view.state.tr.setMeta(codeHighlightKey, DecorationSet.create(view.state.doc, decorations)))
+}
+
+async function initShiki(): Promise<void> {
+  try {
+    shikiHighlighter.value = await createHighlighter({
+      themes: ['github-light', 'github-dark'],
+      langs: [
+        'javascript', 'typescript', 'python', 'go', 'rust', 'java',
+        'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin',
+        'html', 'css', 'scss', 'json', 'yaml', 'xml', 'sql',
+        'bash', 'powershell', 'dockerfile', 'markdown', 'vue',
+        'svelte', 'astro', 'lua', 'perl', 'haskell', 'r', 'dart'
+      ]
+    })
+    if (viewRef.value) void updateCodeHighlights(viewRef.value)
+  } catch (error) {
+    console.error('IR 模式代码高亮初始化失败:', error)
+  }
 }
 
 // 右键菜单状态
@@ -309,8 +425,7 @@ function buildTableMenuItems(view: EditorView): ContextMenuItem[] {
 function buildGeneralMenuItems(view: EditorView): ContextMenuItem[] {
   const { state } = view
   const { schema } = state
-
-  return [
+  const items: ContextMenuItem[] = [
     {
       label: '插入',
       children: [
@@ -346,6 +461,35 @@ function buildGeneralMenuItems(view: EditorView): ContextMenuItem[] {
       ]
     },
   ]
+
+  return items
+}
+
+function insertImageNode(view: EditorView, src: string, alt = '', title = ''): void {
+  const image = view.state.schema.nodes.image.create({ src, alt, title })
+  const tr = view.state.tr.replaceSelectionWith(image)
+  if (tr.doc.resolve(tr.selection.from).parent.type.name === 'paragraph') {
+    tr.split(tr.selection.from)
+  }
+  view.dispatch(tr)
+  view.focus()
+}
+
+function deleteSelectedImage(view: EditorView): void {
+  const selection = view.state.selection
+  if (!(selection instanceof NodeSelection) || selection.node.type.name !== 'image') return
+  const src = selection.node.attrs.src as string
+  const asset = fileStore.imageAssets.find((item) => item.path === src)
+  if (asset) {
+    void fileStore.removeAsset(asset.id).then((result) => {
+      if (!result.success || view.isDestroyed) return
+      view.dispatch(view.state.tr.deleteSelection())
+      view.focus()
+    })
+  } else {
+    view.dispatch(view.state.tr.deleteSelection())
+    view.focus()
+  }
 }
 
 // 右键菜单插件
@@ -353,8 +497,40 @@ function createContextMenuPlugin(): ProseMirrorPlugin {
   return new ProseMirrorPlugin({
     props: {
       handleDOMEvents: {
+        mousedown: (view, event) => {
+          if ((event as MouseEvent).button !== 0) return false
+          const target = event.target as HTMLElement
+          if (!target.closest('img')) return false
+          const mouseEvent = event as MouseEvent
+          const coords = view.posAtCoords({ left: mouseEvent.clientX, top: mouseEvent.clientY })
+          if (!coords) return false
+          const node = view.state.doc.nodeAt(coords.pos) || view.state.doc.nodeAt(coords.pos - 1)
+          if (node?.type.name !== 'image') return false
+          const imagePos = view.state.doc.nodeAt(coords.pos)?.type.name === 'image' ? coords.pos : coords.pos - 1
+          view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, imagePos)))
+          return true
+        },
         contextmenu: (view, event) => {
           const target = event.target as HTMLElement
+
+          if (target.closest('img')) {
+            event.preventDefault()
+            window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))
+            const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
+            if (coords) {
+              const node = view.state.doc.nodeAt(coords.pos) || view.state.doc.nodeAt(coords.pos - 1)
+              if (node?.type.name === 'image') {
+                view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, coords.pos)))
+              }
+            }
+            contextMenu.items = [{ label: '删除图片', action: () => deleteSelectedImage(view) }]
+            contextMenu.type = 'general'
+            const pos = calculateMenuPosition(event.clientX, event.clientY, 42)
+            contextMenu.x = pos.x
+            contextMenu.y = pos.y
+            contextMenu.visible = true
+            return true
+          }
 
           // 检查是否在表格单元格内
           if (target.closest('td, th')) {
@@ -417,8 +593,8 @@ function createEditorState(content: string): EditorState {
         fileStore.updateContent(markdown)
       }
     }),
-    createSyntaxHighlightPlugin(),
     createIRPlugin(),
+    createCodeHighlightPlugin(),
     createContextMenuPlugin(),
   ]
   return EditorState.create({ doc, plugins })
@@ -428,12 +604,7 @@ async function handlePasteImage(view: EditorView, file: File): Promise<void> {
   const result = await fileStore.addImage(file)
   if (result.success && result.path) {
     // 使用 view.state 和 view.dispatch 来确保状态一致性
-    const { state } = view
-    const tr = state.tr
-    const imageNode = state.schema.nodes.image.create({ src: result.path, alt: file.name })
-    tr.replaceSelectionWith(imageNode)
-    view.dispatch(tr)
-    view.focus()
+    insertImageNode(view, result.path, file.name)
     // 加载并渲染图片
     await nextTick(() => loadEditorImages())
   }
@@ -462,10 +633,14 @@ function initEditor(): void {
       view.updateState(view.state.apply(tr))
       syncShowMarkers()
     },
-    attributes: { class: 'ir-editor', spellcheck: 'false' },
+    attributes: {
+      class: 'ir-editor',
+      spellcheck: 'false'
+    },
     nodeViews: {
       math_inline: (node) => new MathInlineView(node),
       math_block: (node) => new MathBlockView(node),
+      code_block: (node, view, getPos) => new CodeBlockView(node, view, getPos as () => number),
     },
   })
 }
@@ -508,7 +683,7 @@ async function handleDrop(e: DragEvent): Promise<void> {
     if (file.type.startsWith('image/')) await insertImageFromFile(file)
   }
   const url = e.dataTransfer.getData('text/uri-list')
-  if (url && isImageUrl(url)) insertImage(url)
+  if (url && isImageUrl(url) && viewRef.value) insertImageNode(viewRef.value, url)
 }
 // 注意：粘贴图片处理已移至 ProseMirror 插件 createPastePlugin
 // 保留此函数是为了防止其他组件依赖，但实际处理在插件中完成
@@ -522,11 +697,7 @@ async function insertImageFromFile(file: File): Promise<void> {
     const view = viewRef.value
     if (!view) return
     // 使用 view.state 创建事务，确保状态一致性
-    const tr = view.state.tr
-    const imageNode = view.state.schema.nodes.image.create({ src: result.path, alt: file.name })
-    tr.replaceSelectionWith(imageNode)
-    view.dispatch(tr)
-    view.focus()
+    insertImageNode(view, result.path, file.name)
   }
 }
 function isImageUrl(url: string): boolean {
@@ -586,10 +757,7 @@ watch([activeTabId, fileContent], ([newTabId, newContent], [oldTabId]) => {
 
 watch(() => themeStore.currentTheme, () => {
   nextTick(() => {
-    const view = viewRef.value
-    if (!view) return
-    view.updateState(view.state)
-    scheduleSyntaxHighlight(view)
+    if (viewRef.value) void updateCodeHighlights(viewRef.value)
   })
 })
 
@@ -697,8 +865,7 @@ function handleImageEvent(e: Event): void {
   const view = viewRef.value
   if (!view) return
   const { src, alt } = (e as CustomEvent).detail as { src: string; alt: string }
-  insertImage(src, alt)(view.state, (tr) => applyAndSync(view, tr))
-  view.focus()
+  insertImageNode(view, src, alt)
 }
 
 function handleCodeBlockEvent(e: Event): void {
@@ -711,7 +878,7 @@ function handleCodeBlockEvent(e: Event): void {
 
 onMounted(() => {
   initEditor()
-  void initSyntaxHighlighter()
+  void initShiki()
   const el = editorRef.value
   if (el) {
     el.addEventListener('dragover', handleDragOver)
@@ -769,8 +936,6 @@ onUnmounted(() => {
   view?.dom.removeEventListener('mousedown', focusEditor)
   view?.destroy()
   viewRef.value = null
-  syntaxHighlighter?.dispose()
-  syntaxHighlighter = null
 })
 
 defineExpose({
@@ -779,9 +944,7 @@ defineExpose({
   insertImage: (src: string, alt?: string, title?: string) => {
     const view = viewRef.value
     if (!view) return
-    const { state, dispatch } = view
-    insertImage(src, alt, title)(state, dispatch)
-    view.focus()
+    insertImageNode(view, src, alt, title)
   },
   getView: () => viewRef.value,
   focus: () => viewRef.value?.focus(),
@@ -978,9 +1141,31 @@ defineExpose({
   font-family: var(--font-mono);
   font-size: 0.9em; overflow-x: auto; margin: 0.5em 0;
   position: relative;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+}
+.ir-editor-wrapper :deep(.ProseMirror pre.ir-code-block) {
+  padding-top: 2.2em;
+}
+.ir-editor-wrapper :deep(.ProseMirror .ir-code-language) {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  z-index: 1;
+  max-width: 180px;
+  padding: 2px 24px 2px 8px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font: 12px var(--font-sans);
+  cursor: pointer;
+}
+.ir-editor-wrapper :deep(.ProseMirror .ir-code-language:focus) {
+  color: var(--color-text);
+  border-color: var(--color-primary);
+  outline: none;
+}
+.ir-editor-wrapper :deep(.ProseMirror pre.ir-code-block::before) {
+  display: none;
 }
 .ir-editor-wrapper :deep(.ProseMirror pre::before) {
   content: '```' attr(data-lang);
@@ -1013,6 +1198,11 @@ defineExpose({
 .ir-editor-wrapper :deep(.ProseMirror pre code) { background: none; padding: 0; }
 .ir-editor-wrapper :deep(.ProseMirror img) {
   max-width: 100%; height: auto; border-radius: 4px; cursor: pointer;
+}
+.ir-editor-wrapper :deep(.ProseMirror img.ProseMirror-selectednode) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px var(--color-primary-light);
 }
 .ir-editor-wrapper :deep(.ProseMirror a) {
   color: var(--color-primary); text-decoration: underline;

@@ -223,14 +223,9 @@ function customSplitListItem(itemType: NodeType): Command {
  */
 function handleEnter(_schema: Schema): Command {
   return chainCommands(
-    exitCode,
+    convertBlockMarkerOnEnter(_schema),
     (state, dispatch) => {
-      const { $from } = state.selection
-      const depth = $from.depth
-      const parent = $from.node(depth)
-
-      // 处理代码块中的回车
-      if (parent.type.name === 'code_block') {
+      if (state.selection.$from.parent.type.name === 'code_block') {
         if (dispatch) {
           dispatch(state.tr.insertText('\n'))
         }
@@ -238,8 +233,53 @@ function handleEnter(_schema: Schema): Command {
       }
 
       return false
-    }
+    },
+    exitCode
   )
+}
+
+/** 按回车时，将完整的块级 Markdown 标记转换为对应节点。 */
+function convertBlockMarkerOnEnter(schema: Schema): Command {
+  return (state, dispatch) => {
+    const { $from } = state.selection
+    const paragraph = $from.parent
+    if (paragraph.type !== schema.nodes.paragraph || $from.parentOffset !== paragraph.content.size) {
+      return false
+    }
+
+    const text = paragraph.textContent
+    const codeMatch = text.match(/^```([\w+#.-]+)?$/)
+    const isHorizontalRule = /^(---|___|\*\*\*)$/.test(text)
+    if (!codeMatch && !isHorizontalRule) return false
+
+    if (dispatch) {
+      const start = $from.before($from.depth)
+      const tr = state.tr
+      if (codeMatch) {
+        const language = codeMatch[1]?.toLowerCase() || ''
+        const aliases: Record<string, string> = {
+          'c++': 'cpp',
+          'c#': 'csharp',
+          js: 'javascript',
+          ts: 'typescript',
+          py: 'python',
+          sh: 'bash',
+          shell: 'bash'
+        }
+        const normalizedLanguage = aliases[language] || language
+        const codeBlock = schema.nodes.code_block.create({ language: normalizedLanguage })
+        tr.replaceWith(start, start + paragraph.nodeSize, codeBlock)
+        tr.setSelection(TextSelection.create(tr.doc, start + 1))
+      } else {
+        const rule = schema.nodes.horizontal_rule.create()
+        const emptyParagraph = schema.nodes.paragraph.create()
+        tr.replaceWith(start, start + paragraph.nodeSize, [rule, emptyParagraph])
+        tr.setSelection(TextSelection.create(tr.doc, start + rule.nodeSize + 1))
+      }
+      dispatch(tr)
+    }
+    return true
+  }
 }
 
 /**

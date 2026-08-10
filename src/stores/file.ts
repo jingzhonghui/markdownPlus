@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import type { MdxDocument, MdxImageAsset } from '../types/mdx'
+import type { MdxDocument, MdxImageAsset, DocumentFormat } from '../types/mdx'
 import { loadSessionState, saveSessionState } from './session'
 
 export type EditorMode = 'split' | 'source' | 'ir'
@@ -9,6 +9,7 @@ export interface FileInfo {
   path: string
   name: string
   modified: boolean
+  format: DocumentFormat
 }
 
 export interface FolderItem {
@@ -113,7 +114,7 @@ export const useFileStore = defineStore('file', () => {
     stateVersion.value
     const tab = activeTab.value
     if (!tab) return '未命名.mdx'
-    if (tab.document?.metadata.title && tab.document.metadata.title !== '未命名文档') {
+    if (tab.fileInfo?.format !== 'markdown' && tab.document?.metadata.title && tab.document.metadata.title !== '未命名文档') {
       return `${tab.document.metadata.title}.mdx`
     }
     return tab.fileInfo?.name ?? '未命名.mdx'
@@ -144,9 +145,34 @@ export const useFileStore = defineStore('file', () => {
   }
 
   /** 激活指定 tab */
-  function setActiveTab(tabId: string): void {
+  async function setActiveTab(tabId: string): Promise<void> {
     activeTabId.value = tabId
+    const filePath = tabs.value.find((tab) => tab.id === tabId)?.fileInfo?.path
+    if (filePath) await revealFileInTree(filePath)
     persistSession()
+  }
+
+  /** 展开文件所在的所有父目录，支持按需加载尚未展开的目录。 */
+  async function revealFileInTree(filePath: string): Promise<void> {
+    const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+    const target = normalize(filePath)
+
+    async function visit(nodes: FileTreeNode[]): Promise<boolean> {
+      for (const node of nodes) {
+        const nodePath = normalize(node.path)
+        if (!node.isDirectory) {
+          if (nodePath === target) return true
+          continue
+        }
+
+        if (target !== nodePath && !target.startsWith(`${nodePath}/`)) continue
+        if (!node.isExpanded || node.children.length === 0) await expandNode(node)
+        if (await visit(node.children)) return true
+      }
+      return false
+    }
+
+    await visit(fileTree.value)
   }
 
   /** 查找已打开文件的 tab */
@@ -228,6 +254,30 @@ export const useFileStore = defineStore('file', () => {
     return true
   }
 
+  /** 关闭其他所有 tab，保留指定 tab */
+  async function closeOtherTabs(keepTabId: string): Promise<void> {
+    const otherTabs = tabs.value.filter((t) => t.id !== keepTabId)
+    for (const tab of otherTabs) {
+      const result = await closeTab(tab.id)
+      if (!result) return
+    }
+  }
+
+  /** 关闭所有 tab */
+  async function closeAllTabs(): Promise<void> {
+    while (tabs.value.length > 0) {
+      const result = await closeTab(tabs.value[0].id)
+      if (!result) return
+    }
+  }
+
+  /** 在系统文件管理器中打开文件所在位置 */
+  async function revealInExplorer(filePath: string): Promise<void> {
+    if (window.electronAPI?.revealInExplorer) {
+      await window.electronAPI.revealInExplorer(filePath)
+    }
+  }
+
   // ================ 向后兼容的写入操作（代理到 activeTab） ================
 
   function setFile(file: FileInfo | null): void {
@@ -249,7 +299,8 @@ export const useFileStore = defineStore('file', () => {
         tab.fileInfo = {
           path,
           name: path.split(/[/\\]/).pop() || '未命名.mdx',
-          modified: false
+          modified: false,
+          format: path.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx'
         }
       }
       stateVersion.value++
@@ -369,6 +420,7 @@ export const useFileStore = defineStore('file', () => {
       const tab = findTabByPath(state.activeFilePath)
       if (tab) {
         activeTabId.value = tab.id
+        await revealFileInTree(state.activeFilePath)
       }
     }
   }
@@ -433,9 +485,10 @@ export const useFileStore = defineStore('file', () => {
           tab.document = doc
           tab.content = doc.content
           tab.fileInfo = {
-            path: '',
-            name: '未命名.mdx',
-            modified: false
+          path: '',
+          name: '未命名.mdx',
+          modified: false,
+          format: 'mdx'
           }
           activeTabId.value = tab.id
           return true
@@ -449,7 +502,8 @@ export const useFileStore = defineStore('file', () => {
       tab.fileInfo = {
         path: '',
         name: '未命名.mdx',
-        modified: false
+        modified: false,
+        format: 'mdx'
       }
       activeTabId.value = tab.id
       return true
@@ -500,7 +554,8 @@ export const useFileStore = defineStore('file', () => {
         tab.fileInfo = {
           path: fPath,
           name: fPath.split(/[/\\]/).pop() || '未命名.mdx',
-          modified: false
+          modified: false,
+          format: result.data.format || (fPath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx')
         }
         activeTabId.value = tab.id
 
@@ -537,7 +592,7 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
 
-      const result = await window.electronAPI.saveFile(tab.content, tab.document.metadata.title)
+      const result = await window.electronAPI.saveFile(tab.content, tab.document.metadata.title, tab.fileInfo?.path || undefined)
 
       if (result.success) {
         markSaved()
@@ -572,7 +627,7 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
 
-      const result = await window.electronAPI.saveAsFile(tab.content, tab.document.metadata.title)
+      const result = await window.electronAPI.saveAsFile(tab.content, tab.document.metadata.title, tab.fileInfo?.path || undefined)
 
       if (result.success && result.data) {
         const savePath = result.data as string
@@ -580,11 +635,13 @@ export const useFileStore = defineStore('file', () => {
           tab.fileInfo.path = savePath
           tab.fileInfo.name = savePath.split(/[/\\]/).pop() || '未命名.mdx'
           tab.fileInfo.modified = false
+          tab.fileInfo.format = savePath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx'
         } else {
           tab.fileInfo = {
             path: savePath,
             name: savePath.split(/[/\\]/).pop() || '未命名.mdx',
-            modified: false
+            modified: false,
+            format: savePath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx'
           }
         }
         await loadRecentFiles()
@@ -605,6 +662,10 @@ export const useFileStore = defineStore('file', () => {
 
   async function closeFile(): Promise<boolean> {
     if (!activeTabId.value) return true
+    const filePath = activeTab.value?.fileInfo?.path
+    if (filePath) {
+      try { await window.electronAPI?.closeFile(filePath) } catch { /* ignore */ }
+    }
     return closeTab(activeTabId.value)
   }
 
@@ -705,7 +766,8 @@ export const useFileStore = defineStore('file', () => {
         tab.fileInfo = {
           path: fPath,
           name: fPath.split(/[/\\]/).pop() || '未命名.mdx',
-          modified: false
+          modified: false,
+          format: result.data.format || (fPath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx')
         }
         activeTabId.value = tab.id
 
@@ -875,16 +937,17 @@ export const useFileStore = defineStore('file', () => {
         file.name,
         file.type,
         arrayBuffer,
-        compressOptions
+        compressOptions,
+        tab.fileInfo?.path || undefined
       )
 
       if (result.success && result.data) {
-        const { asset } = result.data as { asset: MdxImageAsset; relativePath: string }
-        tab.document.assets.images.push(asset)
+        const { asset, relativePath } = result.data as { asset: MdxImageAsset; relativePath: string }
+        if (tab.fileInfo?.format !== 'markdown') tab.document.assets.images.push(asset)
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
         }
-        return { success: true, path: asset.path, asset }
+        return { success: true, path: relativePath, asset }
       } else {
         return { success: false, error: result.error || '添加图片失败' }
       }
@@ -946,7 +1009,7 @@ export const useFileStore = defineStore('file', () => {
         return { success: false, error: '无法删除资源' }
       }
 
-      const result = await window.electronAPI.removeAsset(assetId)
+      const result = await window.electronAPI.removeAsset(assetId, tab.fileInfo?.path)
       if (result.success) {
         const imageIndex = tab.document.assets.images.findIndex((img) => img.id === assetId)
         if (imageIndex > -1) {
@@ -975,7 +1038,7 @@ export const useFileStore = defineStore('file', () => {
       const tab = activeTab.value
       if (!window.electronAPI || !tab?.document) return false
 
-      const result = await window.electronAPI.listAssets()
+      const result = await window.electronAPI.listAssets(tab.fileInfo?.path)
       if (result.success && result.data) {
         tab.document.assets.images = result.data.images
         tab.document.assets.attachments = result.data.attachments
@@ -997,7 +1060,7 @@ export const useFileStore = defineStore('file', () => {
       }
 
       const arrayBuffer = await file.arrayBuffer()
-      const result = await window.electronAPI.addAttachment(file.name, file.type, arrayBuffer)
+      const result = await window.electronAPI.addAttachment(file.name, file.type, arrayBuffer, tab.fileInfo?.path)
 
       if (result.success && result.data) {
         if (tab.fileInfo) {
@@ -1386,8 +1449,11 @@ export const useFileStore = defineStore('file', () => {
     // Tab 操作
     setActiveTab,
     closeTab,
+    closeOtherTabs,
+    closeAllTabs,
     confirmSaveForTab,
     confirmSaveBeforeClose,
+    revealInExplorer,
 
     // 向后兼容的写入操作
     setFile,

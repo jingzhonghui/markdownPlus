@@ -1,9 +1,29 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useFileStore, type FileTreeNode } from '../../stores/file'
 import FileTreeItem from './FileTreeItem.vue'
 
 const fileStore = useFileStore()
+
+async function scrollToActiveFile(): Promise<void> {
+  await nextTick()
+  const filePath = fileStore.currentFile?.path
+  if (!filePath) return
+  const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+  const targetPath = normalize(filePath)
+
+  const nodes = document.querySelectorAll<HTMLElement>('[data-file-path]')
+  for (const node of nodes) {
+    if (node.dataset.filePath && normalize(node.dataset.filePath) === targetPath) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      return
+    }
+  }
+}
+
+watch([() => fileStore.activeTabId, () => fileStore.fileTree], () => {
+  void scrollToActiveFile()
+}, { deep: true })
 
 const emit = defineEmits<{
   (e: 'collapse'): void
@@ -191,7 +211,7 @@ async function openFolder(): Promise<void> {
 async function activateFileNode(node: FileTreeNode): Promise<boolean> {
   const tab = fileStore.tabs.find((item) => item.fileInfo?.path === node.path)
   if (tab) {
-    fileStore.setActiveTab(tab.id)
+    await fileStore.setActiveTab(tab.id)
     return true
   }
   return fileStore.openFile(node.path)
@@ -214,6 +234,7 @@ function handleNodeContextMenu(event: MouseEvent, node: FileTreeNode): void {
 }
 
 onMounted(() => {
+  void scrollToActiveFile()
   document.addEventListener('click', closeContextMenu)
   document.addEventListener('contextmenu', closeContextMenu, true)
   window.addEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
@@ -408,7 +429,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 40px;
+  height: 36px;
   padding: 0 8px 0 12px;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;

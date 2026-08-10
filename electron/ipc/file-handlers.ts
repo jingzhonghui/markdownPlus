@@ -4,7 +4,7 @@
  * 处理文件对话框、最近文件列表等操作
  */
 
-import { ipcMain, dialog, BrowserWindow, app } from 'electron'
+import { ipcMain, dialog, BrowserWindow, app, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { IPC_CHANNELS } from './channels'
@@ -299,6 +299,17 @@ export function registerFileHandlers(): void {
       }
       fs.mkdirSync(fullPath, { recursive: true })
       return { success: true, data: { path: fullPath } }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 在系统文件管理器中打开文件所在位置
+  ipcMain.handle(IPC_CHANNELS.FILE.REVEAL_IN_EXPLORER, async (_, filePath: string) => {
+    try {
+      shell.showItemInFolder(filePath)
+      return { success: true }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
       return { success: false, error: errorMessage }

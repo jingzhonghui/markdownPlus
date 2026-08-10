@@ -87,6 +87,8 @@ export interface MdxDocument {
   settings: MdxSettings
 }
 
+export type DocumentFormat = 'mdx' | 'markdown'
+
 /** MDX 文件操作结果 */
 export interface MdxResult<T = unknown> {
   success: boolean

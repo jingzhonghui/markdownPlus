@@ -27,9 +27,9 @@ function headingRule(nodeType: NodeType, maxLevel: number): InputRule {
  */
 function codeBlockRule(nodeType: NodeType): InputRule {
   return textblockTypeInputRule(
-    /^```(\w+)?\s$/,
+    /^```([\w+#.-]+)?\s$/,
     nodeType,
-    (match) => ({ language: match[1] || '' })
+    (match) => ({ language: (match[1] || '').toLowerCase() })
   )
 }
 
@@ -87,7 +87,7 @@ function taskListRule(nodeType: NodeType, itemType: NodeType): InputRule {
  */
 function horizontalRuleRule(nodeType: NodeType): InputRule {
   return new InputRule(
-    /^(?:---|___|\*\*\*)\s$/,
+    /^(?:---|___|\*\*\*)$/,
     (state, _match, start, end) => {
       const { tr } = state
       tr.replaceWith(start, end, nodeType.create())
@@ -203,9 +203,6 @@ export function buildInputRules(schema: Schema) {
     // 标题 #
     headingRule(schema.nodes.heading, 4),
 
-    // 代码块 ```
-    codeBlockRule(schema.nodes.code_block),
-
     // 引用块 >
     blockquoteRule(schema.nodes.blockquote),
 
@@ -214,9 +211,6 @@ export function buildInputRules(schema: Schema) {
 
     // 无序列表 - / * / +
     bulletListRule(schema.nodes.bullet_list),
-
-    // 水平分割线 ---
-    horizontalRuleRule(schema.nodes.horizontal_rule),
 
     // 行内代码 `code`
     inlineCodeRule(schema.marks.code),

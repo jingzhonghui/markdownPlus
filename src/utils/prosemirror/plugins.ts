@@ -30,6 +30,16 @@ export const pluginsKey = {
  */
 export function createPlugins(schema: Schema): Plugin[] {
   const plugins: Plugin[] = [
+    // 末尾代码块后始终保留可继续输入的空段落
+    new Plugin({
+      appendTransaction(_transactions, _oldState, newState) {
+        if (newState.doc.lastChild?.type.name !== 'code_block') return null
+        return newState.tr
+          .insert(newState.doc.content.size, schema.nodes.paragraph.create())
+          .setMeta('addToHistory', false)
+      }
+    }),
+
     // 表格编辑核心插件（处理光标定位、单元格导航、选择等）
     tableEditing(),
 

@@ -28,10 +28,12 @@ import {
   createPastePlugin,
 } from '../../utils/prosemirror'
 import type { IRPluginState } from '../../utils/prosemirror'
-import { TextSelection, Plugin as ProseMirrorPlugin } from 'prosemirror-state'
+import { TextSelection, Plugin as ProseMirrorPlugin, PluginKey } from 'prosemirror-state'
+import { Decoration, DecorationSet } from 'prosemirror-view'
 import { wrapIn, setBlockType } from 'prosemirror-commands'
 import { wrapInList } from 'prosemirror-schema-list'
 import katex from 'katex'
+import { createHighlighter, type BundledLanguage, type Highlighter } from 'shiki'
 import type { NodeView } from 'prosemirror-view'
 import {
   addColumnBefore,
@@ -114,6 +116,99 @@ let editorTabId: string | null = null
 const isDragging = ref(false)
 const showMarkers = ref(false)
 const imageCache = new Map<string, string>()
+
+const syntaxHighlightKey = new PluginKey<DecorationSet>('ir-syntax-highlight')
+let syntaxHighlighter: Highlighter | null = null
+let highlightRequest = 0
+
+function createSyntaxHighlightPlugin(): ProseMirrorPlugin<DecorationSet> {
+  return new ProseMirrorPlugin<DecorationSet>({
+    key: syntaxHighlightKey,
+    state: {
+      init: () => DecorationSet.empty,
+      apply(tr, decorations) {
+        const replacement = tr.getMeta(syntaxHighlightKey) as DecorationSet | undefined
+        if (replacement) return replacement
+        return decorations.map(tr.mapping, tr.doc)
+      }
+    },
+    props: {
+      decorations(state) {
+        return syntaxHighlightKey.getState(state) || DecorationSet.empty
+      }
+    },
+    view: () => ({
+      update: (view, prevState) => {
+        if (!prevState.doc.eq(view.state.doc)) scheduleSyntaxHighlight(view)
+      }
+    })
+  })
+}
+
+function scheduleSyntaxHighlight(view: EditorView): void {
+  if (!syntaxHighlighter) return
+  const request = ++highlightRequest
+  setTimeout(() => {
+    if (request !== highlightRequest || view.isDestroyed) return
+    const decorations: Decoration[] = []
+
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name !== 'code_block') return
+      const language = normalizeCodeLanguage(node.attrs.language as string)
+      try {
+        const result = syntaxHighlighter!.codeToTokens(node.textContent, {
+          lang: language,
+          theme: themeStore.isDark ? 'github-dark' : 'github-light'
+        })
+        for (const line of result.tokens) {
+          for (const token of line) {
+            const from = pos + 1 + token.offset
+            const to = from + token.content.length
+            if (token.color && to > from) {
+              decorations.push(Decoration.inline(from, to, { style: `color: ${token.color}` }))
+            }
+          }
+        }
+      } catch {
+        // Unsupported languages keep the default code-block color.
+      }
+    })
+
+    view.dispatch(view.state.tr.setMeta(syntaxHighlightKey, DecorationSet.create(view.state.doc, decorations)))
+  }, 0)
+}
+
+function normalizeCodeLanguage(language: string): BundledLanguage | 'text' {
+  const aliases: Record<string, BundledLanguage> = {
+    js: 'javascript',
+    ts: 'typescript',
+    sh: 'bash',
+    shell: 'bash',
+    yml: 'yaml',
+    md: 'markdown',
+    py: 'python'
+  }
+  const normalized = language.toLowerCase()
+  return aliases[normalized] || (normalized as BundledLanguage) || 'text'
+}
+
+async function initSyntaxHighlighter(): Promise<void> {
+  try {
+    syntaxHighlighter = await createHighlighter({
+      themes: ['github-light', 'github-dark'],
+      langs: [
+        'javascript', 'typescript', 'python', 'go', 'rust', 'java',
+        'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin',
+        'html', 'css', 'scss', 'json', 'yaml', 'xml', 'sql',
+        'bash', 'powershell', 'dockerfile', 'markdown', 'vue',
+        'svelte', 'astro', 'lua', 'perl', 'haskell', 'r', 'dart'
+      ]
+    })
+    if (viewRef.value) scheduleSyntaxHighlight(viewRef.value)
+  } catch (error) {
+    console.error('[IrEditor] Shiki 初始化失败:', error)
+  }
+}
 
 const CLOSE_ALL_CONTEXT_MENUS_EVENT = 'markdown-plus:close-context-menus'
 
@@ -322,6 +417,7 @@ function createEditorState(content: string): EditorState {
         fileStore.updateContent(markdown)
       }
     }),
+    createSyntaxHighlightPlugin(),
     createIRPlugin(),
     createContextMenuPlugin(),
   ]
@@ -366,7 +462,7 @@ function initEditor(): void {
       view.updateState(view.state.apply(tr))
       syncShowMarkers()
     },
-    attributes: { class: 'ir-editor' },
+    attributes: { class: 'ir-editor', spellcheck: 'false' },
     nodeViews: {
       math_inline: (node) => new MathInlineView(node),
       math_block: (node) => new MathBlockView(node),
@@ -489,7 +585,12 @@ watch([activeTabId, fileContent], ([newTabId, newContent], [oldTabId]) => {
 })
 
 watch(() => themeStore.currentTheme, () => {
-  nextTick(() => { viewRef.value?.updateState(viewRef.value.state) })
+  nextTick(() => {
+    const view = viewRef.value
+    if (!view) return
+    view.updateState(view.state)
+    scheduleSyntaxHighlight(view)
+  })
 })
 
 watch(() => fileStore.currentFile?.path, (newPath, oldPath) => {
@@ -610,6 +711,7 @@ function handleCodeBlockEvent(e: Event): void {
 
 onMounted(() => {
   initEditor()
+  void initSyntaxHighlighter()
   const el = editorRef.value
   if (el) {
     el.addEventListener('dragover', handleDragOver)
@@ -667,6 +769,8 @@ onUnmounted(() => {
   view?.dom.removeEventListener('mousedown', focusEditor)
   view?.destroy()
   viewRef.value = null
+  syntaxHighlighter?.dispose()
+  syntaxHighlighter = null
 })
 
 defineExpose({
@@ -874,6 +978,9 @@ defineExpose({
   font-family: var(--font-mono);
   font-size: 0.9em; overflow-x: auto; margin: 0.5em 0;
   position: relative;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .ir-editor-wrapper :deep(.ProseMirror pre::before) {
   content: '```' attr(data-lang);

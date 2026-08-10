@@ -8,7 +8,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as crypto from 'crypto'
-import archiver from 'archiver'
+import AdmZip from 'adm-zip'
 import type { MdxDocument, MdxJson, MdxResult, MdxImageAsset, MdxAttachmentAsset } from './schema'
 import { toMdxJson, createDefaultAssets, createDefaultSettings } from './schema'
 import { createTempDir, cleanupTempDir } from './reader'
@@ -78,25 +78,14 @@ function writeContent(tempDir: string, content: string, contentFile = 'content.m
  */
 function zipDirectory(sourceDir: string, targetPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const output = fs.createWriteStream(targetPath)
-    const archive = archiver('zip', {
-      zlib: { level: 9 } // 最高压缩级别
-    })
-
-    output.on('close', () => resolve())
-    output.on('error', (err) => reject(err))
-    archive.on('error', (err) => reject(err))
-    archive.on('warning', (err) => {
-      if (err.code === 'ENOENT') {
-        console.warn('Archiver warning:', err)
-      } else {
-        reject(err)
-      }
-    })
-
-    archive.pipe(output)
-    archive.directory(sourceDir, false)
-    archive.finalize()
+    try {
+      const zip = new AdmZip()
+      zip.addLocalFolder(sourceDir)
+      zip.writeZip(targetPath)
+      resolve()
+    } catch (error) {
+      reject(error)
+    }
   })
 }
 

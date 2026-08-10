@@ -73,7 +73,3 @@ markdown-plus/
 ├── docs/              # 文档
 └── ...
 ```
-
-## 许可证
-
-MIT

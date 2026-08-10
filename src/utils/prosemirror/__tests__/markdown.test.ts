@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { EditorState, TextSelection } from 'prosemirror-state'
 import { parseMarkdown, serializeMarkdown } from '../markdown'
+import { buildKeymap } from '../keymap'
+import { markdownSchema } from '../schema'
 
 describe('Markdown ↔ ProseMirror conversion', () => {
   it('creates an editable paragraph for an empty document', () => {
@@ -23,5 +26,33 @@ describe('Markdown ↔ ProseMirror conversion', () => {
     const content = '## 新建文档\n\n开始编写'
 
     expect(serializeMarkdown(parseMarkdown(content))).toBe(content)
+  })
+
+  it('keeps an editable paragraph after a trailing code block', () => {
+    const content = '```ts\nconst value = 1\n```'
+    const doc = parseMarkdown(content)
+
+    expect(doc.childCount).toBe(2)
+    expect(doc.child(0).type.name).toBe('code_block')
+    expect(doc.child(1).type.name).toBe('paragraph')
+    expect(serializeMarkdown(doc)).toBe(content)
+  })
+
+  it('inserts a newline instead of leaving a code block on Enter', () => {
+    const doc = parseMarkdown('```ts\nconst value = 1\n```')
+    const codeBlock = doc.child(0)
+    const codeEnd = 1 + codeBlock.content.size
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, codeEnd)
+    })
+
+    const handled = buildKeymap(markdownSchema).Enter(state, (transaction) => {
+      state = state.apply(transaction)
+    })
+
+    expect(handled).toBe(true)
+    expect(state.doc.child(0).textContent).toBe('const value = 1\n')
+    expect(state.doc.child(1).type.name).toBe('paragraph')
   })
 })

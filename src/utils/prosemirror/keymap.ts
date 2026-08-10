@@ -223,14 +223,8 @@ function customSplitListItem(itemType: NodeType): Command {
  */
 function handleEnter(_schema: Schema): Command {
   return chainCommands(
-    exitCode,
     (state, dispatch) => {
-      const { $from } = state.selection
-      const depth = $from.depth
-      const parent = $from.node(depth)
-
-      // 处理代码块中的回车
-      if (parent.type.name === 'code_block') {
+      if (state.selection.$from.parent.type.name === 'code_block') {
         if (dispatch) {
           dispatch(state.tr.insertText('\n'))
         }
@@ -238,7 +232,8 @@ function handleEnter(_schema: Schema): Command {
       }
 
       return false
-    }
+    },
+    exitCode
   )
 }
 

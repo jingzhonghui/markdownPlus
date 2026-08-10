@@ -4,8 +4,8 @@ import type { TabInfo } from '../../stores/file'
 
 const fileStore = useFileStore()
 
-function handleTabClick(tabId: string): void {
-  fileStore.setActiveTab(tabId)
+async function handleTabClick(tabId: string): Promise<void> {
+  await fileStore.setActiveTab(tabId)
 }
 
 function handleMiddleClick(tabId: string, event: MouseEvent): void {
@@ -21,7 +21,7 @@ async function handleCloseTab(tabId: string, event: MouseEvent): Promise<void> {
 }
 
 function getTabLabel(tab: TabInfo): string {
-  if (tab.document?.metadata?.title && tab.document.metadata.title !== '未命名文档') {
+  if (tab.fileInfo?.format !== 'markdown' && tab.document?.metadata?.title && tab.document.metadata.title !== '未命名文档') {
     return `${tab.document.metadata.title}.mdx`
   }
   return tab.fileInfo?.name || '未命名.mdx'

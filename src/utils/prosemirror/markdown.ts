@@ -2,7 +2,7 @@
  * ProseMirror ↔ Markdown 双向转换
  * 基于 prosemirror-markdown，扩展支持 GFM 特性
  */
-import { Schema, Node as ProseMirrorNode, Mark } from 'prosemirror-model'
+import { Schema, Node as ProseMirrorNode, Mark, Fragment } from 'prosemirror-model'
 import MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
 import { MarkdownParser, MarkdownSerializer, MarkdownSerializerState } from 'prosemirror-markdown'
@@ -366,10 +366,16 @@ export function parseMarkdown(content: string): ProseMirrorNode {
     return markdownSchema.node('doc', null, [markdownSchema.node('paragraph')])
   }
 
-  return (
+  const doc = (
     markdownParser.parse(content) ||
     markdownSchema.node('doc', null, [markdownSchema.node('paragraph')])
   )
+
+  if (doc.lastChild?.type.name === 'code_block') {
+    return doc.copy(doc.content.append(Fragment.from(markdownSchema.node('paragraph'))))
+  }
+
+  return doc
 }
 
 /**

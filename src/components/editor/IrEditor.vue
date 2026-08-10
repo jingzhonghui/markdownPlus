@@ -366,7 +366,10 @@ function initEditor(): void {
       view.updateState(view.state.apply(tr))
       syncShowMarkers()
     },
-    attributes: { class: 'ir-editor' },
+    attributes: {
+      class: 'ir-editor',
+      spellcheck: 'false'
+    },
     nodeViews: {
       math_inline: (node) => new MathInlineView(node),
       math_block: (node) => new MathBlockView(node),

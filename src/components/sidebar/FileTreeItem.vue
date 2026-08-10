@@ -46,6 +46,7 @@ function onExpandClick(): void {
   <div class="tree-item">
     <div
       class="item-content"
+      :data-file-path="node.path"
       :class="{
         'is-directory': node.isDirectory,
         'is-active': !node.isDirectory && isActiveFile(node),

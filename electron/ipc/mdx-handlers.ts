@@ -6,6 +6,7 @@
 
 import { ipcMain, BrowserWindow } from 'electron'
 import * as path from 'path'
+import * as fs from 'fs'
 import { IPC_CHANNELS } from './channels'
 import type { MdxDocument } from '../mdx/schema'
 import { createMdxDocument } from '../mdx/schema'
@@ -21,13 +22,15 @@ interface OpenedDocument {
   tempDir: string | null
   document: MdxDocument | null
   isModified: boolean
+  format: 'mdx' | 'markdown'
 }
 
 const currentDoc: OpenedDocument = {
   filePath: null,
   tempDir: null,
   document: null,
-  isModified: false
+  isModified: false,
+  format: 'mdx'
 }
 
 // 多标签页共用同一个主进程，通过文件路径定位各文档的资源目录
@@ -80,6 +83,7 @@ export function registerMdxHandlers(): void {
           properties: ['openFile'],
           filters: [
             { name: 'Markdown+ 文件', extensions: ['mdx'] },
+            { name: 'Markdown 文件', extensions: ['md'] },
             { name: '所有文件', extensions: ['*'] }
           ]
         })
@@ -88,6 +92,22 @@ export function registerMdxHandlers(): void {
           return { success: false, error: '用户取消' }
         }
         targetPath = result.filePaths[0]
+      }
+
+      const isMarkdown = path.extname(targetPath).toLowerCase() === '.md'
+      if (isMarkdown) {
+        const content = fs.readFileSync(targetPath, 'utf-8')
+        const document = createMdxDocument(path.basename(targetPath, path.extname(targetPath)), content)
+        currentDoc.document = document
+        currentDoc.filePath = targetPath
+        currentDoc.tempDir = null
+        currentDoc.format = 'markdown'
+        currentDoc.isModified = false
+        addRecent(targetPath)
+        return {
+          success: true,
+          data: { document, filePath: targetPath, format: 'markdown', isNew: false }
+        }
       }
 
       // 打开 MDX 文件
@@ -104,6 +124,7 @@ export function registerMdxHandlers(): void {
       currentDoc.document = document
       currentDoc.filePath = targetPath
       currentDoc.tempDir = tempDir
+      currentDoc.format = 'mdx'
       currentDoc.isModified = false
       registerTempDir(targetPath, tempDir)
 
@@ -115,6 +136,7 @@ export function registerMdxHandlers(): void {
         data: {
           document,
           filePath: targetPath,
+          format: 'mdx',
           isNew: false
         }
       }
@@ -125,7 +147,7 @@ export function registerMdxHandlers(): void {
   })
 
   // 保存文件
-  ipcMain.handle(IPC_CHANNELS.FILE.SAVE, async (_, content: string, title?: string) => {
+  ipcMain.handle(IPC_CHANNELS.FILE.SAVE, async (_, content: string, title?: string, filePath?: string) => {
     try {
       if (!currentDoc.document) {
         return { success: false, error: '没有打开的文档' }
@@ -137,9 +159,29 @@ export function registerMdxHandlers(): void {
         currentDoc.document.metadata.title = title
       }
 
+      const targetPath = filePath || currentDoc.filePath
+      if (targetPath && path.extname(targetPath).toLowerCase() === '.md') {
+        fs.writeFileSync(targetPath, content, 'utf-8')
+        currentDoc.isModified = false
+        addRecent(targetPath)
+        return { success: true, data: targetPath }
+      }
+
       // 如果是新文件，需要另存为
-      if (!currentDoc.filePath) {
+      if (!targetPath) {
         return { success: false, error: 'NEW_FILE' }
+      }
+
+      if (filePath && normalizeFilePath(filePath) !== normalizeFilePath(currentDoc.filePath || '')) {
+        const openResult = openMdx(filePath)
+        if (!openResult.success || !openResult.data) return openResult
+        currentDoc.document = openResult.data.document
+        currentDoc.tempDir = openResult.data.tempDir
+        currentDoc.filePath = filePath
+        currentDoc.format = 'mdx'
+        registerTempDir(filePath, openResult.data.tempDir)
+        currentDoc.document.content = content
+        if (title) currentDoc.document.metadata.title = title
       }
 
       // 准备资源数据
@@ -149,11 +191,11 @@ export function registerMdxHandlers(): void {
         : undefined
 
       // 保存文件
-      const result = await saveMdx(currentDoc.filePath, currentDoc.document, assetsData)
+      const result = await saveMdx(targetPath, currentDoc.document, assetsData)
 
       if (result.success) {
         currentDoc.isModified = false
-        addRecent(currentDoc.filePath)
+        addRecent(targetPath)
       }
 
       return result
@@ -164,7 +206,7 @@ export function registerMdxHandlers(): void {
   })
 
   // 另存为
-  ipcMain.handle(IPC_CHANNELS.FILE.SAVE_AS, async (_, content?: string, title?: string) => {
+  ipcMain.handle(IPC_CHANNELS.FILE.SAVE_AS, async (_, content?: string, title?: string, sourcePath?: string) => {
     try {
       if (!currentDoc.document) {
         return { success: false, error: '没有打开的文档' }
@@ -173,10 +215,14 @@ export function registerMdxHandlers(): void {
       // 显示保存对话框
       const { dialog } = await import('electron')
       const window = BrowserWindow.getFocusedWindow()
-      const defaultName = (title || currentDoc.document.metadata.title || '未命名文档') + '.mdx'
+      const sourceExtension = sourcePath && path.extname(sourcePath).toLowerCase() === '.md' ? '.md' : '.mdx'
+      const defaultName = (title || currentDoc.document.metadata.title || '未命名文档') + sourceExtension
       const result = await dialog.showSaveDialog(window!, {
         defaultPath: defaultName,
-        filters: [{ name: 'Markdown+ 文件', extensions: ['mdx'] }]
+        filters: [
+          { name: 'Markdown+ 文件', extensions: ['mdx'] },
+          { name: 'Markdown 文件', extensions: ['md'] }
+        ]
       })
 
       if (result.canceled || !result.filePath) {
@@ -184,13 +230,13 @@ export function registerMdxHandlers(): void {
       }
       let targetPath = result.filePath
 
-      // 确保扩展名正确
-      if (!targetPath.toLowerCase().endsWith('.mdx')) {
-        targetPath += '.mdx'
-      }
+      const targetIsMarkdown = path.extname(targetPath).toLowerCase() === '.md'
+      if (!targetIsMarkdown && !targetPath.toLowerCase().endsWith('.mdx')) targetPath += '.mdx'
 
       // 验证文件路径
-      const validation = validateFilePath(targetPath)
+      const validation = targetIsMarkdown
+        ? { valid: !/[<>:"|?*]/.test(path.basename(targetPath)), error: '文件名包含非法字符' }
+        : validateFilePath(targetPath)
       if (!validation.valid) {
         return { success: false, error: validation.error }
       }
@@ -203,7 +249,29 @@ export function registerMdxHandlers(): void {
         currentDoc.document.metadata.title = title
       }
 
-      // 准备资源数据
+      if (sourcePath && path.extname(sourcePath).toLowerCase() === '.mdx' && fs.existsSync(sourcePath)) {
+        const sourceResult = openMdx(sourcePath)
+        if (!sourceResult.success || !sourceResult.data) return sourceResult
+        currentDoc.document = sourceResult.data.document
+        currentDoc.tempDir = sourceResult.data.tempDir
+        currentDoc.document.content = content || ''
+        if (title) currentDoc.document.metadata.title = title
+      } else if (sourcePath && path.extname(sourcePath).toLowerCase() === '.md') {
+        currentDoc.document = createMdxDocument(title || path.basename(sourcePath, '.md'), content || '')
+        currentDoc.tempDir = null
+      }
+
+      if (targetIsMarkdown) {
+        fs.writeFileSync(targetPath, currentDoc.document.content, 'utf-8')
+        currentDoc.filePath = targetPath
+        currentDoc.format = 'markdown'
+        currentDoc.tempDir = null
+        currentDoc.isModified = false
+        addRecent(targetPath)
+        return { success: true, data: targetPath }
+      }
+
+       // 准备资源数据
       const { prepareAssetsData } = await import('../mdx/writer')
       const assetsData = currentDoc.tempDir
         ? prepareAssetsData(currentDoc.tempDir, currentDoc.document)
@@ -215,6 +283,7 @@ export function registerMdxHandlers(): void {
       if (saveResult.success) {
         // 更新当前文档状态
         currentDoc.filePath = targetPath
+        currentDoc.format = 'mdx'
         currentDoc.isModified = false
 
         // 添加到最近文件列表
@@ -250,6 +319,7 @@ export function registerMdxHandlers(): void {
       currentDoc.filePath = null
       currentDoc.tempDir = null
       currentDoc.isModified = false
+      currentDoc.format = 'mdx'
 
       return { success: true }
     } catch (error) {
@@ -524,7 +594,7 @@ export function registerMdxHandlers(): void {
   })
 
   // 添加图片资源
-  ipcMain.handle(IPC_CHANNELS.MDX.ADD_IMAGE, async (_, filename: string, mimeType: string, data: ArrayBuffer, options?: { compress?: boolean; quality?: number; maxWidth?: number; maxHeight?: number }) => {
+  ipcMain.handle(IPC_CHANNELS.MDX.ADD_IMAGE, async (_, filename: string, mimeType: string, data: ArrayBuffer, options?: { compress?: boolean; quality?: number; maxWidth?: number; maxHeight?: number }, filePath?: string) => {
     try {
       if (!currentDoc.document) {
         return { success: false, error: '没有打开的文档' }
@@ -562,17 +632,36 @@ export function registerMdxHandlers(): void {
         }
       }
 
-      const { addImageAsset } = await import('../mdx/writer')
-      const result = addImageAsset(currentDoc.document, filename, mimeType, buffer)
+       const safeFilename = path.basename(filename).replace(/[<>:"|?*]/g, '_') || `image-${Date.now()}.png`
+       const { addImageAsset } = await import('../mdx/writer')
+       const result = addImageAsset(currentDoc.document, safeFilename, mimeType, buffer)
 
-      // 如果有临时目录，写入图片文件
-      if (currentDoc.tempDir) {
-        const fs = await import('fs')
-        const path = await import('path')
-        const fullPath = path.join(currentDoc.tempDir, result.relativePath)
-        fs.mkdirSync(path.dirname(fullPath), { recursive: true })
-        fs.writeFileSync(fullPath, buffer)
-      }
+       const markdownPath = filePath && path.extname(filePath).toLowerCase() === '.md' ? filePath : null
+       const assetsDir = markdownPath
+         ? path.join(path.dirname(markdownPath), `${path.basename(markdownPath, path.extname(markdownPath))}.assets`)
+         : null
+       let markdownFilename = safeFilename
+       if (assetsDir) {
+         const extension = path.extname(safeFilename)
+         const baseName = path.basename(safeFilename, extension)
+         let counter = 1
+         while (fs.existsSync(path.join(assetsDir, markdownFilename))) {
+           markdownFilename = `${baseName}-${counter++}${extension}`
+         }
+       }
+       const imagePath = assetsDir
+         ? path.join(assetsDir, markdownFilename)
+         : currentDoc.tempDir
+           ? path.join(currentDoc.tempDir, result.relativePath)
+           : null
+       if (imagePath) {
+         fs.mkdirSync(path.dirname(imagePath), { recursive: true })
+         fs.writeFileSync(imagePath, buffer)
+       }
+
+       const markdownImagePath = markdownPath
+         ? path.relative(path.dirname(markdownPath), imagePath!).replace(/\\/g, '/')
+         : result.asset.path
 
       // 标记文档已修改
       currentDoc.isModified = true
@@ -581,7 +670,7 @@ export function registerMdxHandlers(): void {
         success: true,
         data: {
           asset: result.asset,
-          relativePath: result.relativePath
+          relativePath: markdownImagePath
         }
       }
     } catch (error) {
@@ -593,16 +682,18 @@ export function registerMdxHandlers(): void {
   // 获取图片数据
   ipcMain.handle(IPC_CHANNELS.MDX.GET_IMAGE, async (_, imagePath: string, filePath?: string) => {
     try {
-      const tempDir = filePath
-        ? tempDirsByFile.get(normalizeFilePath(filePath))
-        : currentDoc.tempDir
-      if (!tempDir) {
+       const isMarkdown = filePath ? path.extname(filePath).toLowerCase() === '.md' : currentDoc.format === 'markdown'
+       const tempDir = filePath
+         ? tempDirsByFile.get(normalizeFilePath(filePath))
+         : currentDoc.tempDir
+       const baseDir = filePath ? path.dirname(filePath) : path.dirname(currentDoc.filePath || '')
+       if (!tempDir && !isMarkdown) {
         return { success: false, error: '没有打开的文档' }
       }
 
-      const fs = await import('fs')
-      const path = await import('path')
-      const fullPath = path.join(tempDir, imagePath)
+       const fullPath = isMarkdown
+         ? path.resolve(baseDir, imagePath)
+         : path.join(tempDir!, imagePath)
 
       if (!fs.existsSync(fullPath)) {
         return { success: false, error: '图片不存在' }

@@ -254,6 +254,30 @@ export const useFileStore = defineStore('file', () => {
     return true
   }
 
+  /** 关闭其他所有 tab，保留指定 tab */
+  async function closeOtherTabs(keepTabId: string): Promise<void> {
+    const otherTabs = tabs.value.filter((t) => t.id !== keepTabId)
+    for (const tab of otherTabs) {
+      const result = await closeTab(tab.id)
+      if (!result) return
+    }
+  }
+
+  /** 关闭所有 tab */
+  async function closeAllTabs(): Promise<void> {
+    while (tabs.value.length > 0) {
+      const result = await closeTab(tabs.value[0].id)
+      if (!result) return
+    }
+  }
+
+  /** 在系统文件管理器中打开文件所在位置 */
+  async function revealInExplorer(filePath: string): Promise<void> {
+    if (window.electronAPI?.revealInExplorer) {
+      await window.electronAPI.revealInExplorer(filePath)
+    }
+  }
+
   // ================ 向后兼容的写入操作（代理到 activeTab） ================
 
   function setFile(file: FileInfo | null): void {
@@ -1421,8 +1445,11 @@ export const useFileStore = defineStore('file', () => {
     // Tab 操作
     setActiveTab,
     closeTab,
+    closeOtherTabs,
+    closeAllTabs,
     confirmSaveForTab,
     confirmSaveBeforeClose,
+    revealInExplorer,
 
     // 向后兼容的写入操作
     setFile,

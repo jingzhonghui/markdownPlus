@@ -82,6 +82,9 @@ export interface ElectronAPI {
   onConfirmClose: (callback: () => void) => () => void
   closeConfirmed: () => void
 
+  // 文件系统
+  revealInExplorer: (filePath: string) => Promise<{ success: boolean; error?: string }>
+
   // 窗口控制
   windowMinimize: () => Promise<void>
   windowMaximize: () => Promise<void>
@@ -140,6 +143,9 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.APP.CONFIRM_CLOSE, handler)
   },
   closeConfirmed: () => ipcRenderer.invoke(IPC_CHANNELS.APP.CLOSE_CONFIRMED),
+
+  // 文件系统
+  revealInExplorer: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.REVEAL_IN_EXPLORER, filePath),
 
   // 窗口控制
   windowMinimize: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW.MINIMIZE),

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { useFileStore } from '../../stores/file'
 import type { TabInfo } from '../../stores/file'
 
@@ -26,6 +27,80 @@ function getTabLabel(tab: TabInfo): string {
   }
   return tab.fileInfo?.name || '未命名.mdx'
 }
+
+const CLOSE_ALL_CONTEXT_MENUS_EVENT = 'markdown-plus:close-context-menus'
+
+interface ContextMenuItem {
+  label: string
+  action: () => void
+}
+
+const contextMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  items: [] as ContextMenuItem[]
+})
+
+function closeContextMenu(): void {
+  contextMenu.visible = false
+}
+
+function showContextMenu(event: MouseEvent, items: ContextMenuItem[]): void {
+  window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))
+  contextMenu.items = items
+  contextMenu.x = event.clientX
+  contextMenu.y = event.clientY
+  contextMenu.visible = true
+
+  nextTick(() => {
+    const menuEl = document.querySelector('.tab-context-menu') as HTMLElement | null
+    if (!menuEl) return
+    const rect = menuEl.getBoundingClientRect()
+    if (rect.right > window.innerWidth) {
+      contextMenu.x = window.innerWidth - rect.width - 8
+    }
+    if (rect.bottom > window.innerHeight) {
+      contextMenu.y = window.innerHeight - rect.height - 8
+    }
+  })
+}
+
+function onTabContextMenu(event: MouseEvent, tab: TabInfo): void {
+  const items: ContextMenuItem[] = [
+    {
+      label: '关闭',
+      action: () => { void fileStore.closeTab(tab.id) }
+    },
+    {
+      label: '关闭其他',
+      action: () => { void fileStore.closeOtherTabs(tab.id) }
+    },
+    {
+      label: '关闭全部',
+      action: () => { void fileStore.closeAllTabs() }
+    },
+    {
+      label: '打开文件所在位置',
+      action: () => { tab.fileInfo?.path && fileStore.revealInExplorer(tab.fileInfo.path) }
+    }
+  ]
+  showContextMenu(event, items)
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeContextMenu)
+  document.addEventListener('contextmenu', closeContextMenu, true)
+  window.addEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
+  window.addEventListener('blur', closeContextMenu)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeContextMenu)
+  document.removeEventListener('contextmenu', closeContextMenu, true)
+  window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
+  window.removeEventListener('blur', closeContextMenu)
+})
 </script>
 
 <template>
@@ -40,6 +115,7 @@ function getTabLabel(tab: TabInfo): string {
       :class="{ active: tab.id === fileStore.activeTabId }"
       @click="handleTabClick(tab.id)"
       @mousedown="handleMiddleClick(tab.id, $event)"
+      @contextmenu.prevent.stop="onTabContextMenu($event, tab)"
     >
       <!-- 文件图标 -->
       <svg
@@ -79,6 +155,25 @@ function getTabLabel(tab: TabInfo): string {
       </button>
     </div>
   </div>
+
+  <teleport to="body">
+    <div
+      v-if="contextMenu.visible"
+      class="tab-context-menu"
+      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      @click.stop
+      @contextmenu.prevent.stop
+    >
+      <div
+        v-for="(item, index) in contextMenu.items"
+        :key="index"
+        class="context-menu-item"
+        @click="closeContextMenu(); item.action()"
+      >
+        {{ item.label }}
+      </div>
+    </div>
+  </teleport>
 </template>
 
 <style scoped>
@@ -197,5 +292,32 @@ function getTabLabel(tab: TabInfo): string {
 .tab-close-btn svg {
   width: 12px;
   height: 12px;
+}
+</style>
+
+<style>
+.tab-context-menu {
+  position: fixed;
+  z-index: 10001;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.tab-context-menu .context-menu-item {
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.tab-context-menu .context-menu-item:hover {
+  background: var(--color-bg-secondary);
 }
 </style>

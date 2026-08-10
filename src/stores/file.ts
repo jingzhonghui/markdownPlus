@@ -662,6 +662,10 @@ export const useFileStore = defineStore('file', () => {
 
   async function closeFile(): Promise<boolean> {
     if (!activeTabId.value) return true
+    const filePath = activeTab.value?.fileInfo?.path
+    if (filePath) {
+      try { await window.electronAPI?.closeFile(filePath) } catch { /* ignore */ }
+    }
     return closeTab(activeTabId.value)
   }
 
@@ -1005,7 +1009,7 @@ export const useFileStore = defineStore('file', () => {
         return { success: false, error: '无法删除资源' }
       }
 
-      const result = await window.electronAPI.removeAsset(assetId)
+      const result = await window.electronAPI.removeAsset(assetId, tab.fileInfo?.path)
       if (result.success) {
         const imageIndex = tab.document.assets.images.findIndex((img) => img.id === assetId)
         if (imageIndex > -1) {
@@ -1034,7 +1038,7 @@ export const useFileStore = defineStore('file', () => {
       const tab = activeTab.value
       if (!window.electronAPI || !tab?.document) return false
 
-      const result = await window.electronAPI.listAssets()
+      const result = await window.electronAPI.listAssets(tab.fileInfo?.path)
       if (result.success && result.data) {
         tab.document.assets.images = result.data.images
         tab.document.assets.attachments = result.data.attachments
@@ -1056,7 +1060,7 @@ export const useFileStore = defineStore('file', () => {
       }
 
       const arrayBuffer = await file.arrayBuffer()
-      const result = await window.electronAPI.addAttachment(file.name, file.type, arrayBuffer)
+      const result = await window.electronAPI.addAttachment(file.name, file.type, arrayBuffer, tab.fileInfo?.path)
 
       if (result.success && result.data) {
         if (tab.fileInfo) {

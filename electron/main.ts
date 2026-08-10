@@ -3,7 +3,7 @@ import { join, resolve } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { IPC_CHANNELS } from './ipc/channels'
 import { registerFileHandlers } from './ipc/file-handlers'
-import { registerMdxHandlers, cleanupAll, getCurrentDocument, isCloseConfirmed, setCloseConfirmed } from './ipc/mdx-handlers'
+import { registerMdxHandlers, cleanupAll, isCloseConfirmed, setCloseConfirmed } from './ipc/mdx-handlers'
 
 /**
  * 创建主窗口
@@ -37,20 +37,14 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // 拦截窗口关闭事件：检查是否有未保存的修改
+  // 拦截窗口关闭事件：始终通知渲染进程检查未保存的修改
   mainWindow.on('close', (e) => {
-    // 如果已确认关闭，直接放行
     if (isCloseConfirmed()) {
       setCloseConfirmed(false)
       return
     }
-
-    const currentDoc = getCurrentDocument()
-    if (currentDoc.isModified || (currentDoc.document && !currentDoc.filePath)) {
-      // 有未保存的修改，阻止关闭并通知渲染进程
-      e.preventDefault()
-      mainWindow.webContents.send('app:confirm-close')
-    }
+    e.preventDefault()
+    mainWindow.webContents.send('app:confirm-close')
   })
 
   // 窗口控制 IPC handlers

@@ -43,7 +43,7 @@ export interface ElectronAPI {
   openFile: (filePath?: string) => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
   saveFile: (content?: string, title?: string, filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   saveAsFile: (content: string, title?: string, filePath?: string) => Promise<{ success: boolean; data?: string; error?: string }>
-  closeFile: () => Promise<{ success: boolean; error?: string }>
+  closeFile: (filePath?: string) => Promise<{ success: boolean; error?: string }>
   getRecentFiles: () => Promise<{ success: boolean; data?: string[]; error?: string }>
   removeRecentFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
   clearRecentFiles: () => Promise<{ success: boolean; error?: string }>
@@ -56,10 +56,10 @@ export interface ElectronAPI {
   exportMd: (filePath: string, outputDir?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   addImage: (filename: string, mimeType: string, data: ArrayBuffer, options?: ImageCompressOptions, filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   getImage: (imagePath: string, filePath?: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
-  removeAsset: (assetId: string) => Promise<{ success: boolean; error?: string }>
-  listAssets: () => Promise<{ success: boolean; data?: { images: ImageAssetInfo[]; attachments: MdxAttachmentAsset[]; all: unknown[] }; error?: string }>
-  addAttachment: (filename: string, mimeType: string, data: ArrayBuffer) => Promise<{ success: boolean; data?: unknown; error?: string }>
-  getAttachment: (attachmentPath: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
+  removeAsset: (assetId: string, filePath?: string) => Promise<{ success: boolean; error?: string }>
+  listAssets: (filePath?: string) => Promise<{ success: boolean; data?: { images: ImageAssetInfo[]; attachments: MdxAttachmentAsset[]; all: unknown[] }; error?: string }>
+  addAttachment: (filename: string, mimeType: string, data: ArrayBuffer, filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
+  getAttachment: (attachmentPath: string, filePath?: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
 
   // 文件夹操作
   readFolder: (dirPath: string) => Promise<{ success: boolean; data?: FolderItem[]; error?: string }>
@@ -101,7 +101,7 @@ const api: ElectronAPI = {
   openFile: (filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.OPEN, filePath),
   saveFile: (content?, title?, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE, content, title, filePath),
   saveAsFile: (content?, title?, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE_AS, content, title, filePath),
-  closeFile: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.CLOSE),
+  closeFile: (filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.CLOSE, filePath),
   getRecentFiles: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT),
   removeRecentFile: (filePath) => ipcRenderer.invoke('file:removeRecent', filePath),
   clearRecentFiles: () => ipcRenderer.invoke('file:clearRecent'),
@@ -114,10 +114,10 @@ const api: ElectronAPI = {
   exportMd: (filePath, outputDir?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.EXPORT_MD, filePath, outputDir),
   addImage: (filename, mimeType, data, options?, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_IMAGE, filename, mimeType, data, options, filePath),
   getImage: (imagePath, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.GET_IMAGE, imagePath, filePath),
-  removeAsset: (assetId) => ipcRenderer.invoke(IPC_CHANNELS.MDX.REMOVE_ASSET, assetId),
-  listAssets: () => ipcRenderer.invoke(IPC_CHANNELS.MDX.LIST_ASSETS),
-  addAttachment: (filename, mimeType, data) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_ATTACHMENT, filename, mimeType, data),
-  getAttachment: (attachmentPath) => ipcRenderer.invoke(IPC_CHANNELS.MDX.GET_ATTACHMENT, attachmentPath),
+  removeAsset: (assetId, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.REMOVE_ASSET, assetId, filePath),
+  listAssets: (filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.LIST_ASSETS, filePath),
+  addAttachment: (filename, mimeType, data, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_ATTACHMENT, filename, mimeType, data, filePath),
+  getAttachment: (attachmentPath, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.GET_ATTACHMENT, attachmentPath, filePath),
 
   // 文件夹操作
   readFolder: (dirPath) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.READ, dirPath),

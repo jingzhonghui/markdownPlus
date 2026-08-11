@@ -28,7 +28,8 @@ export const IPC_CHANNELS = {
     REMOVE_ASSET: 'mdx:removeAsset',
     LIST_ASSETS: 'mdx:listAssets',
     ADD_ATTACHMENT: 'mdx:addAttachment',
-    GET_ATTACHMENT: 'mdx:getAttachment'
+    GET_ATTACHMENT: 'mdx:getAttachment',
+    RESTORE_RECOVERY_ASSETS: 'mdx:restoreRecoveryAssets'
   },
   APP: {
     PING: 'ping',

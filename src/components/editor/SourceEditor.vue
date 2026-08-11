@@ -6,10 +6,12 @@ import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSp
 import { EditorState, Compartment, type Extension } from '@codemirror/state'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { history, defaultKeymap, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands'
 import { highlightSelectionMatches, searchKeymap, openSearchPanel, closeSearchPanel } from '@codemirror/search'
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap, type Completion } from '@codemirror/autocomplete'
 import { oneDark } from '@codemirror/theme-one-dark'
+import EditorContextMenu from '../common/EditorContextMenu.vue'
+import type { EditorContextMenuItem } from '../../types/editor-context-menu'
 
 // Props
 interface Props {
@@ -37,6 +39,7 @@ let themeCompartment: Compartment | null = null
 
 // 查找替换面板状态
 const showSearchPanel = ref(false)
+const sourceContextMenu = ref({ visible: false, x: 0, y: 0, items: [] as EditorContextMenuItem[] })
 
 // 是否正在同步内容（防止循环更新）
 let isSyncing = false
@@ -106,6 +109,57 @@ function createExtensions(): Extension[] {
   ]
 
   return extensions
+}
+
+function closeSourceContextMenu(): void {
+  sourceContextMenu.value.visible = false
+}
+
+function showSourceContextMenu(event: MouseEvent): void {
+  event.preventDefault()
+  const view = editorView.value
+  if (!view) return
+  sourceContextMenu.value = {
+    visible: true,
+    x: Math.min(event.clientX, window.innerWidth - 150),
+    y: Math.min(event.clientY, window.innerHeight - 240),
+    items: buildSourceContextMenuItems(view)
+  }
+}
+
+function runHistoryCommand(command: (view: EditorView) => boolean): void {
+  const view = editorView.value
+  if (view) command(view)
+  closeSourceContextMenu()
+}
+
+function buildSourceContextMenuItems(view: EditorView): EditorContextMenuItem[] {
+  return [
+    { label: '撤销', action: () => runHistoryCommand(undo) },
+    { label: '重做', action: () => runHistoryCommand(redo) },
+    { label: '', divider: true },
+    {
+      label: '插入',
+      children: [
+        { label: '表格', action: () => insertTable(view) },
+        { label: '代码块', action: () => view.dispatch({ changes: { from: view.state.selection.main.from, insert: '```\n\n```' } }) },
+        { label: '图片', action: () => window.dispatchEvent(new CustomEvent('editor:showImageDialog')) },
+        { label: '链接', action: () => window.dispatchEvent(new CustomEvent('editor:showLinkDialog')) },
+        { label: '分割线', action: () => view.dispatch({ changes: { from: view.state.selection.main.from, insert: '\n---\n' } }) }
+      ]
+    },
+    {
+      label: '格式化',
+      children: [
+        { label: '标题 1', action: () => setHeadingLevel(view, 1) },
+        { label: '标题 2', action: () => setHeadingLevel(view, 2) },
+        { label: '标题 3', action: () => setHeadingLevel(view, 3) },
+        { label: '引用块', action: () => prependLinePrefix(view, '> ') },
+        { label: '无序列表', action: () => prependLinePrefix(view, '- ') },
+        { label: '有序列表', action: () => prependLinePrefix(view, '1. ') }
+      ]
+    }
+  ]
 }
 
 /**
@@ -332,6 +386,17 @@ function cycleHeading(view: EditorView): void {
     })
   }
   
+  view.focus()
+}
+
+function setHeadingLevel(view: EditorView, level: number): void {
+  const line = view.state.doc.lineAt(view.state.selection.main.from)
+  const text = line.text.replace(/^#{1,4}\s+/, '')
+  const heading = `${'#'.repeat(level)} ${text}`
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: heading },
+    selection: { anchor: line.from + heading.length }
+  })
   view.focus()
 }
 
@@ -880,6 +945,7 @@ onMounted(() => {
   window.addEventListener('editor:link', handleLinkEvent)
   window.addEventListener('editor:image', handleImageEvent)
   window.addEventListener('editor:codeBlock', handleCodeBlockEvent)
+  document.addEventListener('click', closeSourceContextMenu)
 })
 
 onUnmounted(() => {
@@ -896,6 +962,7 @@ onUnmounted(() => {
   window.removeEventListener('editor:link', handleLinkEvent)
   window.removeEventListener('editor:image', handleImageEvent)
   window.removeEventListener('editor:codeBlock', handleCodeBlockEvent)
+  document.removeEventListener('click', closeSourceContextMenu)
 
   destroyEditor()
 })
@@ -941,6 +1008,14 @@ defineExpose({
     <div
       ref="editorRef"
       class="codemirror-wrapper"
+      @contextmenu="showSourceContextMenu"
+    />
+    <EditorContextMenu
+      :visible="sourceContextMenu.visible"
+      :x="sourceContextMenu.x"
+      :y="sourceContextMenu.y"
+      :items="sourceContextMenu.items"
+      @close="closeSourceContextMenu"
     />
   </div>
 </template>

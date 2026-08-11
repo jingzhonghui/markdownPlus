@@ -3,7 +3,7 @@ import { join, resolve } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { IPC_CHANNELS } from './ipc/channels'
 import { registerFileHandlers } from './ipc/file-handlers'
-import { registerMdxHandlers, cleanupAll, isCloseConfirmed, setCloseConfirmed } from './ipc/mdx-handlers'
+import { registerMdxHandlers, cleanupAll, isCloseConfirmed, setCloseConfirmed, attachRecoveryAssetData } from './ipc/mdx-handlers'
 import { hadAbnormalExit, markAppRunning, readRecoverySnapshot, writeRecoverySnapshot, clearRecoverySnapshot } from './recovery'
 
 /**
@@ -97,7 +97,7 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC_CHANNELS.APP.RECOVERY_READ, () => ({ success: true, data: readRecoverySnapshot() }))
   ipcMain.handle(IPC_CHANNELS.APP.RECOVERY_WRITE, (_, snapshot) => {
     try {
-      writeRecoverySnapshot(snapshot)
+      writeRecoverySnapshot(attachRecoveryAssetData(snapshot))
       return { success: true }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : '写入恢复快照失败' }

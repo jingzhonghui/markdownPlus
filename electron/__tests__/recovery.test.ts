@@ -64,4 +64,25 @@ describe('Recovery module', () => {
     writeRecoverySnapshot({ version: 1, createdAt: '', activeTabId: null, tabs: [] })
     expect(hadAbnormalExit()).toBe(true)
   })
+
+  it('preserves embedded recovery asset data', () => {
+    const snapshot: RecoverySnapshot = {
+      version: 1,
+      createdAt: new Date().toISOString(),
+      activeTabId: 'tab_1',
+      tabs: [{
+        id: 'tab_1',
+        filePath: 'document.mdx',
+        fileName: 'document.mdx',
+        format: 'mdx',
+        content: '![image](assets/images/test.png)',
+        document: {},
+        modifiedAt: new Date().toISOString(),
+        assetData: { 'assets/images/test.png': Buffer.from('image').toString('base64') }
+      }]
+    }
+
+    writeRecoverySnapshot(snapshot)
+    expect(readRecoverySnapshot()).toEqual(snapshot)
+  })
 })

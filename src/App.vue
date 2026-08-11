@@ -18,6 +18,7 @@ const fileStore = useFileStore()
 async function handleConfirmClose(): Promise<void> {
   const canClose = await fileStore.confirmSaveBeforeClose()
   if (canClose && window.electronAPI?.closeConfirmed) {
+    fileStore.stopAutoSave()
     await window.electronAPI.closeConfirmed()
   }
 }

@@ -10,6 +10,7 @@ export interface RecoveryTab {
   content: string
   document: unknown
   modifiedAt: string
+  assetData?: Record<string, string>
 }
 
 export interface RecoverySnapshot {

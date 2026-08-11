@@ -60,6 +60,7 @@ export interface ElectronAPI {
   listAssets: (filePath?: string) => Promise<{ success: boolean; data?: { images: ImageAssetInfo[]; attachments: MdxAttachmentAsset[]; all: unknown[] }; error?: string }>
   addAttachment: (filename: string, mimeType: string, data: ArrayBuffer, filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   getAttachment: (attachmentPath: string, filePath?: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
+  restoreRecoveryAssets: (filePath: string, document: unknown, assetData: Record<string, string>) => Promise<{ success: boolean; error?: string }>
 
   // 文件夹操作
   readFolder: (dirPath: string) => Promise<{ success: boolean; data?: FolderItem[]; error?: string }>
@@ -124,6 +125,7 @@ const api: ElectronAPI = {
   listAssets: (filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.LIST_ASSETS, filePath),
   addAttachment: (filename, mimeType, data, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_ATTACHMENT, filename, mimeType, data, filePath),
   getAttachment: (attachmentPath, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.GET_ATTACHMENT, attachmentPath, filePath),
+  restoreRecoveryAssets: (filePath, document, assetData) => ipcRenderer.invoke(IPC_CHANNELS.MDX.RESTORE_RECOVERY_ASSETS, filePath, document, assetData),
 
   // 文件夹操作
   readFolder: (dirPath) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.READ, dirPath),

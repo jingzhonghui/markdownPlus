@@ -30,11 +30,14 @@ import {
 import type { IRPluginState } from '../../utils/prosemirror'
 import { NodeSelection, TextSelection } from 'prosemirror-state'
 import { wrapIn, setBlockType } from 'prosemirror-commands'
+import { undo, redo } from 'prosemirror-history'
 import { wrapInList } from 'prosemirror-schema-list'
 import type { Node as ProseMirrorNode } from 'prosemirror-model'
 import katex from 'katex'
 import type { NodeView, ViewMutationRecord } from 'prosemirror-view'
 import { createHighlighter, type Highlighter } from 'shiki'
+import EditorContextMenu from '../common/EditorContextMenu.vue'
+import type { EditorContextMenuItem } from '../../types/editor-context-menu'
 import {
   addColumnBefore,
   addColumnAfter,
@@ -338,17 +341,7 @@ async function initShiki(): Promise<void> {
 }
 
 // 右键菜单状态
-interface SubMenuItem {
-  label: string
-  action: () => void
-}
-
-interface ContextMenuItem {
-  label: string
-  action?: () => void
-  children?: SubMenuItem[]
-  divider?: boolean
-}
+type ContextMenuItem = EditorContextMenuItem
 
 interface ContextMenuState {
   visible: boolean
@@ -402,12 +395,21 @@ function calculateMenuPosition(x: number, y: number, menuHeight: number = 80): {
   return { x: adjustedX, y: adjustedY }
 }
 
+function buildHistoryMenuItems(view: EditorView): ContextMenuItem[] {
+  return [
+    { label: '撤销', action: () => { undo(view.state, view.dispatch); view.focus() } },
+    { label: '重做', action: () => { redo(view.state, view.dispatch); view.focus() } },
+    { label: '', action: () => {}, divider: true }
+  ]
+}
+
 // 构建表格右键菜单项
 function buildTableMenuItems(view: EditorView): ContextMenuItem[] {
   const { state } = view
   if (!isInTable(state)) return []
 
   return [
+    ...buildHistoryMenuItems(view),
     { label: '在左侧插入列', action: () => { addColumnBefore(state, view.dispatch); view.focus() } },
     { label: '在右侧插入列', action: () => { addColumnAfter(state, view.dispatch); view.focus() } },
     { label: '', action: () => {}, divider: true },
@@ -426,6 +428,7 @@ function buildGeneralMenuItems(view: EditorView): ContextMenuItem[] {
   const { state } = view
   const { schema } = state
   const items: ContextMenuItem[] = [
+    ...buildHistoryMenuItems(view),
     {
       label: '插入',
       children: [
@@ -523,7 +526,10 @@ function createContextMenuPlugin(): ProseMirrorPlugin {
                 view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, coords.pos)))
               }
             }
-            contextMenu.items = [{ label: '删除图片', action: () => deleteSelectedImage(view) }]
+            contextMenu.items = [
+              ...buildHistoryMenuItems(view),
+              { label: '删除图片', action: () => deleteSelectedImage(view) }
+            ]
             contextMenu.type = 'general'
             const pos = calculateMenuPosition(event.clientX, event.clientY, 42)
             contextMenu.x = pos.x
@@ -561,7 +567,7 @@ function createContextMenuPlugin(): ProseMirrorPlugin {
 
             contextMenu.items = buildGeneralMenuItems(view)
             contextMenu.type = 'general'
-            const pos = calculateMenuPosition(event.clientX, event.clientY, 60) // 一级菜单只有2项
+            const pos = calculateMenuPosition(event.clientX, event.clientY, 170)
             contextMenu.x = pos.x
             contextMenu.y = pos.y
             contextMenu.visible = true
@@ -962,75 +968,13 @@ defineExpose({
     />
   </div>
 
-  <!-- 编辑器右键菜单 -->
-  <teleport to="body">
-    <div
-      v-if="contextMenu.visible"
-      class="context-menu editor-context-menu"
-      :class="{ 'table-menu': contextMenu.type === 'table' }"
-      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
-      @click.stop
-      @contextmenu.prevent.stop
-      @mouseleave="contextMenu.activeSubmenu = null"
-    >
-      <template
-        v-for="(item, index) in contextMenu.items"
-        :key="index"
-      >
-        <!-- 带二级菜单的项 -->
-        <div
-          v-if="item.children"
-          class="context-menu-item submenu-trigger"
-          :class="{ active: contextMenu.activeSubmenu === item.label }"
-          @mouseenter="contextMenu.activeSubmenu = item.label"
-        >
-          <span>{{ item.label }}</span>
-          <svg
-            class="submenu-arrow"
-            viewBox="0 0 24 24"
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-
-          <!-- 二级菜单 -->
-          <div
-            v-show="contextMenu.activeSubmenu === item.label"
-            class="submenu"
-            @mouseenter="contextMenu.activeSubmenu = item.label"
-          >
-            <div
-              v-for="(child, childIndex) in item.children"
-              :key="childIndex"
-              class="submenu-item"
-              @click.stop="child.action(); closeContextMenu()"
-            >
-              {{ child.label }}
-            </div>
-          </div>
-        </div>
-
-        <!-- 分隔线 -->
-        <div
-          v-else-if="item.divider"
-          class="context-menu-divider"
-        />
-
-        <!-- 普通菜单项 -->
-        <div
-          v-else
-          class="context-menu-item"
-          @click="item.action?.(); closeContextMenu()"
-        >
-          {{ item.label }}
-        </div>
-      </template>
-    </div>
-  </teleport>
+  <EditorContextMenu
+    :visible="contextMenu.visible"
+    :x="contextMenu.x"
+    :y="contextMenu.y"
+    :items="contextMenu.items"
+    @close="closeContextMenu"
+  />
 </template>
 
 <style scoped>
@@ -1305,77 +1249,4 @@ defineExpose({
 }
 @keyframes ProseMirror-cursor-blink { to { visibility: hidden; } }
 
-/* 编辑器右键菜单样式 */
-.editor-context-menu {
-  position: fixed;
-  z-index: 10000;
-  min-width: 140px;
-  padding: 4px;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-}
-
-.editor-context-menu .context-menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 14px;
-  font-size: 13px;
-  color: var(--color-text);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s;
-}
-
-.editor-context-menu .context-menu-item:hover,
-.editor-context-menu .context-menu-item.active {
-  background: var(--color-bg-secondary);
-}
-
-.editor-context-menu .submenu-arrow {
-  margin-left: 8px;
-  opacity: 0.6;
-}
-
-/* 二级菜单 */
-.editor-context-menu .submenu-trigger {
-  position: relative;
-}
-
-.editor-context-menu .submenu {
-  position: absolute;
-  top: -4px;
-  left: 100%;
-  margin-left: 2px;
-  min-width: 130px;
-  padding: 4px;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  z-index: 10001;
-}
-
-.editor-context-menu .submenu-item {
-  padding: 6px 14px;
-  font-size: 13px;
-  color: var(--color-text);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s;
-}
-
-.editor-context-menu .submenu-item:hover {
-  background: var(--color-bg-secondary);
-}
-
-.editor-context-menu .context-menu-divider {
-  height: 1px;
-  margin: 4px 0;
-  background: var(--color-border);
-}
 </style>

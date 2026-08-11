@@ -96,7 +96,9 @@ export const useFileStore = defineStore('file', () => {
   const lastAutoSaveAt = ref<string | null>(null)
   const autoSaveError = ref<string | null>(null)
   let autoSaveTimer: ReturnType<typeof setInterval> | null = null
+  let recoveryWriteTimer: ReturnType<typeof setTimeout> | null = null
   let recoveryWriteInProgress = false
+  let recoveryWritePending = false
 
   // 文件夹浏览状态
   const openedFolderPath = ref<string | null>(null)
@@ -230,6 +232,7 @@ export const useFileStore = defineStore('file', () => {
     // 从 tabs 中移除
     tabs.value.splice(index, 1)
     persistSession()
+    await writeRecoverySnapshot()
 
     // 如果关闭的是当前激活的 tab，切换到邻居
     if (activeTabId.value === tabId) {
@@ -313,6 +316,7 @@ export const useFileStore = defineStore('file', () => {
     }
     stateVersion.value++
     updateWordCount()
+    scheduleRecoverySnapshot()
   }
 
   function updateContent(content: string): void {
@@ -327,6 +331,7 @@ export const useFileStore = defineStore('file', () => {
     }
     stateVersion.value++
     updateWordCount()
+    scheduleRecoverySnapshot()
   }
 
   function markSaved(): void {
@@ -335,44 +340,67 @@ export const useFileStore = defineStore('file', () => {
       tab.fileInfo.modified = false
     }
     stateVersion.value++
+    scheduleRecoverySnapshot()
   }
 
   async function saveTabDirect(tab: TabInfo): Promise<boolean> {
     if (!tab.document || !tab.fileInfo?.path || !tab.fileInfo.modified || !window.electronAPI) return false
-    const result = await window.electronAPI.saveFile(tab.content, tab.document.metadata.title, tab.fileInfo.path)
+    const savedContent = tab.content
+    const result = await window.electronAPI.saveFile(savedContent, tab.document.metadata.title, tab.fileInfo.path)
     if (!result.success) return false
-    tab.fileInfo.modified = false
+    if (tab.content === savedContent) tab.fileInfo.modified = false
     stateVersion.value++
     return true
   }
 
   async function writeRecoverySnapshot(): Promise<void> {
-    if (recoveryWriteInProgress || !window.electronAPI) return
-    const dirtyTabs = tabs.value.filter((tab) => tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path))
-    if (dirtyTabs.length === 0) {
-      await window.electronAPI.clearRecovery()
+    if (!window.electronAPI) return
+    if (recoveryWriteInProgress) {
+      recoveryWritePending = true
       return
     }
-
     recoveryWriteInProgress = true
+    const dirtyTabs = tabs.value.filter((tab) => tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path))
     try {
-      await window.electronAPI.writeRecovery({
-        version: 1,
-        createdAt: new Date().toISOString(),
-        activeTabId: activeTabId.value,
-        tabs: dirtyTabs.map((tab) => ({
-          id: tab.id,
-          filePath: tab.fileInfo?.path || null,
-          fileName: tab.fileInfo?.name || '未命名.mdx',
-          format: tab.fileInfo?.format || 'mdx',
-          content: tab.content,
-          document: tab.document,
-          modifiedAt: new Date().toISOString()
-        }))
-      })
+      if (dirtyTabs.length === 0) {
+        const result = await window.electronAPI.clearRecovery()
+        if (!result.success) throw new Error(result.error || '清理恢复快照失败')
+      } else {
+        const result = await window.electronAPI.writeRecovery({
+          version: 1,
+          createdAt: new Date().toISOString(),
+          activeTabId: activeTabId.value,
+          tabs: dirtyTabs.map((tab) => ({
+            id: tab.id,
+            filePath: tab.fileInfo?.path || null,
+            fileName: tab.fileInfo?.name || '未命名.mdx',
+            format: tab.fileInfo?.format || 'mdx',
+            content: tab.content,
+            document: tab.document,
+            modifiedAt: new Date().toISOString()
+          }))
+        })
+        if (!result.success) throw new Error(result.error || '写入恢复快照失败')
+      }
     } finally {
       recoveryWriteInProgress = false
+      if (recoveryWritePending) {
+        recoveryWritePending = false
+        void writeRecoverySnapshot().catch((err) => {
+          autoSaveError.value = err instanceof Error ? err.message : '写入恢复快照失败'
+        })
+      }
     }
+  }
+
+  function scheduleRecoverySnapshot(): void {
+    if (recoveryWriteTimer) clearTimeout(recoveryWriteTimer)
+    recoveryWriteTimer = setTimeout(() => {
+      recoveryWriteTimer = null
+      void writeRecoverySnapshot().catch((err) => {
+        autoSaveError.value = err instanceof Error ? err.message : '写入恢复快照失败'
+      })
+    }, 1000)
   }
 
   async function autoSave(): Promise<void> {
@@ -401,6 +429,8 @@ export const useFileStore = defineStore('file', () => {
   function stopAutoSave(): void {
     if (autoSaveTimer) clearInterval(autoSaveTimer)
     autoSaveTimer = null
+    if (recoveryWriteTimer) clearTimeout(recoveryWriteTimer)
+    recoveryWriteTimer = null
   }
 
   function startAutoSave(): void {
@@ -414,8 +444,11 @@ export const useFileStore = defineStore('file', () => {
     const status = await window.electronAPI.recoveryStatus()
     if (!status.success || !status.data?.available) return
     const result = await window.electronAPI.readRecovery()
-    const snapshot = result.data as { activeTabId: string | null; tabs: Array<{ id: string; filePath: string | null; content: string; document: MdxDocument; fileName: string; format: DocumentFormat }> } | undefined
-    if (!snapshot?.tabs?.length) return
+    const snapshot = result.data as { activeTabId: string | null; tabs: Array<{ id: string; filePath: string | null; content: string; document: MdxDocument; fileName: string; format: DocumentFormat; assetData?: Record<string, string> }> } | undefined
+    if (!snapshot?.tabs?.length) {
+      await window.electronAPI.clearRecovery()
+      return
+    }
 
     const choice = await requestDialog({
       title: '恢复未保存内容',
@@ -435,8 +468,13 @@ export const useFileStore = defineStore('file', () => {
       const existing = recovered.filePath ? findTabByPath(recovered.filePath) : undefined
       if (existing) {
         existing.content = recovered.content
-        if (existing.document) existing.document.content = recovered.content
+        existing.document = recovered.document
+        existing.document.content = recovered.content
         if (existing.fileInfo) existing.fileInfo.modified = true
+        if (recovered.assetData && recovered.filePath) {
+          const restoreResult = await window.electronAPI.restoreRecoveryAssets(recovered.filePath, recovered.document, recovered.assetData)
+          if (!restoreResult.success) autoSaveError.value = restoreResult.error || '恢复资源失败'
+        }
         if (recovered.id === snapshot.activeTabId) recoveredActiveTabId = existing.id
         continue
       }
@@ -707,10 +745,15 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
 
-      const result = await window.electronAPI.saveFile(tab.content, tab.document.metadata.title, tab.fileInfo?.path || undefined)
+      const savedContent = tab.content
+      const result = await window.electronAPI.saveFile(savedContent, tab.document.metadata.title, tab.fileInfo?.path || undefined)
 
       if (result.success) {
-        markSaved()
+        if (tab.content === savedContent && tab.fileInfo) {
+          tab.fileInfo.modified = false
+          stateVersion.value++
+          await writeRecoverySnapshot()
+        }
         return true
       } else if (result.error === 'NEW_FILE') {
         return await saveAsFile()
@@ -742,24 +785,26 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
 
-      const result = await window.electronAPI.saveAsFile(tab.content, tab.document.metadata.title, tab.fileInfo?.path || undefined)
+      const savedContent = tab.content
+      const result = await window.electronAPI.saveAsFile(savedContent, tab.document.metadata.title, tab.fileInfo?.path || undefined)
 
       if (result.success && result.data) {
         const savePath = result.data as string
         if (tab.fileInfo) {
           tab.fileInfo.path = savePath
           tab.fileInfo.name = savePath.split(/[/\\]/).pop() || '未命名.mdx'
-          tab.fileInfo.modified = false
+          tab.fileInfo.modified = tab.content !== savedContent
           tab.fileInfo.format = savePath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx'
         } else {
           tab.fileInfo = {
             path: savePath,
             name: savePath.split(/[/\\]/).pop() || '未命名.mdx',
-            modified: false,
+            modified: tab.content !== savedContent,
             format: savePath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx'
           }
         }
         await loadRecentFiles()
+        await writeRecoverySnapshot()
         return true
       } else if (result.error === '用户取消') {
         return false
@@ -1046,6 +1091,7 @@ export const useFileStore = defineStore('file', () => {
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
         }
+        scheduleRecoverySnapshot()
         return { success: true, path: relativePath, asset }
       } else {
         return { success: false, error: result.error || '添加图片失败' }
@@ -1123,6 +1169,7 @@ export const useFileStore = defineStore('file', () => {
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
         }
+        scheduleRecoverySnapshot()
         return { success: true }
       } else {
         return { success: false, error: result.error || '删除资源失败' }
@@ -1165,6 +1212,7 @@ export const useFileStore = defineStore('file', () => {
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
         }
+        scheduleRecoverySnapshot()
         const { relativePath } = result.data as { relativePath: string }
         return { success: true, path: relativePath }
       } else {
@@ -1254,6 +1302,7 @@ export const useFileStore = defineStore('file', () => {
         tab.fileInfo.modified = true
       }
       stateVersion.value++
+      scheduleRecoverySnapshot()
 
       return { success: true }
     } catch (err) {

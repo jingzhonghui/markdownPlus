@@ -31,6 +31,11 @@ export const IPC_CHANNELS = {
     GET_ATTACHMENT: 'mdx:getAttachment',
     RESTORE_RECOVERY_ASSETS: 'mdx:restoreRecoveryAssets'
   },
+  PDF: {
+    READ_SOURCE: 'pdf:readSource',
+    LIST_FOLDER: 'pdf:listFolder',
+    PRINT: 'pdf:print'
+  },
   APP: {
     PING: 'ping',
     GET_VERSION: 'app:getVersion',

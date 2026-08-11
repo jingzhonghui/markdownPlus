@@ -7,6 +7,8 @@ import SideBar from './components/layout/SideBar.vue'
 import StatusBar from './components/layout/StatusBar.vue'
 import EditorPanel from './components/editor/EditorPanel.vue'
 import ConfirmDialog from './components/common/ConfirmDialog.vue'
+import PdfExportView from './components/export/PdfExportView.vue'
+import PdfBatchProgressDialog from './components/export/PdfBatchProgressDialog.vue'
 
 const themeStore = useThemeStore()
 const fileStore = useFileStore()
@@ -81,6 +83,8 @@ onUnmounted(() => {
     <StatusBar />
 
     <ConfirmDialog />
+    <PdfExportView />
+    <PdfBatchProgressDialog />
   </div>
 </template>
 

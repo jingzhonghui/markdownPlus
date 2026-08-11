@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { IPC_CHANNELS } from './ipc/channels'
 import { registerFileHandlers } from './ipc/file-handlers'
 import { registerMdxHandlers, cleanupAll, isCloseConfirmed, setCloseConfirmed, attachRecoveryAssetData } from './ipc/mdx-handlers'
+import { registerPdfHandlers } from './ipc/pdf-handlers'
 import { hadAbnormalExit, markAppRunning, readRecoverySnapshot, writeRecoverySnapshot, clearRecoverySnapshot } from './recovery'
 
 /**
@@ -115,6 +116,9 @@ app.whenReady().then(() => {
 
   // 注册 MDX 操作 handlers
   registerMdxHandlers()
+
+  // 注册 PDF 导出 handlers
+  registerPdfHandlers()
 
   createWindow()
 

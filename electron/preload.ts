@@ -36,6 +36,25 @@ export interface MdxOpenResult {
   isNew?: boolean
 }
 
+export interface PdfSource {
+  filePath: string
+  fileName: string
+  title: string
+  format: 'mdx' | 'markdown'
+  content: string
+  images: Record<string, string>
+}
+
+export interface PdfPrintResult {
+  filePath: string
+  size: number
+}
+
+export interface PdfSourceEntry {
+  absolutePath: string
+  relativePath: string
+}
+
 // API 类型定义
 export interface ElectronAPI {
   // 文件操作
@@ -61,6 +80,11 @@ export interface ElectronAPI {
   addAttachment: (filename: string, mimeType: string, data: ArrayBuffer, filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   getAttachment: (attachmentPath: string, filePath?: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
   restoreRecoveryAssets: (filePath: string, document: unknown, assetData: Record<string, string>) => Promise<{ success: boolean; error?: string }>
+
+  // PDF 导出
+  readPdfSource: (filePath: string) => Promise<{ success: boolean; data?: PdfSource; error?: string }>
+  listPdfSources: (folderPath: string) => Promise<{ success: boolean; data?: PdfSourceEntry[]; error?: string }>
+  printPdf: (suggestedFileName: string, outputDir?: string, relativeSubdir?: string) => Promise<{ success: boolean; data?: PdfPrintResult; error?: string }>
 
   // 文件夹操作
   readFolder: (dirPath: string) => Promise<{ success: boolean; data?: FolderItem[]; error?: string }>
@@ -126,6 +150,11 @@ const api: ElectronAPI = {
   addAttachment: (filename, mimeType, data, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_ATTACHMENT, filename, mimeType, data, filePath),
   getAttachment: (attachmentPath, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.GET_ATTACHMENT, attachmentPath, filePath),
   restoreRecoveryAssets: (filePath, document, assetData) => ipcRenderer.invoke(IPC_CHANNELS.MDX.RESTORE_RECOVERY_ASSETS, filePath, document, assetData),
+
+  // PDF 导出
+  readPdfSource: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.PDF.READ_SOURCE, filePath),
+  listPdfSources: (folderPath) => ipcRenderer.invoke(IPC_CHANNELS.PDF.LIST_FOLDER, folderPath),
+  printPdf: (suggestedFileName, outputDir?, relativeSubdir?) => ipcRenderer.invoke(IPC_CHANNELS.PDF.PRINT, suggestedFileName, outputDir, relativeSubdir),
 
   // 文件夹操作
   readFolder: (dirPath) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.READ, dirPath),

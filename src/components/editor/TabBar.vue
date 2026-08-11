@@ -69,6 +69,10 @@ function showContextMenu(event: MouseEvent, items: ContextMenuItem[]): void {
 function onTabContextMenu(event: MouseEvent, tab: TabInfo): void {
   const items: ContextMenuItem[] = [
     {
+      label: '导出 PDF',
+      action: () => { void fileStore.exportTabToPdf(tab.id) }
+    },
+    {
       label: '关闭',
       action: () => { void fileStore.closeTab(tab.id) }
     },

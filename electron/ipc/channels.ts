@@ -35,7 +35,11 @@ export const IPC_CHANNELS = {
     GET_VERSION: 'app:getVersion',
     GET_PLATFORM: 'app:getPlatform',
     CONFIRM_CLOSE: 'app:confirm-close',
-    CLOSE_CONFIRMED: 'app:close-confirmed'
+    CLOSE_CONFIRMED: 'app:close-confirmed',
+    RECOVERY_STATUS: 'recovery:status',
+    RECOVERY_READ: 'recovery:read',
+    RECOVERY_WRITE: 'recovery:write',
+    RECOVERY_CLEAR: 'recovery:clear'
   },
   WINDOW: {
     MINIMIZE: 'window:minimize',

@@ -394,6 +394,8 @@ onUnmounted(() => {
           <input
             ref="inputRef"
             v-model="inputValue"
+            type="text"
+            spellcheck="false"
             class="dialog-input"
             :placeholder="inputPlaceholder"
             @keyup.enter="confirmInput"

@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type { MdxDocument, MdxImageAsset, DocumentFormat } from '../types/mdx'
 import { loadSessionState, saveSessionState } from './session'
+import { requestDialog } from '../utils/dialog'
 
 export type EditorMode = 'split' | 'source' | 'ir'
 
@@ -89,6 +90,13 @@ export const useFileStore = defineStore('file', () => {
   const cursorLine = ref(1)
   const cursorColumn = ref(1)
   const editorResetVersion = ref(0)
+  const autoSaveEnabled = ref(true)
+  const autoSaveInterval = ref(30)
+  const isAutoSaving = ref(false)
+  const lastAutoSaveAt = ref<string | null>(null)
+  const autoSaveError = ref<string | null>(null)
+  let autoSaveTimer: ReturnType<typeof setInterval> | null = null
+  let recoveryWriteInProgress = false
 
   // 文件夹浏览状态
   const openedFolderPath = ref<string | null>(null)
@@ -187,33 +195,17 @@ export const useFileStore = defineStore('file', () => {
 
     const title = tab.document?.metadata.title || '未命名文档'
 
-    if (window.electronAPI?.showMessageBox) {
-      try {
-        const result = await window.electronAPI.showMessageBox({
-          type: 'warning',
-          title: '保存更改',
-          message: `是否将更改保存到"${title}"？`,
-          detail: '如果不保存，你的更改将会丢失。',
-          buttons: ['保存', '不保存', '取消'],
-          defaultId: 0,
-          cancelId: 2,
-          noLink: true
-        })
-        if (result.success && result.data !== undefined) {
-          const choice = result.data as number
-          if (choice === 0) return 'save'
-          if (choice === 1) return 'discard'
-          return 'cancel'
-        }
-      } catch {
-        // 回退到简单对话框
-      }
-    }
-
-    const confirmed = window.confirm(
-      `"${title}" 有未保存的更改，是否保存？\n\n确定 = 不保存，取消 = 返回继续编辑`
-    )
-    return confirmed ? 'discard' : 'cancel'
+    const choice = await requestDialog({
+      title: '保存更改',
+      message: `是否将更改保存到"${title}"？`,
+      detail: '如果不保存，你的更改将会丢失。',
+      buttons: [
+        { label: '取消', value: 2 },
+        { label: '不保存', value: 1 },
+        { label: '保存', value: 0, primary: true }
+      ]
+    })
+    return choice === 0 ? 'save' : choice === 1 ? 'discard' : 'cancel'
   }
 
   /** 关闭指定 tab */
@@ -345,6 +337,127 @@ export const useFileStore = defineStore('file', () => {
     stateVersion.value++
   }
 
+  async function saveTabDirect(tab: TabInfo): Promise<boolean> {
+    if (!tab.document || !tab.fileInfo?.path || !tab.fileInfo.modified || !window.electronAPI) return false
+    const result = await window.electronAPI.saveFile(tab.content, tab.document.metadata.title, tab.fileInfo.path)
+    if (!result.success) return false
+    tab.fileInfo.modified = false
+    stateVersion.value++
+    return true
+  }
+
+  async function writeRecoverySnapshot(): Promise<void> {
+    if (recoveryWriteInProgress || !window.electronAPI) return
+    const dirtyTabs = tabs.value.filter((tab) => tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path))
+    if (dirtyTabs.length === 0) {
+      await window.electronAPI.clearRecovery()
+      return
+    }
+
+    recoveryWriteInProgress = true
+    try {
+      await window.electronAPI.writeRecovery({
+        version: 1,
+        createdAt: new Date().toISOString(),
+        activeTabId: activeTabId.value,
+        tabs: dirtyTabs.map((tab) => ({
+          id: tab.id,
+          filePath: tab.fileInfo?.path || null,
+          fileName: tab.fileInfo?.name || '未命名.mdx',
+          format: tab.fileInfo?.format || 'mdx',
+          content: tab.content,
+          document: tab.document,
+          modifiedAt: new Date().toISOString()
+        }))
+      })
+    } finally {
+      recoveryWriteInProgress = false
+    }
+  }
+
+  async function autoSave(): Promise<void> {
+    if (!autoSaveEnabled.value || isAutoSaving.value || tabs.value.length === 0) return
+    isAutoSaving.value = true
+    autoSaveError.value = null
+    try {
+      const dirtyTabs = tabs.value.filter((tab) => tab.document && tab.fileInfo?.path && tab.fileInfo.modified && tab.document.settings.auto_save !== false)
+      let savedCount = 0
+      let failedCount = 0
+      for (const tab of dirtyTabs) {
+        if (await saveTabDirect(tab)) savedCount++
+        else failedCount++
+      }
+      await writeRecoverySnapshot()
+      if (savedCount > 0) lastAutoSaveAt.value = new Date().toISOString()
+      if (failedCount > 0) autoSaveError.value = `${failedCount} 个文档自动保存失败`
+    } catch (error) {
+      autoSaveError.value = error instanceof Error ? error.message : '自动保存失败'
+      await writeRecoverySnapshot()
+    } finally {
+      isAutoSaving.value = false
+    }
+  }
+
+  function stopAutoSave(): void {
+    if (autoSaveTimer) clearInterval(autoSaveTimer)
+    autoSaveTimer = null
+  }
+
+  function startAutoSave(): void {
+    stopAutoSave()
+    if (typeof window === 'undefined' || !autoSaveEnabled.value) return
+    autoSaveTimer = setInterval(() => { void autoSave() }, autoSaveInterval.value * 1000)
+  }
+
+  async function restoreRecovery(): Promise<void> {
+    if (!window.electronAPI) return
+    const status = await window.electronAPI.recoveryStatus()
+    if (!status.success || !status.data?.available) return
+    const result = await window.electronAPI.readRecovery()
+    const snapshot = result.data as { activeTabId: string | null; tabs: Array<{ id: string; filePath: string | null; content: string; document: MdxDocument; fileName: string; format: DocumentFormat }> } | undefined
+    if (!snapshot?.tabs?.length) return
+
+    const choice = await requestDialog({
+      title: '恢复未保存内容',
+      message: `检测到上次异常退出时有 ${snapshot.tabs.length} 个文档未保存。是否恢复？`,
+      buttons: [
+        { label: '放弃', value: 1 },
+        { label: '恢复', value: 0, primary: true }
+      ]
+    })
+    if (choice !== 0) {
+      await window.electronAPI.clearRecovery()
+      return
+    }
+
+    let recoveredActiveTabId: string | null = null
+    for (const recovered of snapshot.tabs) {
+      const existing = recovered.filePath ? findTabByPath(recovered.filePath) : undefined
+      if (existing) {
+        existing.content = recovered.content
+        if (existing.document) existing.document.content = recovered.content
+        if (existing.fileInfo) existing.fileInfo.modified = true
+        if (recovered.id === snapshot.activeTabId) recoveredActiveTabId = existing.id
+        continue
+      }
+      const tab = createTab()
+      tab.document = recovered.document
+      tab.content = recovered.content
+      tab.fileInfo = {
+        path: '',
+        name: `恢复-${recovered.fileName}`,
+        modified: true,
+        format: recovered.format
+      }
+      if (recovered.id === snapshot.activeTabId) recoveredActiveTabId = tab.id
+    }
+    if (recoveredActiveTabId) activeTabId.value = recoveredActiveTabId
+    else if (!activeTabId.value && tabs.value.length > 0) activeTabId.value = tabs.value[tabs.value.length - 1].id
+    stateVersion.value++
+    updateWordCount()
+    await window.electronAPI.clearRecovery()
+  }
+
   // ================ 其余状态操作 ================
 
   function setEditorMode(mode: EditorMode): void {
@@ -469,6 +582,8 @@ export const useFileStore = defineStore('file', () => {
   async function init(): Promise<void> {
     await loadRecentFiles()
     await restoreSession()
+    await restoreRecovery()
+    startAutoSave()
   }
 
   async function newFile(): Promise<boolean> {
@@ -675,33 +790,17 @@ export const useFileStore = defineStore('file', () => {
     const tab = activeTab.value
     const title = tab?.document?.metadata.title || '未命名文档'
 
-    if (window.electronAPI?.showMessageBox) {
-      try {
-        const result = await window.electronAPI.showMessageBox({
-          type: 'warning',
-          title: '保存更改',
-          message: `是否将更改保存到"${title}"？`,
-          detail: '如果不保存，你的更改将会丢失。',
-          buttons: ['保存', '不保存', '取消'],
-          defaultId: 0,
-          cancelId: 2,
-          noLink: true
-        })
-        if (result.success && result.data !== undefined) {
-          const choice = result.data as number
-          if (choice === 0) return 'save'
-          if (choice === 1) return 'discard'
-          return 'cancel'
-        }
-      } catch {
-        // 回退
-      }
-    }
-
-    const confirmed = window.confirm(
-      `"${title}" 有未保存的更改，是否保存？\n\n确定 = 不保存，取消 = 返回继续编辑`
-    )
-    return confirmed ? 'discard' : 'cancel'
+    const choice = await requestDialog({
+      title: '保存更改',
+      message: `是否将更改保存到"${title}"？`,
+      detail: '如果不保存，你的更改将会丢失。',
+      buttons: [
+        { label: '取消', value: 2 },
+        { label: '不保存', value: 1 },
+        { label: '保存', value: 0, primary: true }
+      ]
+    })
+    return choice === 0 ? 'save' : choice === 1 ? 'discard' : 'cancel'
   }
 
   async function confirmSaveBeforeAction(): Promise<boolean> {
@@ -1430,6 +1529,11 @@ export const useFileStore = defineStore('file', () => {
     cursorLine,
     cursorColumn,
     editorResetVersion,
+    autoSaveEnabled,
+    autoSaveInterval,
+    isAutoSaving,
+    lastAutoSaveAt,
+    autoSaveError,
 
     // 文件夹浏览
     openedFolderPath,
@@ -1461,6 +1565,10 @@ export const useFileStore = defineStore('file', () => {
     setContent,
     updateContent,
     markSaved,
+    autoSave,
+    startAutoSave,
+    stopAutoSave,
+    writeRecoverySnapshot,
 
     // 编辑器操作
     setEditorMode,

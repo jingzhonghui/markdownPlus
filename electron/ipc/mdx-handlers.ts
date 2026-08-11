@@ -17,6 +17,7 @@ import { saveMdx, validateFilePath } from '../mdx/writer'
 import { importAndSaveAsMdx } from '../mdx/import'
 import { exportMdxFile } from '../mdx/export'
 import { addRecentFile as addRecent } from './file-handlers'
+import { clearRecoveryData } from '../recovery'
 
 // 文件路径 → 临时目录的映射（主进程唯一持有的状态）
 const tempDirsByFile = new Map<string, string>()
@@ -68,6 +69,7 @@ function writeMdxJsonToTempDir(tempDir: string, document: MdxDocument): void {
 export function registerMdxHandlers(): void {
   // 渲染进程完成所有标签页的保存确认后，允许窗口继续关闭。
   ipcMain.handle(IPC_CHANNELS.APP.CLOSE_CONFIRMED, () => {
+    clearRecoveryData()
     setCloseConfirmed(true)
     const window = BrowserWindow.getFocusedWindow()
     if (window) window.close()

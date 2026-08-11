@@ -26,12 +26,16 @@ const fileSize = computed(() => {
 
 const saveStatus = computed(() => {
   if (fileStore.isLoading) return '加载中...'
+  if (fileStore.isAutoSaving) return '自动保存中...'
+  if (fileStore.autoSaveError) return '自动保存失败'
   if (fileStore.isModified) return '未保存'
   return '已保存'
 })
 
 const saveStatusClass = computed(() => {
   if (fileStore.isLoading) return 'loading'
+  if (fileStore.isAutoSaving) return 'loading'
+  if (fileStore.autoSaveError) return 'modified'
   if (fileStore.isModified) return 'modified'
   return 'saved'
 })

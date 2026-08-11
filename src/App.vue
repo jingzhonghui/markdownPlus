@@ -6,6 +6,7 @@ import AppHeader from './components/layout/AppHeader.vue'
 import SideBar from './components/layout/SideBar.vue'
 import StatusBar from './components/layout/StatusBar.vue'
 import EditorPanel from './components/editor/EditorPanel.vue'
+import ConfirmDialog from './components/common/ConfirmDialog.vue'
 
 const themeStore = useThemeStore()
 const fileStore = useFileStore()
@@ -22,12 +23,23 @@ async function handleConfirmClose(): Promise<void> {
 }
 
 let removeConfirmCloseListener: (() => void) | null = null
+let cleanupAutoSaveListeners: (() => void) | null = null
 
 onMounted(() => {
   // 初始化主题
   themeStore.initTheme()
   // 初始化文件状态
-  fileStore.init()
+  void fileStore.init()
+
+  const saveOnBackground = (): void => {
+    void fileStore.autoSave()
+  }
+  document.addEventListener('visibilitychange', saveOnBackground)
+  window.addEventListener('blur', saveOnBackground)
+  cleanupAutoSaveListeners = () => {
+    document.removeEventListener('visibilitychange', saveOnBackground)
+    window.removeEventListener('blur', saveOnBackground)
+  }
 
   // 监听窗口关闭确认事件
   if (window.electronAPI?.onConfirmClose) {
@@ -39,6 +51,8 @@ onUnmounted(() => {
   if (removeConfirmCloseListener) {
     removeConfirmCloseListener()
   }
+  cleanupAutoSaveListeners?.()
+  fileStore.stopAutoSave()
 })
 </script>
 
@@ -64,6 +78,8 @@ onUnmounted(() => {
     
     <!-- 状态栏 -->
     <StatusBar />
+
+    <ConfirmDialog />
   </div>
 </template>
 

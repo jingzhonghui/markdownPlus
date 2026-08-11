@@ -82,6 +82,12 @@ export interface ElectronAPI {
   onConfirmClose: (callback: () => void) => () => void
   closeConfirmed: () => void
 
+  // 崩溃恢复
+  recoveryStatus: () => Promise<{ success: boolean; data?: { available: boolean }; error?: string }>
+  readRecovery: () => Promise<{ success: boolean; data?: unknown; error?: string }>
+  writeRecovery: (snapshot: unknown) => Promise<{ success: boolean; error?: string }>
+  clearRecovery: () => Promise<{ success: boolean; error?: string }>
+
   // 文件系统
   revealInExplorer: (filePath: string) => Promise<{ success: boolean; error?: string }>
 
@@ -143,6 +149,10 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.APP.CONFIRM_CLOSE, handler)
   },
   closeConfirmed: () => ipcRenderer.invoke(IPC_CHANNELS.APP.CLOSE_CONFIRMED),
+  recoveryStatus: () => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_STATUS),
+  readRecovery: () => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_READ),
+  writeRecovery: (snapshot) => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_WRITE, snapshot),
+  clearRecovery: () => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_CLEAR),
 
   // 文件系统
   revealInExplorer: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.REVEAL_IN_EXPLORER, filePath),

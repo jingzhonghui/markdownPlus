@@ -96,6 +96,9 @@ function onFileContextMenu(event: MouseEvent, node: FileTreeNode): void {
     { label: '打开', action: () => fileStore.openFile(node.path) },
     { label: '保存', action: () => saveFileNode(node) },
     { label: '另存为', action: () => saveFileNodeAs(node) },
+    ...(/\.(md|mdx)$/i.test(node.name)
+      ? [{ label: '导出 PDF', action: () => { void fileStore.exportFileToPdf(node.path) } }]
+      : []),
     { label: '重命名', action: () => promptRename(node) },
     { label: '删除', action: () => promptDelete(node) },
     { label: '复制路径', action: () => fileStore.copyPath(node.path) }
@@ -109,6 +112,7 @@ function onFolderContextMenu(event: MouseEvent, node: FileTreeNode): void {
     { label: '新建文件夹', action: () => promptCreateFolder(node.path) },
     { label: '打开文件', action: () => openFile() },
     { label: '打开文件夹', action: () => openFolder() },
+    { label: '批量导出 PDF', action: () => { void fileStore.exportFolderToPdf(node.path) } },
     { label: '刷新', action: () => fileStore.loadChildren(node) },
     { label: '重命名', action: () => promptRename(node) },
     { label: '删除', action: () => promptDelete(node) },
@@ -394,6 +398,8 @@ onUnmounted(() => {
           <input
             ref="inputRef"
             v-model="inputValue"
+            type="text"
+            spellcheck="false"
             class="dialog-input"
             :placeholder="inputPlaceholder"
             @keyup.enter="confirmInput"

@@ -55,4 +55,30 @@ describe('Markdown ↔ ProseMirror conversion', () => {
     expect(state.doc.child(0).textContent).toBe('const value = 1\n')
     expect(state.doc.child(1).type.name).toBe('paragraph')
   })
+
+  it('serializes code block content exactly after parse', () => {
+    const content = '```\n// nihao\n```'
+    expect(serializeMarkdown(parseMarkdown(content))).toBe(content)
+  })
+
+  it('exits table and creates paragraph below on Enter in the last row', () => {
+    const content = '| a | b |\n| --- | --- |\n| c | d |'
+    const doc = parseMarkdown(content)
+    // 光标放在最后一行第一个单元格的段落末尾
+    const table = doc.child(0)
+    const cellStart = 1 + table.child(0).nodeSize + 1
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, cellStart + 1)
+    })
+
+    const handled = buildKeymap(markdownSchema).Enter(state, (transaction) => {
+      state = state.apply(transaction)
+    })
+
+    expect(handled).toBe(true)
+    expect(state.doc.childCount).toBe(2)
+    expect(state.doc.child(0).type.name).toBe('table')
+    expect(state.doc.child(1).type.name).toBe('paragraph')
+  })
 })

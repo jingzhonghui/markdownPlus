@@ -79,6 +79,14 @@ const nodes: Record<string, NodeSpec> = {
           const lang = code?.getAttribute('class')?.replace(/^language-/, '') || ''
           return { language: lang }
         }
+      },
+      {
+        tag: 'code',
+        preserveWhitespace: 'full',
+        getAttrs(dom: HTMLElement) {
+          const isCodeBlock = dom.parentElement?.tagName === 'PRE'
+          return { language: isCodeBlock ? (dom.getAttribute('class')?.replace(/^language-/, '') || '') : '' }
+        }
       }
     ],
     toDOM(node): DOMOutputSpec {

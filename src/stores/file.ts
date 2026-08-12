@@ -2,6 +2,9 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type { MdxDocument, MdxImageAsset, DocumentFormat } from '../types/mdx'
 import { loadSessionState, saveSessionState } from './session'
+import { requestDialog } from '../utils/dialog'
+import { clearPdfView, preparePdfView } from '../utils/pdf-export'
+import type { PdfBatchProgress, PdfSource } from '../types/pdf'
 
 export type EditorMode = 'split' | 'source' | 'ir'
 
@@ -89,6 +92,33 @@ export const useFileStore = defineStore('file', () => {
   const cursorLine = ref(1)
   const cursorColumn = ref(1)
   const editorResetVersion = ref(0)
+  const pdfBatchProgress = ref<PdfBatchProgress>({
+    visible: false,
+    running: false,
+    total: 0,
+    completed: 0,
+    successCount: 0,
+    currentFile: '',
+    failures: []
+  })
+
+  // 共享图片缓存（跨预览面板和 IR 编辑器）
+  const sharedImageCache = new Map<string, string>()
+
+  function getCachedImage(key: string): string | undefined {
+    return sharedImageCache.get(key)
+  }
+
+  function setCachedImage(key: string, dataUrl: string): void {
+    sharedImageCache.set(key, dataUrl)
+  }
+
+  function clearImageCache(): void {
+    sharedImageCache.clear()
+  }
+  let recoveryWriteTimer: ReturnType<typeof setTimeout> | null = null
+  let recoveryWriteInProgress = false
+  let recoveryWritePending = false
 
   // 文件夹浏览状态
   const openedFolderPath = ref<string | null>(null)
@@ -187,33 +217,17 @@ export const useFileStore = defineStore('file', () => {
 
     const title = tab.document?.metadata.title || '未命名文档'
 
-    if (window.electronAPI?.showMessageBox) {
-      try {
-        const result = await window.electronAPI.showMessageBox({
-          type: 'warning',
-          title: '保存更改',
-          message: `是否将更改保存到"${title}"？`,
-          detail: '如果不保存，你的更改将会丢失。',
-          buttons: ['保存', '不保存', '取消'],
-          defaultId: 0,
-          cancelId: 2,
-          noLink: true
-        })
-        if (result.success && result.data !== undefined) {
-          const choice = result.data as number
-          if (choice === 0) return 'save'
-          if (choice === 1) return 'discard'
-          return 'cancel'
-        }
-      } catch {
-        // 回退到简单对话框
-      }
-    }
-
-    const confirmed = window.confirm(
-      `"${title}" 有未保存的更改，是否保存？\n\n确定 = 不保存，取消 = 返回继续编辑`
-    )
-    return confirmed ? 'discard' : 'cancel'
+    const choice = await requestDialog({
+      title: '保存更改',
+      message: `是否将更改保存到"${title}"？`,
+      detail: '如果不保存，你的更改将会丢失。',
+      buttons: [
+        { label: '取消', value: 2 },
+        { label: '不保存', value: 1 },
+        { label: '保存', value: 0, primary: true }
+      ]
+    })
+    return choice === 0 ? 'save' : choice === 1 ? 'discard' : 'cancel'
   }
 
   /** 关闭指定 tab */
@@ -238,6 +252,7 @@ export const useFileStore = defineStore('file', () => {
     // 从 tabs 中移除
     tabs.value.splice(index, 1)
     persistSession()
+    await writeRecoverySnapshot()
 
     // 如果关闭的是当前激活的 tab，切换到邻居
     if (activeTabId.value === tabId) {
@@ -321,6 +336,7 @@ export const useFileStore = defineStore('file', () => {
     }
     stateVersion.value++
     updateWordCount()
+    scheduleRecoverySnapshot()
   }
 
   function updateContent(content: string): void {
@@ -335,6 +351,7 @@ export const useFileStore = defineStore('file', () => {
     }
     stateVersion.value++
     updateWordCount()
+    scheduleRecoverySnapshot()
   }
 
   function markSaved(): void {
@@ -343,6 +360,119 @@ export const useFileStore = defineStore('file', () => {
       tab.fileInfo.modified = false
     }
     stateVersion.value++
+    scheduleRecoverySnapshot()
+  }
+
+  async function writeRecoverySnapshot(): Promise<void> {
+    if (!window.electronAPI) return
+    if (recoveryWriteInProgress) {
+      recoveryWritePending = true
+      return
+    }
+    recoveryWriteInProgress = true
+    const dirtyTabs = tabs.value.filter((tab) => tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path))
+    try {
+      if (dirtyTabs.length === 0) {
+        const result = await window.electronAPI.clearRecovery()
+        if (!result.success) throw new Error(result.error || '清理恢复快照失败')
+      } else {
+        const result = await window.electronAPI.writeRecovery({
+          version: 1,
+          createdAt: new Date().toISOString(),
+          activeTabId: activeTabId.value,
+          tabs: dirtyTabs.map((tab) => ({
+            id: tab.id,
+            filePath: tab.fileInfo?.path || null,
+            fileName: tab.fileInfo?.name || '未命名.mdx',
+            format: tab.fileInfo?.format || 'mdx',
+            content: tab.content,
+            document: tab.document,
+            modifiedAt: new Date().toISOString()
+          }))
+        })
+        if (!result.success) throw new Error(result.error || '写入恢复快照失败')
+      }
+    } finally {
+      recoveryWriteInProgress = false
+      if (recoveryWritePending) {
+        recoveryWritePending = false
+        void writeRecoverySnapshot().catch((err) => {
+          error.value = err instanceof Error ? err.message : '写入恢复快照失败'
+        })
+      }
+    }
+  }
+
+  function scheduleRecoverySnapshot(): void {
+    if (recoveryWriteTimer) clearTimeout(recoveryWriteTimer)
+    recoveryWriteTimer = setTimeout(() => {
+      recoveryWriteTimer = null
+      void writeRecoverySnapshot().catch((err) => {
+        error.value = err instanceof Error ? err.message : '写入恢复快照失败'
+      })
+    }, 1000)
+  }
+
+  function cleanupTimers(): void {
+    if (recoveryWriteTimer) clearTimeout(recoveryWriteTimer)
+    recoveryWriteTimer = null
+  }
+
+  async function restoreRecovery(): Promise<void> {
+    if (!window.electronAPI) return
+    const status = await window.electronAPI.recoveryStatus()
+    if (!status.success || !status.data?.available) return
+    const result = await window.electronAPI.readRecovery()
+    const snapshot = result.data as { activeTabId: string | null; tabs: Array<{ id: string; filePath: string | null; content: string; document: MdxDocument; fileName: string; format: DocumentFormat; assetData?: Record<string, string> }> } | undefined
+    if (!snapshot?.tabs?.length) {
+      await window.electronAPI.clearRecovery()
+      return
+    }
+
+    const choice = await requestDialog({
+      title: '恢复未保存内容',
+      message: `检测到上次异常退出时有 ${snapshot.tabs.length} 个文档未保存。是否恢复？`,
+      buttons: [
+        { label: '放弃', value: 1 },
+        { label: '恢复', value: 0, primary: true }
+      ]
+    })
+    if (choice !== 0) {
+      await window.electronAPI.clearRecovery()
+      return
+    }
+
+    let recoveredActiveTabId: string | null = null
+    for (const recovered of snapshot.tabs) {
+      const existing = recovered.filePath ? findTabByPath(recovered.filePath) : undefined
+      if (existing) {
+        existing.content = recovered.content
+        existing.document = recovered.document
+        existing.document.content = recovered.content
+        if (existing.fileInfo) existing.fileInfo.modified = true
+        if (recovered.assetData && recovered.filePath) {
+          const restoreResult = await window.electronAPI.restoreRecoveryAssets(recovered.filePath, recovered.document, recovered.assetData)
+          if (!restoreResult.success) error.value = restoreResult.error || '恢复资源失败'
+        }
+        if (recovered.id === snapshot.activeTabId) recoveredActiveTabId = existing.id
+        continue
+      }
+      const tab = createTab()
+      tab.document = recovered.document
+      tab.content = recovered.content
+      tab.fileInfo = {
+        path: '',
+        name: `恢复-${recovered.fileName}`,
+        modified: true,
+        format: recovered.format
+      }
+      if (recovered.id === snapshot.activeTabId) recoveredActiveTabId = tab.id
+    }
+    if (recoveredActiveTabId) activeTabId.value = recoveredActiveTabId
+    else if (!activeTabId.value && tabs.value.length > 0) activeTabId.value = tabs.value[tabs.value.length - 1].id
+    stateVersion.value++
+    updateWordCount()
+    await window.electronAPI.clearRecovery()
   }
 
   // ================ 其余状态操作 ================
@@ -469,6 +599,7 @@ export const useFileStore = defineStore('file', () => {
   async function init(): Promise<void> {
     await loadRecentFiles()
     await restoreSession()
+    await restoreRecovery()
   }
 
   async function newFile(): Promise<boolean> {
@@ -547,6 +678,22 @@ export const useFileStore = defineStore('file', () => {
           return true
         }
 
+        if (result.data.largeFileWarning) {
+          const choice = await requestDialog({
+            title: '大文件警告',
+            message: '此文件超过 5 MB，打开和编辑可能会变慢。',
+            detail: '建议在外部编辑器中处理大文件。',
+            buttons: [
+              { label: '取消', value: 1 },
+              { label: '仍然打开', value: 0, primary: true }
+            ]
+          })
+          if (choice !== 0) {
+            isLoading.value = false
+            return false
+          }
+        }
+
         // 创建新 tab
         const tab = createTab()
         tab.document = doc
@@ -592,10 +739,15 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
 
-      const result = await window.electronAPI.saveFile(tab.content, tab.document.metadata.title, tab.fileInfo?.path || undefined)
+      const savedContent = tab.content
+      const result = await window.electronAPI.saveFile(savedContent, tab.document.metadata.title, tab.fileInfo?.path || undefined)
 
       if (result.success) {
-        markSaved()
+        if (tab.content === savedContent && tab.fileInfo) {
+          tab.fileInfo.modified = false
+          stateVersion.value++
+          await writeRecoverySnapshot()
+        }
         return true
       } else if (result.error === 'NEW_FILE') {
         return await saveAsFile()
@@ -627,24 +779,26 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
 
-      const result = await window.electronAPI.saveAsFile(tab.content, tab.document.metadata.title, tab.fileInfo?.path || undefined)
+      const savedContent = tab.content
+      const result = await window.electronAPI.saveAsFile(savedContent, tab.document.metadata.title, tab.fileInfo?.path || undefined)
 
       if (result.success && result.data) {
         const savePath = result.data as string
         if (tab.fileInfo) {
           tab.fileInfo.path = savePath
           tab.fileInfo.name = savePath.split(/[/\\]/).pop() || '未命名.mdx'
-          tab.fileInfo.modified = false
+          tab.fileInfo.modified = tab.content !== savedContent
           tab.fileInfo.format = savePath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx'
         } else {
           tab.fileInfo = {
             path: savePath,
             name: savePath.split(/[/\\]/).pop() || '未命名.mdx',
-            modified: false,
+            modified: tab.content !== savedContent,
             format: savePath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx'
           }
         }
         await loadRecentFiles()
+        await writeRecoverySnapshot()
         return true
       } else if (result.error === '用户取消') {
         return false
@@ -675,33 +829,17 @@ export const useFileStore = defineStore('file', () => {
     const tab = activeTab.value
     const title = tab?.document?.metadata.title || '未命名文档'
 
-    if (window.electronAPI?.showMessageBox) {
-      try {
-        const result = await window.electronAPI.showMessageBox({
-          type: 'warning',
-          title: '保存更改',
-          message: `是否将更改保存到"${title}"？`,
-          detail: '如果不保存，你的更改将会丢失。',
-          buttons: ['保存', '不保存', '取消'],
-          defaultId: 0,
-          cancelId: 2,
-          noLink: true
-        })
-        if (result.success && result.data !== undefined) {
-          const choice = result.data as number
-          if (choice === 0) return 'save'
-          if (choice === 1) return 'discard'
-          return 'cancel'
-        }
-      } catch {
-        // 回退
-      }
-    }
-
-    const confirmed = window.confirm(
-      `"${title}" 有未保存的更改，是否保存？\n\n确定 = 不保存，取消 = 返回继续编辑`
-    )
-    return confirmed ? 'discard' : 'cancel'
+    const choice = await requestDialog({
+      title: '保存更改',
+      message: `是否将更改保存到"${title}"？`,
+      detail: '如果不保存，你的更改将会丢失。',
+      buttons: [
+        { label: '取消', value: 2 },
+        { label: '不保存', value: 1 },
+        { label: '保存', value: 0, primary: true }
+      ]
+    })
+    return choice === 0 ? 'save' : choice === 1 ? 'discard' : 'cancel'
   }
 
   async function confirmSaveBeforeAction(): Promise<boolean> {
@@ -901,6 +1039,163 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
+  function normalizeComparablePath(filePath: string): string {
+    const normalized = filePath.replace(/\\/g, '/').replace(/\/+$/, '')
+    return navigator.userAgent.includes('Windows') ? normalized.toLowerCase() : normalized
+  }
+
+  function pdfSourceFromTab(tab: TabInfo): PdfSource {
+    const filePath = tab.fileInfo?.path || ''
+    const fileName = tab.fileInfo?.name || `${tab.document?.metadata.title || '未命名文档'}.mdx`
+    return {
+      filePath,
+      fileName,
+      title: tab.document?.metadata.title || fileName.replace(/\.(mdx|md)$/i, ''),
+      format: tab.fileInfo?.format || 'mdx',
+      content: tab.content,
+      images: {}
+    }
+  }
+
+  async function loadPdfSource(filePath: string): Promise<PdfSource> {
+    const normalizedPath = normalizeComparablePath(filePath)
+    const openTab = tabs.value.find((tab) => tab.fileInfo?.path && normalizeComparablePath(tab.fileInfo.path) === normalizedPath)
+    if (openTab) return pdfSourceFromTab(openTab)
+
+    const result = await window.electronAPI.readPdfSource(filePath)
+    if (!result.success || !result.data) throw new Error(result.error || '读取文档失败')
+    return result.data
+  }
+
+  async function printPdfSource(source: PdfSource, outputDir?: string, relativeSubdir?: string): Promise<string | null> {
+    await preparePdfView(source)
+    try {
+      const result = await window.electronAPI.printPdf(source.fileName, outputDir, relativeSubdir)
+      if (!result.success) {
+        if (result.error === '用户取消') return null
+        throw new Error(result.error || '导出 PDF 失败')
+      }
+      return result.data?.filePath || null
+    } finally {
+      clearPdfView()
+    }
+  }
+
+  async function showPdfSuccess(filePath: string): Promise<void> {
+    await requestDialog({
+      title: '导出 PDF',
+      message: 'PDF 导出成功',
+      detail: filePath,
+      buttons: [{ label: '确定', value: 0, primary: true }]
+    })
+  }
+
+  async function exportTabToPdf(tabId: string): Promise<boolean> {
+    const tab = tabs.value.find((item) => item.id === tabId)
+    if (!tab?.document) return false
+    try {
+      const outputPath = await printPdfSource(pdfSourceFromTab(tab))
+      if (outputPath) {
+        await showPdfSuccess(outputPath)
+      }
+      return outputPath !== null
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '导出 PDF 失败'
+      await window.electronAPI.showMessageBox({
+        type: 'error',
+        title: '导出 PDF 失败',
+        message: error.value
+      })
+      return false
+    }
+  }
+
+  async function exportFileToPdf(filePath: string): Promise<boolean> {
+    try {
+      const source = await loadPdfSource(filePath)
+      const outputPath = await printPdfSource(source)
+      if (outputPath) {
+        await showPdfSuccess(outputPath)
+      }
+      return outputPath !== null
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '导出 PDF 失败'
+      await window.electronAPI.showMessageBox({
+        type: 'error',
+        title: '导出 PDF 失败',
+        message: error.value
+      })
+      return false
+    }
+  }
+
+  async function exportFolderToPdf(folderPath: string): Promise<boolean> {
+    const listResult = await window.electronAPI.listPdfSources(folderPath)
+    if (!listResult.success || !listResult.data) {
+      error.value = listResult.error || '读取文件夹失败'
+      return false
+    }
+    if (listResult.data.length === 0) {
+      await window.electronAPI.showMessageBox({
+        type: 'info',
+        title: '批量导出 PDF',
+        message: '当前文件夹中没有 .md 或 .mdx 文件'
+      })
+      return false
+    }
+
+    const directoryResult = await window.electronAPI.showOpenDialog({
+      title: '选择 PDF 输出文件夹',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (!directoryResult.success || !directoryResult.data?.[0]) return false
+
+    const outputDir = directoryResult.data[0]
+
+    function dirname(p: string): string {
+      const normalized = p.replace(/\\/g, '/')
+      const idx = normalized.lastIndexOf('/')
+      return idx === -1 ? '' : normalized.slice(0, idx)
+    }
+
+    pdfBatchProgress.value = {
+      visible: true,
+      running: true,
+      total: listResult.data.length,
+      completed: 0,
+      successCount: 0,
+      currentFile: '',
+      failures: []
+    }
+
+    for (const entry of listResult.data) {
+      const filePath = entry.absolutePath
+      const relativeSubdir = dirname(entry.relativePath) || undefined
+      const fileName = filePath.split(/[/\\]/).pop() || filePath
+      pdfBatchProgress.value.currentFile = entry.relativePath
+      try {
+        const source = await loadPdfSource(filePath)
+        const outputPath = await printPdfSource(source, outputDir, relativeSubdir)
+        if (outputPath) pdfBatchProgress.value.successCount += 1
+      } catch (err) {
+        pdfBatchProgress.value.failures.push({
+          file: fileName,
+          error: err instanceof Error ? err.message : '导出失败'
+        })
+      } finally {
+        pdfBatchProgress.value.completed += 1
+      }
+    }
+
+    pdfBatchProgress.value.running = false
+    pdfBatchProgress.value.currentFile = ''
+    return pdfBatchProgress.value.successCount > 0
+  }
+
+  function closePdfBatchProgress(): void {
+    if (!pdfBatchProgress.value.running) pdfBatchProgress.value.visible = false
+  }
+
   // ================ 图片 / 资源管理 ================
 
   const imageCompressSettings = ref({
@@ -947,6 +1242,7 @@ export const useFileStore = defineStore('file', () => {
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
         }
+        scheduleRecoverySnapshot()
         return { success: true, path: relativePath, asset }
       } else {
         return { success: false, error: result.error || '添加图片失败' }
@@ -1024,6 +1320,7 @@ export const useFileStore = defineStore('file', () => {
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
         }
+        scheduleRecoverySnapshot()
         return { success: true }
       } else {
         return { success: false, error: result.error || '删除资源失败' }
@@ -1066,6 +1363,7 @@ export const useFileStore = defineStore('file', () => {
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
         }
+        scheduleRecoverySnapshot()
         const { relativePath } = result.data as { relativePath: string }
         return { success: true, path: relativePath }
       } else {
@@ -1155,6 +1453,7 @@ export const useFileStore = defineStore('file', () => {
         tab.fileInfo.modified = true
       }
       stateVersion.value++
+      scheduleRecoverySnapshot()
 
       return { success: true }
     } catch (err) {
@@ -1430,6 +1729,7 @@ export const useFileStore = defineStore('file', () => {
     cursorLine,
     cursorColumn,
     editorResetVersion,
+    pdfBatchProgress,
 
     // 文件夹浏览
     openedFolderPath,
@@ -1461,6 +1761,8 @@ export const useFileStore = defineStore('file', () => {
     setContent,
     updateContent,
     markSaved,
+    writeRecoverySnapshot,
+    cleanupTimers,
 
     // 编辑器操作
     setEditorMode,
@@ -1481,6 +1783,10 @@ export const useFileStore = defineStore('file', () => {
     importMarkdown,
     importFolder,
     exportMarkdown,
+    exportTabToPdf,
+    exportFileToPdf,
+    exportFolderToPdf,
+    closePdfBatchProgress,
 
     // 资源管理
     addImage,
@@ -1491,6 +1797,9 @@ export const useFileStore = defineStore('file', () => {
     detectOrphanAssets,
     cleanupOrphanAssets,
     renameImage,
+    getCachedImage,
+    setCachedImage,
+    clearImageCache,
 
     // 最近文件
     removeRecent,

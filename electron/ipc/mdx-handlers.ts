@@ -17,9 +17,33 @@ import { saveMdx, validateFilePath } from '../mdx/writer'
 import { importAndSaveAsMdx } from '../mdx/import'
 import { exportMdxFile } from '../mdx/export'
 import { addRecentFile as addRecent } from './file-handlers'
+import { clearRecoveryData } from '../recovery'
+import type { RecoverySnapshot } from '../recovery'
 
 // 文件路径 → 临时目录的映射（主进程唯一持有的状态）
 const tempDirsByFile = new Map<string, string>()
+
+export function attachRecoveryAssetData(snapshot: RecoverySnapshot): RecoverySnapshot {
+  return {
+    ...snapshot,
+    tabs: snapshot.tabs.map((tab) => {
+      if (!tab.filePath || tab.format !== 'mdx') return tab
+      const tempDir = tempDirsByFile.get(normalizeFilePath(tab.filePath))
+      const document = tab.document as MdxDocument | null
+      if (!tempDir || !document?.assets) return tab
+
+      const assetData: Record<string, string> = {}
+      for (const asset of [...document.assets.images, ...(document.assets.attachments || [])]) {
+        const fullPath = path.resolve(tempDir, asset.path)
+        const relativePath = path.relative(tempDir, fullPath)
+        if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath) && fs.existsSync(fullPath)) {
+          assetData[asset.path] = fs.readFileSync(fullPath).toString('base64')
+        }
+      }
+      return Object.keys(assetData).length > 0 ? { ...tab, assetData } : tab
+    })
+  }
+}
 
 function normalizeFilePath(filePath: string): string {
   return path.normalize(path.resolve(filePath))
@@ -68,6 +92,7 @@ function writeMdxJsonToTempDir(tempDir: string, document: MdxDocument): void {
 export function registerMdxHandlers(): void {
   // 渲染进程完成所有标签页的保存确认后，允许窗口继续关闭。
   ipcMain.handle(IPC_CHANNELS.APP.CLOSE_CONFIRMED, () => {
+    clearRecoveryData()
     setCloseConfirmed(true)
     const window = BrowserWindow.getFocusedWindow()
     if (window) window.close()
@@ -114,6 +139,15 @@ export function registerMdxHandlers(): void {
       }
 
       const isMarkdown = path.extname(targetPath).toLowerCase() === '.md'
+
+      const MAX_FILE_SIZE = 20 * 1024 * 1024
+      const WARN_FILE_SIZE = 5 * 1024 * 1024
+      const fileSize = fs.statSync(targetPath).size
+      if (fileSize > MAX_FILE_SIZE) {
+        return { success: false, error: '文件过大（超过 20 MB），无法打开' }
+      }
+      const largeFileWarning = fileSize > WARN_FILE_SIZE
+
       if (isMarkdown) {
         const content = fs.readFileSync(targetPath, 'utf-8')
         const document = createMdxDocument(
@@ -123,7 +157,7 @@ export function registerMdxHandlers(): void {
         addRecent(targetPath)
         return {
           success: true,
-          data: { document, filePath: targetPath, format: 'markdown', isNew: false }
+          data: { document, filePath: targetPath, format: 'markdown', isNew: false, largeFileWarning }
         }
       }
 
@@ -136,7 +170,7 @@ export function registerMdxHandlers(): void {
 
       return {
         success: true,
-        data: { document, filePath: targetPath, format: 'mdx', isNew: false }
+        data: { document, filePath: targetPath, format: 'mdx', isNew: false, largeFileWarning }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
@@ -740,6 +774,28 @@ export function registerMdxHandlers(): void {
       return { success: false, error: errorMessage }
     }
   })
+
+  ipcMain.handle(
+    IPC_CHANNELS.MDX.RESTORE_RECOVERY_ASSETS,
+    async (_, filePath: string, document: MdxDocument, assetData: Record<string, string>) => {
+      try {
+        const tempDir = tempDirsByFile.get(normalizeFilePath(filePath))
+        if (!tempDir) return { success: false, error: '找不到文件的临时目录' }
+        for (const [assetPath, base64] of Object.entries(assetData)) {
+          const fullPath = path.resolve(tempDir, assetPath)
+          const relativePath = path.relative(tempDir, fullPath)
+          if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) continue
+          fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+          fs.writeFileSync(fullPath, Buffer.from(base64, 'base64'))
+        }
+        writeMdxJsonToTempDir(tempDir, document)
+        fs.writeFileSync(path.join(tempDir, document.metadata.content_file), document.content, 'utf-8')
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : '恢复资源失败' }
+      }
+    }
+  )
 }
 
 // ─── 窗口关闭 ───

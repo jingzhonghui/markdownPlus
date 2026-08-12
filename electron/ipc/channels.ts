@@ -28,14 +28,24 @@ export const IPC_CHANNELS = {
     REMOVE_ASSET: 'mdx:removeAsset',
     LIST_ASSETS: 'mdx:listAssets',
     ADD_ATTACHMENT: 'mdx:addAttachment',
-    GET_ATTACHMENT: 'mdx:getAttachment'
+    GET_ATTACHMENT: 'mdx:getAttachment',
+    RESTORE_RECOVERY_ASSETS: 'mdx:restoreRecoveryAssets'
+  },
+  PDF: {
+    READ_SOURCE: 'pdf:readSource',
+    LIST_FOLDER: 'pdf:listFolder',
+    PRINT: 'pdf:print'
   },
   APP: {
     PING: 'ping',
     GET_VERSION: 'app:getVersion',
     GET_PLATFORM: 'app:getPlatform',
     CONFIRM_CLOSE: 'app:confirm-close',
-    CLOSE_CONFIRMED: 'app:close-confirmed'
+    CLOSE_CONFIRMED: 'app:close-confirmed',
+    RECOVERY_STATUS: 'recovery:status',
+    RECOVERY_READ: 'recovery:read',
+    RECOVERY_WRITE: 'recovery:write',
+    RECOVERY_CLEAR: 'recovery:clear'
   },
   WINDOW: {
     MINIMIZE: 'window:minimize',

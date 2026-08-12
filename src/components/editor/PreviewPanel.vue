@@ -1,16 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { renderMarkdown } from '../../utils/markdown'
-import { createHighlighter, type Highlighter } from 'shiki'
+import { getHighlighter, type Highlighter } from '../../utils/shiki'
 
-// 图片缓存
-const imageCache = new Map<string, string>()
-
-// Props
 interface Props {
-  /** 是否允许滚动同步 */
   enableScrollSync?: boolean
 }
 
@@ -18,41 +13,155 @@ const props = withDefaults(defineProps<Props>(), {
   enableScrollSync: false
 })
 
-// Emits
 const emit = defineEmits<{
   (e: 'scroll', ratio: number): void
 }>()
 
-// Store
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
 
-// Refs
 const previewRef = ref<HTMLDivElement>()
 const shikiHighlighter = ref<Highlighter | null>(null)
 const isShikiReady = ref(false)
 
-// 防抖计时器
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
-/**
- * 初始化 Shiki 高亮器
- */
+// ────── Task 6: markdown-it render cache ──────
+let lastRenderedContent = ''
+let lastRenderedHtml = ''
+
+const previewHtml = computed(() => {
+  const content = fileStore.fileContent
+  if (content === lastRenderedContent) return lastRenderedHtml
+  const html = renderMarkdown(content, fileStore.imageAssets)
+  lastRenderedContent = content
+  lastRenderedHtml = html
+  return html
+})
+
+// ────── Viewport helpers ──────
+function isInViewport(el: Element, margin: number): boolean {
+  const scrollContainer = previewRef.value?.parentElement
+  if (!scrollContainer) return false
+  const containerRect = scrollContainer.getBoundingClientRect()
+  const rect = el.getBoundingClientRect()
+  return rect.bottom >= containerRect.top - margin &&
+         rect.top <= containerRect.bottom + margin
+}
+
+// ────── Task 7: Shiki viewport-aware highlighting ──────
+async function highlightSingleBlock(pre: Element): Promise<void> {
+  const hl = shikiHighlighter.value
+  if (!hl || pre.hasAttribute('data-shiki-done')) return
+  const codeEl = pre.querySelector('code')
+  if (!codeEl) return
+  const match = codeEl.className.match(/language-([\w+#.-]+)/)
+  const lang = match ? match[1] : 'text'
+  try {
+    const wrapper = document.createElement('div')
+    wrapper.innerHTML = hl.codeToHtml(codeEl.textContent || '', { lang, theme: shikiTheme.value })
+    const newPre = wrapper.querySelector('pre')
+    if (newPre) {
+      newPre.setAttribute('data-shiki-done', '')
+      pre.replaceWith(newPre)
+    }
+  } catch { /* unsupported language */ }
+}
+
+async function highlightVisibleCodeBlocks(): Promise<void> {
+  if (!shikiHighlighter.value || !previewRef.value) return
+  const scrollContainer = previewRef.value.parentElement
+  if (!scrollContainer) return
+  const margin = scrollContainer.clientHeight
+  const pending: Promise<void>[] = []
+  for (const codeBlock of previewRef.value.querySelectorAll('pre code')) {
+    const pre = codeBlock.closest('pre')
+    if (!pre || pre.hasAttribute('data-shiki-done')) continue
+    if (isInViewport(pre, margin)) {
+      pending.push(highlightSingleBlock(pre))
+    }
+  }
+  await Promise.all(pending)
+}
+
+// ────── Task 8: Image lazy loading ──────
+const imageLoadInflight = new Set<string>()
+
+async function loadPreviewImage(img: HTMLImageElement, filePath: string | undefined, cacheKey: string, margin: number): Promise<void> {
+  if (!isInViewport(img, margin)) return
+  try {
+    const result = await fileStore.getImage(img.getAttribute('src')!, filePath)
+    if ((fileStore.currentFile?.path || undefined) !== filePath) return
+    if (result.success && result.data) {
+      fileStore.setCachedImage(cacheKey, result.data)
+      img.src = result.data
+    }
+  } catch { /* ignore */ }
+  imageLoadInflight.delete(cacheKey)
+}
+
+async function loadVisibleImages(): Promise<void> {
+  if (!previewRef.value || !fileStore.document) return
+  const scrollContainer = previewRef.value.parentElement
+  if (!scrollContainer) return
+  const filePath = fileStore.currentFile?.path || undefined
+  const margin = scrollContainer.clientHeight
+  const pending: Promise<void>[] = []
+  for (const img of previewRef.value.querySelectorAll('img')) {
+    const src = img.getAttribute('src')
+    if (!src || /^(https?:|data:)/i.test(src)) continue
+    const cacheKey = `${filePath ?? ''}:${src}`
+    const cached = fileStore.getCachedImage(cacheKey)
+    if (cached) {
+      img.src = cached
+      continue
+    }
+    if (imageLoadInflight.has(cacheKey)) continue
+    if (!isInViewport(img, margin)) continue
+    imageLoadInflight.add(cacheKey)
+    pending.push(loadPreviewImage(img as HTMLImageElement, filePath, cacheKey, margin))
+  }
+  await Promise.all(pending)
+}
+
+// ────── Scroll-driven lazy pipeline ──────
+let scrollLazyTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleScrollLazy(): void {
+  if (scrollLazyTimer) return
+  scrollLazyTimer = setTimeout(async () => {
+    scrollLazyTimer = null
+    await Promise.all([highlightVisibleCodeBlocks(), loadVisibleImages()])
+  }, 150)
+}
+
+function teardownScrollLazy(): void {
+  if (scrollLazyTimer) { clearTimeout(scrollLazyTimer); scrollLazyTimer = null }
+  const scroller = previewRef.value?.parentElement
+  if (scroller) scroller.removeEventListener('scroll', scheduleScrollLazy)
+}
+
+function setupScrollLazy(): void {
+  teardownScrollLazy()
+  const scroller = previewRef.value?.parentElement
+  if (scroller) scroller.addEventListener('scroll', scheduleScrollLazy, { passive: true })
+}
+
+// ────── Render pipeline ──────
+function renderPreview(): void {
+  if (renderDebounceTimer) clearTimeout(renderDebounceTimer)
+  const delay = fileStore.fileContent.length > 100_000 ? 300 : 100
+  renderDebounceTimer = setTimeout(async () => {
+    await highlightVisibleCodeBlocks()
+    await loadVisibleImages()
+    setupScrollLazy()
+  }, delay)
+}
+
 async function initShiki(): Promise<void> {
   try {
-    const highlighter = await createHighlighter({
-      themes: ['github-light', 'github-dark'],
-      langs: [
-        'javascript', 'typescript', 'python', 'go', 'rust', 'java',
-        'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin',
-        'html', 'css', 'scss', 'json', 'yaml', 'xml', 'sql',
-        'bash', 'powershell', 'dockerfile', 'markdown', 'vue',
-        'svelte', 'astro', 'lua', 'perl', 'haskell', 'r', 'dart'
-      ]
-    })
-    shikiHighlighter.value = highlighter
+    shikiHighlighter.value = await getHighlighter()
     isShikiReady.value = true
-    // 重新渲染以应用高亮
     renderPreview()
   } catch (err) {
     console.error('Shiki 初始化失败:', err)
@@ -60,88 +169,18 @@ async function initShiki(): Promise<void> {
   }
 }
 
-/**
- * 获取当前主题对应的 Shiki 主题
- */
-const shikiTheme = computed(() => {
-  return themeStore.isDark ? 'github-dark' : 'github-light'
-})
+const shikiTheme = computed(() => themeStore.isDark ? 'github-dark' : 'github-light')
 
-/**
- * 渲染后的 HTML 内容
- */
-const previewHtml = computed(() => {
-  const content = fileStore.fileContent
-  const assets = fileStore.imageAssets
-  return renderMarkdown(content, assets)
-})
-
-/**
- * 渲染预览（带防抖）
- */
-function renderPreview(): void {
-  if (renderDebounceTimer) {
-    clearTimeout(renderDebounceTimer)
-  }
-  
-  renderDebounceTimer = setTimeout(async () => {
-    await applyCodeHighlight()
-    await loadImages()
-  }, 100)
-}
-
-/**
- * 应用 Shiki 代码高亮
- */
-async function applyCodeHighlight(): Promise<void> {
-  if (!shikiHighlighter.value || !previewRef.value) return
-
-  const codeBlocks = previewRef.value.querySelectorAll('pre code')
-  
-  for (const codeBlock of codeBlocks) {
-    const element = codeBlock as HTMLElement
-    const className = element.className
-    const match = className.match(/language-([\w+#.-]+)/)
-    const lang = match ? match[1] : 'text'
-    const code = element.textContent || ''
-
-    try {
-      const highlighted = shikiHighlighter.value.codeToHtml(code, {
-        lang,
-        theme: shikiTheme.value
-      })
-      
-      // 用 Shiki 的完整 pre 结构替换原节点，保留主题变量和行内 token 样式。
-      const tempDiv = document.createElement('div')
-      tempDiv.innerHTML = highlighted
-      const preElement = tempDiv.querySelector('pre')
-      if (preElement) {
-        const currentPre = element.closest('pre')
-        if (currentPre) currentPre.replaceWith(preElement)
-      }
-    } catch {
-      // 如果语言不支持，保持原样
-    }
-  }
-}
-
-/**
- * 处理滚动事件
- */
+// ────── Scroll sync ──────
 function handleScroll(): void {
   if (!previewRef.value || !props.enableScrollSync) return
-
   const container = previewRef.value.parentElement
   if (!container) return
-
   const maxScroll = container.scrollHeight - container.clientHeight
   const ratio = maxScroll > 0 ? container.scrollTop / maxScroll : 0
   emit('scroll', ratio)
 }
 
-/**
- * 滚动到指定比例位置 (0-1)
- */
 function scrollTo(ratio: number): void {
   const container = previewRef.value?.parentElement
   if (!container) return
@@ -149,13 +188,8 @@ function scrollTo(ratio: number): void {
   container.scrollTop = ratio * maxScroll
 }
 
-/**
- * 滚动到指定行对应的元素
- */
 function scrollToLine(line: number): void {
   if (!previewRef.value) return
-  
-  // 根据行号查找对应元素（这里简化处理，实际可能需要更复杂的映射）
   const headings = previewRef.value.querySelectorAll('h1, h2, h3, h4, h5, h6')
   if (headings.length > 0 && line <= headings.length) {
     const target = headings[line - 1]
@@ -165,82 +199,41 @@ function scrollToLine(line: number): void {
   }
 }
 
-/**
- * 加载并显示图片
- * 将相对路径的图片转换为 Data URL
- */
-async function loadImages(): Promise<void> {
-  if (!previewRef.value || !fileStore.document) return
-
-  const filePath = fileStore.currentFile?.path || undefined
-  const images = previewRef.value.querySelectorAll('img')
-
-  for (const img of images) {
-    // 标签页切换后，放弃旧文档的剩余图片请求
-    if ((fileStore.currentFile?.path || undefined) !== filePath) return
-
-    const src = img.getAttribute('src')
-    if (!src) continue
-
-    // 外部链接直接显示
-    if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
-      continue
-    }
-
-    const cacheKey = `${filePath ?? ''}:${src}`
-
-    // 从缓存获取
-    if (imageCache.has(cacheKey)) {
-      img.src = imageCache.get(cacheKey)!
-      continue
-    }
-
-    // 异步加载图片数据
-    try {
-      const result = await fileStore.getImage(src, filePath)
-      if (result.success && result.data) {
-        // 请求返回期间可能已经切换到其他标签页
-        if ((fileStore.currentFile?.path || undefined) !== filePath) return
-        imageCache.set(cacheKey, result.data)
-        img.src = result.data
-      } else {
-        // 图片加载失败，显示占位符
-        img.alt = img.alt || '图片加载失败'
-      }
-    } catch (err) {
-      console.error('加载图片失败:', src, err)
-    }
-  }
-}
-
-// 监听内容变化
+// ────── Watchers ──────
 watch(() => fileStore.fileContent, () => {
-  nextTick(() => {
-    renderPreview()
-  })
+  teardownScrollLazy()
+  nextTick(() => renderPreview())
 })
 
-// 监听文档变化，清空图片缓存
 watch(() => fileStore.currentFile?.path, (newPath, oldPath) => {
   if (newPath !== oldPath) {
-    imageCache.clear()
+    fileStore.clearImageCache()
+    imageLoadInflight.clear()
   }
 })
 
-// 监听主题变化
 watch(() => themeStore.isDark, () => {
-  nextTick(() => {
-    applyCodeHighlight()
+  nextTick(async () => {
+    // Re-highlight all already-processed blocks
+    if (previewRef.value) {
+      for (const pre of previewRef.value.querySelectorAll('pre[data-shiki-done]')) {
+        pre.removeAttribute('data-shiki-done')
+      }
+    }
+    await highlightVisibleCodeBlocks()
   })
 })
 
-// Lifecycle
+// ────── Lifecycle ──────
 onMounted(() => {
   initShiki()
   renderPreview()
 })
 
-// Expose methods
+onUnmounted(() => {
+  teardownScrollLazy()
+})
+
 defineExpose({
   scrollTo,
   scrollToLine

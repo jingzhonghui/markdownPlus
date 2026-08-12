@@ -34,6 +34,26 @@ export interface MdxOpenResult {
   filePath?: string
   format?: 'mdx' | 'markdown'
   isNew?: boolean
+  largeFileWarning?: boolean
+}
+
+export interface PdfSource {
+  filePath: string
+  fileName: string
+  title: string
+  format: 'mdx' | 'markdown'
+  content: string
+  images: Record<string, string>
+}
+
+export interface PdfPrintResult {
+  filePath: string
+  size: number
+}
+
+export interface PdfSourceEntry {
+  absolutePath: string
+  relativePath: string
 }
 
 // API 类型定义
@@ -60,6 +80,12 @@ export interface ElectronAPI {
   listAssets: (filePath?: string) => Promise<{ success: boolean; data?: { images: ImageAssetInfo[]; attachments: MdxAttachmentAsset[]; all: unknown[] }; error?: string }>
   addAttachment: (filename: string, mimeType: string, data: ArrayBuffer, filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   getAttachment: (attachmentPath: string, filePath?: string) => Promise<{ success: boolean; data?: { buffer: Uint8Array | number[] | { type: string; data: number[] }; mimeType: string }; error?: string }>
+  restoreRecoveryAssets: (filePath: string, document: unknown, assetData: Record<string, string>) => Promise<{ success: boolean; error?: string }>
+
+  // PDF 导出
+  readPdfSource: (filePath: string) => Promise<{ success: boolean; data?: PdfSource; error?: string }>
+  listPdfSources: (folderPath: string) => Promise<{ success: boolean; data?: PdfSourceEntry[]; error?: string }>
+  printPdf: (suggestedFileName: string, outputDir?: string, relativeSubdir?: string) => Promise<{ success: boolean; data?: PdfPrintResult; error?: string }>
 
   // 文件夹操作
   readFolder: (dirPath: string) => Promise<{ success: boolean; data?: FolderItem[]; error?: string }>
@@ -81,6 +107,12 @@ export interface ElectronAPI {
   // 事件监听
   onConfirmClose: (callback: () => void) => () => void
   closeConfirmed: () => void
+
+  // 崩溃恢复
+  recoveryStatus: () => Promise<{ success: boolean; data?: { available: boolean }; error?: string }>
+  readRecovery: () => Promise<{ success: boolean; data?: unknown; error?: string }>
+  writeRecovery: (snapshot: unknown) => Promise<{ success: boolean; error?: string }>
+  clearRecovery: () => Promise<{ success: boolean; error?: string }>
 
   // 文件系统
   revealInExplorer: (filePath: string) => Promise<{ success: boolean; error?: string }>
@@ -118,6 +150,12 @@ const api: ElectronAPI = {
   listAssets: (filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.LIST_ASSETS, filePath),
   addAttachment: (filename, mimeType, data, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_ATTACHMENT, filename, mimeType, data, filePath),
   getAttachment: (attachmentPath, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.GET_ATTACHMENT, attachmentPath, filePath),
+  restoreRecoveryAssets: (filePath, document, assetData) => ipcRenderer.invoke(IPC_CHANNELS.MDX.RESTORE_RECOVERY_ASSETS, filePath, document, assetData),
+
+  // PDF 导出
+  readPdfSource: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.PDF.READ_SOURCE, filePath),
+  listPdfSources: (folderPath) => ipcRenderer.invoke(IPC_CHANNELS.PDF.LIST_FOLDER, folderPath),
+  printPdf: (suggestedFileName, outputDir?, relativeSubdir?) => ipcRenderer.invoke(IPC_CHANNELS.PDF.PRINT, suggestedFileName, outputDir, relativeSubdir),
 
   // 文件夹操作
   readFolder: (dirPath) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.READ, dirPath),
@@ -143,6 +181,10 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.APP.CONFIRM_CLOSE, handler)
   },
   closeConfirmed: () => ipcRenderer.invoke(IPC_CHANNELS.APP.CLOSE_CONFIRMED),
+  recoveryStatus: () => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_STATUS),
+  readRecovery: () => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_READ),
+  writeRecovery: (snapshot) => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_WRITE, snapshot),
+  clearRecovery: () => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_CLEAR),
 
   // 文件系统
   revealInExplorer: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.REVEAL_IN_EXPLORER, filePath),

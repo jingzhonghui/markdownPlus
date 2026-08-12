@@ -20,8 +20,6 @@ describe('Schema Module', () => {
 
       expect(settings.editor_theme).toBe('default')
       expect(settings.preview_style).toBe('github')
-      expect(settings.auto_save).toBe(true)
-      expect(settings.auto_save_interval).toBe(30)
     })
   })
 

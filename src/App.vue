@@ -6,6 +6,9 @@ import AppHeader from './components/layout/AppHeader.vue'
 import SideBar from './components/layout/SideBar.vue'
 import StatusBar from './components/layout/StatusBar.vue'
 import EditorPanel from './components/editor/EditorPanel.vue'
+import ConfirmDialog from './components/common/ConfirmDialog.vue'
+import PdfExportView from './components/export/PdfExportView.vue'
+import PdfBatchProgressDialog from './components/export/PdfBatchProgressDialog.vue'
 
 const themeStore = useThemeStore()
 const fileStore = useFileStore()
@@ -17,6 +20,7 @@ const fileStore = useFileStore()
 async function handleConfirmClose(): Promise<void> {
   const canClose = await fileStore.confirmSaveBeforeClose()
   if (canClose && window.electronAPI?.closeConfirmed) {
+    fileStore.cleanupTimers()
     await window.electronAPI.closeConfirmed()
   }
 }
@@ -24,12 +28,9 @@ async function handleConfirmClose(): Promise<void> {
 let removeConfirmCloseListener: (() => void) | null = null
 
 onMounted(() => {
-  // 初始化主题
   themeStore.initTheme()
-  // 初始化文件状态
-  fileStore.init()
+  void fileStore.init()
 
-  // 监听窗口关闭确认事件
   if (window.electronAPI?.onConfirmClose) {
     removeConfirmCloseListener = window.electronAPI.onConfirmClose(handleConfirmClose)
   }
@@ -39,6 +40,7 @@ onUnmounted(() => {
   if (removeConfirmCloseListener) {
     removeConfirmCloseListener()
   }
+  fileStore.cleanupTimers()
 })
 </script>
 
@@ -64,6 +66,10 @@ onUnmounted(() => {
     
     <!-- 状态栏 -->
     <StatusBar />
+
+    <ConfirmDialog />
+    <PdfExportView />
+    <PdfBatchProgressDialog />
   </div>
 </template>
 

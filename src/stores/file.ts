@@ -92,11 +92,6 @@ export const useFileStore = defineStore('file', () => {
   const cursorLine = ref(1)
   const cursorColumn = ref(1)
   const editorResetVersion = ref(0)
-  const autoSaveEnabled = ref(true)
-  const autoSaveInterval = ref(30)
-  const isAutoSaving = ref(false)
-  const lastAutoSaveAt = ref<string | null>(null)
-  const autoSaveError = ref<string | null>(null)
   const pdfBatchProgress = ref<PdfBatchProgress>({
     visible: false,
     running: false,
@@ -106,7 +101,21 @@ export const useFileStore = defineStore('file', () => {
     currentFile: '',
     failures: []
   })
-  let autoSaveTimer: ReturnType<typeof setInterval> | null = null
+
+  // 共享图片缓存（跨预览面板和 IR 编辑器）
+  const sharedImageCache = new Map<string, string>()
+
+  function getCachedImage(key: string): string | undefined {
+    return sharedImageCache.get(key)
+  }
+
+  function setCachedImage(key: string, dataUrl: string): void {
+    sharedImageCache.set(key, dataUrl)
+  }
+
+  function clearImageCache(): void {
+    sharedImageCache.clear()
+  }
   let recoveryWriteTimer: ReturnType<typeof setTimeout> | null = null
   let recoveryWriteInProgress = false
   let recoveryWritePending = false
@@ -354,16 +363,6 @@ export const useFileStore = defineStore('file', () => {
     scheduleRecoverySnapshot()
   }
 
-  async function saveTabDirect(tab: TabInfo): Promise<boolean> {
-    if (!tab.document || !tab.fileInfo?.path || !tab.fileInfo.modified || !window.electronAPI) return false
-    const savedContent = tab.content
-    const result = await window.electronAPI.saveFile(savedContent, tab.document.metadata.title, tab.fileInfo.path)
-    if (!result.success) return false
-    if (tab.content === savedContent) tab.fileInfo.modified = false
-    stateVersion.value++
-    return true
-  }
-
   async function writeRecoverySnapshot(): Promise<void> {
     if (!window.electronAPI) return
     if (recoveryWriteInProgress) {
@@ -398,7 +397,7 @@ export const useFileStore = defineStore('file', () => {
       if (recoveryWritePending) {
         recoveryWritePending = false
         void writeRecoverySnapshot().catch((err) => {
-          autoSaveError.value = err instanceof Error ? err.message : '写入恢复快照失败'
+          error.value = err instanceof Error ? err.message : '写入恢复快照失败'
         })
       }
     }
@@ -409,45 +408,14 @@ export const useFileStore = defineStore('file', () => {
     recoveryWriteTimer = setTimeout(() => {
       recoveryWriteTimer = null
       void writeRecoverySnapshot().catch((err) => {
-        autoSaveError.value = err instanceof Error ? err.message : '写入恢复快照失败'
+        error.value = err instanceof Error ? err.message : '写入恢复快照失败'
       })
     }, 1000)
   }
 
-  async function autoSave(): Promise<void> {
-    if (!autoSaveEnabled.value || isAutoSaving.value || tabs.value.length === 0) return
-    isAutoSaving.value = true
-    autoSaveError.value = null
-    try {
-      const dirtyTabs = tabs.value.filter((tab) => tab.document && tab.fileInfo?.path && tab.fileInfo.modified && tab.document.settings.auto_save !== false)
-      let savedCount = 0
-      let failedCount = 0
-      for (const tab of dirtyTabs) {
-        if (await saveTabDirect(tab)) savedCount++
-        else failedCount++
-      }
-      await writeRecoverySnapshot()
-      if (savedCount > 0) lastAutoSaveAt.value = new Date().toISOString()
-      if (failedCount > 0) autoSaveError.value = `${failedCount} 个文档自动保存失败`
-    } catch (error) {
-      autoSaveError.value = error instanceof Error ? error.message : '自动保存失败'
-      await writeRecoverySnapshot()
-    } finally {
-      isAutoSaving.value = false
-    }
-  }
-
-  function stopAutoSave(): void {
-    if (autoSaveTimer) clearInterval(autoSaveTimer)
-    autoSaveTimer = null
+  function cleanupTimers(): void {
     if (recoveryWriteTimer) clearTimeout(recoveryWriteTimer)
     recoveryWriteTimer = null
-  }
-
-  function startAutoSave(): void {
-    stopAutoSave()
-    if (typeof window === 'undefined' || !autoSaveEnabled.value) return
-    autoSaveTimer = setInterval(() => { void autoSave() }, autoSaveInterval.value * 1000)
   }
 
   async function restoreRecovery(): Promise<void> {
@@ -484,7 +452,7 @@ export const useFileStore = defineStore('file', () => {
         if (existing.fileInfo) existing.fileInfo.modified = true
         if (recovered.assetData && recovered.filePath) {
           const restoreResult = await window.electronAPI.restoreRecoveryAssets(recovered.filePath, recovered.document, recovered.assetData)
-          if (!restoreResult.success) autoSaveError.value = restoreResult.error || '恢复资源失败'
+          if (!restoreResult.success) error.value = restoreResult.error || '恢复资源失败'
         }
         if (recovered.id === snapshot.activeTabId) recoveredActiveTabId = existing.id
         continue
@@ -632,7 +600,6 @@ export const useFileStore = defineStore('file', () => {
     await loadRecentFiles()
     await restoreSession()
     await restoreRecovery()
-    startAutoSave()
   }
 
   async function newFile(): Promise<boolean> {
@@ -709,6 +676,22 @@ export const useFileStore = defineStore('file', () => {
         if (existing) {
           activeTabId.value = existing.id
           return true
+        }
+
+        if (result.data.largeFileWarning) {
+          const choice = await requestDialog({
+            title: '大文件警告',
+            message: '此文件超过 5 MB，打开和编辑可能会变慢。',
+            detail: '建议在外部编辑器中处理大文件。',
+            buttons: [
+              { label: '取消', value: 1 },
+              { label: '仍然打开', value: 0, primary: true }
+            ]
+          })
+          if (choice !== 0) {
+            isLoading.value = false
+            return false
+          }
         }
 
         // 创建新 tab
@@ -1746,11 +1729,6 @@ export const useFileStore = defineStore('file', () => {
     cursorLine,
     cursorColumn,
     editorResetVersion,
-    autoSaveEnabled,
-    autoSaveInterval,
-    isAutoSaving,
-    lastAutoSaveAt,
-    autoSaveError,
     pdfBatchProgress,
 
     // 文件夹浏览
@@ -1783,10 +1761,8 @@ export const useFileStore = defineStore('file', () => {
     setContent,
     updateContent,
     markSaved,
-    autoSave,
-    startAutoSave,
-    stopAutoSave,
     writeRecoverySnapshot,
+    cleanupTimers,
 
     // 编辑器操作
     setEditorMode,
@@ -1821,6 +1797,9 @@ export const useFileStore = defineStore('file', () => {
     detectOrphanAssets,
     cleanupOrphanAssets,
     renameImage,
+    getCachedImage,
+    setCachedImage,
+    clearImageCache,
 
     // 最近文件
     removeRecent,

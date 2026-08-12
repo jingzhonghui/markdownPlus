@@ -139,6 +139,15 @@ export function registerMdxHandlers(): void {
       }
 
       const isMarkdown = path.extname(targetPath).toLowerCase() === '.md'
+
+      const MAX_FILE_SIZE = 20 * 1024 * 1024
+      const WARN_FILE_SIZE = 5 * 1024 * 1024
+      const fileSize = fs.statSync(targetPath).size
+      if (fileSize > MAX_FILE_SIZE) {
+        return { success: false, error: '文件过大（超过 20 MB），无法打开' }
+      }
+      const largeFileWarning = fileSize > WARN_FILE_SIZE
+
       if (isMarkdown) {
         const content = fs.readFileSync(targetPath, 'utf-8')
         const document = createMdxDocument(
@@ -148,7 +157,7 @@ export function registerMdxHandlers(): void {
         addRecent(targetPath)
         return {
           success: true,
-          data: { document, filePath: targetPath, format: 'markdown', isNew: false }
+          data: { document, filePath: targetPath, format: 'markdown', isNew: false, largeFileWarning }
         }
       }
 
@@ -161,7 +170,7 @@ export function registerMdxHandlers(): void {
 
       return {
         success: true,
-        data: { document, filePath: targetPath, format: 'mdx', isNew: false }
+        data: { document, filePath: targetPath, format: 'mdx', isNew: false, largeFileWarning }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'

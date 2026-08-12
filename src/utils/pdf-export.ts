@@ -1,28 +1,10 @@
 import { nextTick, shallowRef } from 'vue'
-import { createHighlighter, type Highlighter } from 'shiki'
+import { getHighlighter } from './shiki'
 import { renderMarkdown } from './markdown'
 import type { PdfSource } from '../types/pdf'
 
 export const pdfSource = shallowRef<PdfSource | null>(null)
 export const pdfHtml = shallowRef('')
-
-let highlighterPromise: Promise<Highlighter> | null = null
-
-function getHighlighter(): Promise<Highlighter> {
-  if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({
-      themes: ['github-light'],
-      langs: [
-        'javascript', 'typescript', 'python', 'go', 'rust', 'java',
-        'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin',
-        'html', 'css', 'scss', 'json', 'yaml', 'xml', 'sql',
-        'bash', 'powershell', 'dockerfile', 'markdown', 'vue',
-        'svelte', 'astro', 'lua', 'perl', 'haskell', 'r', 'dart'
-      ]
-    })
-  }
-  return highlighterPromise
-}
 
 async function highlightCode(container: HTMLElement): Promise<void> {
   const highlighter = await getHighlighter()

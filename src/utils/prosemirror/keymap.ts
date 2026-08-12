@@ -15,7 +15,12 @@ import {
   joinDown,
   joinUp,
   lift,
-  selectParentNode
+  selectParentNode,
+  deleteSelection,
+  joinBackward,
+  joinForward,
+  selectNodeBackward,
+  selectNodeForward
 } from 'prosemirror-commands'
 import {
   wrapInList,
@@ -372,6 +377,60 @@ export function buildKeymap(schema: Schema): Record<string, Command> {
       customSplitListItem(schema.nodes.list_item),
       customSplitListItem(schema.nodes.task_item),
       handleEnter(schema)
+    ),
+
+    // Backspace — 代码块为空时删除代码块，否则在句首时将代码块替换为段落
+    'Backspace': chainCommands(
+      deleteSelection,
+      (state, dispatch) => {
+        const { $from } = state.selection
+        if ($from.parent.type.name === 'code_block') {
+          if ($from.parent.content.size === 0) {
+            if (dispatch) {
+              const start = $from.before($from.depth)
+              const end = $from.after($from.depth)
+              const tr = state.tr.delete(start, end)
+              tr.setSelection(TextSelection.create(tr.doc, Math.max(0, start - 1)))
+              dispatch(tr)
+            }
+            return true
+          }
+          if ($from.parentOffset === 0) {
+            if (dispatch) {
+              const start = $from.before($from.depth)
+              const end = $from.after($from.depth)
+              const tr = state.tr.replaceWith(start, end, schema.nodes.paragraph.create())
+              tr.setSelection(TextSelection.create(tr.doc, start + 1))
+              dispatch(tr)
+            }
+            return true
+          }
+        }
+        return false
+      },
+      joinBackward,
+      selectNodeBackward
+    ),
+
+    // Delete — 代码块末尾删除时替换为段落
+    'Delete': chainCommands(
+      deleteSelection,
+      (state, dispatch) => {
+        const { $from } = state.selection
+        if ($from.parent.type.name === 'code_block' && $from.parentOffset === $from.parent.content.size) {
+          if (dispatch) {
+            const start = $from.before($from.depth)
+            const end = $from.after($from.depth)
+            const tr = state.tr.replaceWith(start, end, schema.nodes.paragraph.create())
+            tr.setSelection(TextSelection.create(tr.doc, start + 1))
+            dispatch(tr)
+          }
+          return true
+        }
+        return false
+      },
+      joinForward,
+      selectNodeForward
     ),
 
     // Tab 缩进

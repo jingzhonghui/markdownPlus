@@ -34,6 +34,7 @@ export interface MdxOpenResult {
   filePath?: string
   format?: 'mdx' | 'markdown'
   isNew?: boolean
+  largeFileWarning?: boolean
 }
 
 export interface PdfSource {

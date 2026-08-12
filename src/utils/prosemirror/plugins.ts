@@ -30,10 +30,12 @@ export const pluginsKey = {
  */
 export function createPlugins(schema: Schema): Plugin[] {
   const plugins: Plugin[] = [
-    // 末尾代码块后始终保留可继续输入的空段落
+    // 末尾代码块/表格后始终保留可继续输入的空段落
     new Plugin({
       appendTransaction(_transactions, _oldState, newState) {
-        if (newState.doc.lastChild?.type.name !== 'code_block') return null
+        const lastChild = newState.doc.lastChild
+        if (!lastChild) return null
+        if (lastChild.type.name !== 'code_block' && lastChild.type.name !== 'table') return null
         return newState.tr
           .insert(newState.doc.content.size, schema.nodes.paragraph.create())
           .setMeta('addToHistory', false)

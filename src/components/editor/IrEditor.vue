@@ -35,7 +35,7 @@ import { wrapInList } from 'prosemirror-schema-list'
 import type { Node as ProseMirrorNode } from 'prosemirror-model'
 import katex from 'katex'
 import type { NodeView, ViewMutationRecord } from 'prosemirror-view'
-import { createHighlighter, type Highlighter } from 'shiki'
+import { getHighlighter, type Highlighter } from '../../utils/shiki'
 import EditorContextMenu from '../common/EditorContextMenu.vue'
 import type { EditorContextMenuItem } from '../../types/editor-context-menu'
 import {
@@ -118,7 +118,6 @@ const viewRef = shallowRef<EditorView | null>(null)
 let editorTabId: string | null = null
 const isDragging = ref(false)
 const showMarkers = ref(false)
-const imageCache = new Map<string, string>()
 const shikiHighlighter = shallowRef<Highlighter | null>(null)
 let highlightRequest = 0
 
@@ -226,7 +225,10 @@ class CodeBlockView implements NodeView {
   }
 
   ignoreMutation(mutation: ViewMutationRecord): boolean {
-    return mutation.type !== 'selection' && !this.contentDOM.contains(mutation.target)
+    // contentDOM 内的文本变更必须交给 ProseMirror 处理，否则空代码块中
+    // 输入回车、删除到空等操作无法同步到文档模型。
+    if (mutation.type === 'selection') return true
+    return !this.contentDOM.contains(mutation.target)
   }
 }
 
@@ -276,7 +278,6 @@ async function updateCodeHighlights(view: EditorView): Promise<void> {
   if (!highlighter || view.isDestroyed) return
 
   const request = ++highlightRequest
-  const decorations: Decoration[] = []
   const theme = themeStore.isDark ? 'github-dark' : 'github-light'
   const codeBlocks: Array<{ node: typeof view.state.doc; pos: number }> = []
 
@@ -284,37 +285,51 @@ async function updateCodeHighlights(view: EditorView): Promise<void> {
     if (node.type.name === 'code_block') codeBlocks.push({ node: node as typeof view.state.doc, pos })
   })
 
-  for (const { node, pos } of codeBlocks) {
-    const language = normalizeCodeLanguage(node.attrs.language || 'text')
-    const code = node.textContent
-    try {
-      const tokenLines = await highlighter.codeToTokensBase(code, {
-        lang: language as import('shiki').BundledLanguage,
-        theme
-      }) as Array<Array<{
-        content: string
-        color?: string
-        fontStyle?: number
-      }>>
-      let offset = 0
+  const decorations: Decoration[] = []
+  const BATCH_SIZE = 4
 
-      for (const line of tokenLines) {
-        for (const token of line) {
-          const length = token.content.length
-          if (length > 0 && token.color) {
-            const styles = [`color: ${token.color}`]
-            if (token.fontStyle === 1 || token.fontStyle === 3) styles.push('font-style: italic')
-            if (token.fontStyle === 2 || token.fontStyle === 3) styles.push('font-weight: 700')
-            decorations.push(Decoration.inline(pos + 1 + offset, pos + 1 + offset + length, {
-              style: styles.join('; ')
-            }))
+  for (let i = 0; i < codeBlocks.length; i += BATCH_SIZE) {
+    if (request !== highlightRequest || view.isDestroyed) return
+    const batch = codeBlocks.slice(i, i + BATCH_SIZE)
+
+    for (const { node, pos } of batch) {
+      const language = normalizeCodeLanguage(node.attrs.language || 'text')
+      const code = node.textContent
+      try {
+        const tokenLines = await highlighter.codeToTokensBase(code, {
+          lang: language as import('shiki').BundledLanguage,
+          theme
+        }) as Array<Array<{
+          content: string
+          color?: string
+          fontStyle?: number
+        }>>
+        let offset = 0
+
+        for (const line of tokenLines) {
+          for (const token of line) {
+            const length = token.content.length
+            if (length > 0 && token.color) {
+              const styles = [`color: ${token.color}`]
+              if (token.fontStyle === 1 || token.fontStyle === 3) styles.push('font-style: italic')
+              if (token.fontStyle === 2 || token.fontStyle === 3) styles.push('font-weight: 700')
+              decorations.push(Decoration.inline(pos + 1 + offset, pos + 1 + offset + length, {
+                style: styles.join('; ')
+              }))
+            }
+            offset += length
           }
-          offset += length
+          offset += 1
         }
-        offset += 1
+      } catch {
+        // 未知语言保持编辑器默认文本颜色。
       }
-    } catch {
-      // 未知语言保持编辑器默认文本颜色。
+    }
+
+    // 批间让出事件循环，保持 UI 响应
+    if (i + BATCH_SIZE < codeBlocks.length) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      if (request !== highlightRequest || view.isDestroyed) return
     }
   }
 
@@ -324,16 +339,7 @@ async function updateCodeHighlights(view: EditorView): Promise<void> {
 
 async function initShiki(): Promise<void> {
   try {
-    shikiHighlighter.value = await createHighlighter({
-      themes: ['github-light', 'github-dark'],
-      langs: [
-        'javascript', 'typescript', 'python', 'go', 'rust', 'java',
-        'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin',
-        'html', 'css', 'scss', 'json', 'yaml', 'xml', 'sql',
-        'bash', 'powershell', 'dockerfile', 'markdown', 'vue',
-        'svelte', 'astro', 'lua', 'perl', 'haskell', 'r', 'dart'
-      ]
-    })
+    shikiHighlighter.value = await getHighlighter()
     if (viewRef.value) void updateCodeHighlights(viewRef.value)
   } catch (error) {
     console.error('IR 模式代码高亮初始化失败:', error)
@@ -581,6 +587,27 @@ function createContextMenuPlugin(): ProseMirrorPlugin {
   })
 }
 
+// ────── 序列化节流（避免每次按键都全文档序列化） ──────
+let serializeScheduled = false
+let lastSerializeTs = 0
+
+function scheduleSerialize(state: { doc: ProseMirrorNode }): void {
+  if (isUpdatingFromStore) return
+  const now = performance.now()
+  if (serializeScheduled && now - lastSerializeTs < 50) return
+  serializeScheduled = true
+  lastSerializeTs = now
+  requestAnimationFrame(() => {
+    serializeScheduled = false
+    const markdown = serializeMarkdown(state.doc)
+    const currentContent = (fileStore.fileContent || '').replace(/\n+$/, '')
+    const newMarkdown = markdown.replace(/\n+$/, '')
+    if (currentContent !== newMarkdown) {
+      fileStore.updateContent(markdown)
+    }
+  })
+}
+
 function createEditorState(content: string): EditorState {
   const doc = parseMarkdown(content || '')
   const plugins = [
@@ -591,13 +618,7 @@ function createEditorState(content: string): EditorState {
       handlePasteImage(view, file)
     }),
     createDocumentChangePlugin((state) => {
-      if (isUpdatingFromStore) return
-      const markdown = serializeMarkdown(state.doc)
-      const currentContent = (fileStore.fileContent || '').replace(/\n+$/, '')
-      const newMarkdown = markdown.replace(/\n+$/, '')
-      if (currentContent !== newMarkdown) {
-        fileStore.updateContent(markdown)
-      }
+      scheduleSerialize(state)
     }),
     createIRPlugin(),
     createCodeHighlightPlugin(),
@@ -638,6 +659,7 @@ function initEditor(): void {
       if (!view) return
       view.updateState(view.state.apply(tr))
       syncShowMarkers()
+      if (!view.hasFocus()) view.focus()
     },
     attributes: {
       class: 'ir-editor',
@@ -714,28 +736,31 @@ async function loadEditorImages(): Promise<void> {
   if (!editorRef.value) return
 
   const filePath = fileStore.currentFile?.path || undefined
-  for (const img of editorRef.value.querySelectorAll('img')) {
-    // 标签页切换后，放弃旧文档的剩余图片请求
-    if ((fileStore.currentFile?.path || undefined) !== filePath) return
+  const pending: Promise<void>[] = []
 
+  for (const img of editorRef.value.querySelectorAll('img')) {
     const src = img.getAttribute('src')
     if (!src || src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) continue
 
     const cacheKey = `${filePath ?? ''}:${src}`
-    if (imageCache.has(cacheKey)) {
-      img.src = imageCache.get(cacheKey)!
+    const cached = fileStore.getCachedImage(cacheKey)
+    if (cached) {
+      img.src = cached
       continue
     }
-    try {
-      const result = await fileStore.getImage(src, filePath)
-      if (result.success && result.data) {
-        // 请求返回期间可能已经切换到其他标签页
+    pending.push((async () => {
+      try {
+        const result = await fileStore.getImage(src, filePath)
         if ((fileStore.currentFile?.path || undefined) !== filePath) return
-        imageCache.set(cacheKey, result.data)
-        img.src = result.data
-      }
-    } catch { /* ignore */ }
+        if (result.success && result.data) {
+          fileStore.setCachedImage(cacheKey, result.data)
+          img.src = result.data
+        }
+      } catch { /* ignore */ }
+    })())
   }
+
+  await Promise.all(pending)
 }
 
 watch([activeTabId, fileContent], ([newTabId, newContent], [oldTabId]) => {
@@ -768,7 +793,7 @@ watch(() => themeStore.currentTheme, () => {
 })
 
 watch(() => fileStore.currentFile?.path, (newPath, oldPath) => {
-  if (newPath !== oldPath) { imageCache.clear(); nextTick(() => loadEditorImages()) }
+  if (newPath !== oldPath) { fileStore.clearImageCache(); nextTick(() => loadEditorImages()) }
 })
 
 // ========== 工具栏事件处理 ==========
@@ -1139,7 +1164,13 @@ defineExpose({
   padding: 2px 6px; border-radius: 3px;
   font-size: 0.9em; font-family: var(--font-mono);
 }
-.ir-editor-wrapper :deep(.ProseMirror pre code) { background: none; padding: 0; }
+.ir-editor-wrapper :deep(.ProseMirror pre code) {
+  background: none;
+  padding: 0;
+  display: block;
+  min-height: 1.2em;
+  white-space: pre-wrap;
+}
 .ir-editor-wrapper :deep(.ProseMirror img) {
   max-width: 100%; height: auto; border-radius: 4px; cursor: pointer;
 }

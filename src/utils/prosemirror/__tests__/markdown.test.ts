@@ -55,4 +55,25 @@ describe('Markdown ↔ ProseMirror conversion', () => {
     expect(state.doc.child(0).textContent).toBe('const value = 1\n')
     expect(state.doc.child(1).type.name).toBe('paragraph')
   })
+
+  it('serializes code block content exactly after parse', () => {
+    const content = '```\n// nihao\n```'
+    expect(serializeMarkdown(parseMarkdown(content))).toBe(content)
+  })
+
+  it('deletes empty code block on Backspace', () => {
+    const doc = parseMarkdown('```\n```')
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1)
+    })
+
+    const handled = buildKeymap(markdownSchema).Backspace(state, (transaction) => {
+      state = state.apply(transaction)
+    })
+
+    expect(handled).toBe(true)
+    expect(state.doc.childCount).toBe(1)
+    expect(state.doc.firstChild?.type.name).toBe('paragraph')
+  })
 })

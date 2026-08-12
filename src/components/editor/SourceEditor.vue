@@ -66,10 +66,15 @@ function createExtensions(): Extension[] {
     highlightSelectionMatches(),
     closeBrackets(),
 
-    // Markdown 语言支持
+    // Markdown 语言支持（仅预载常用语法，减少初始化体积）
     markdown({
       base: markdownLanguage,
-      codeLanguages: languages
+      codeLanguages: languages.filter(
+        (d) =>
+          ['javascript', 'typescript', 'python', 'go', 'rust', 'java',
+           'c', 'cpp', 'csharp', 'html', 'css', 'json', 'yaml', 'xml', 'sql',
+           'bash', 'powershell', 'ruby', 'php', 'swift', 'kotlin', 'markdown'].includes(d.name)
+      )
     }),
 
     // 自动补全
@@ -967,19 +972,33 @@ onUnmounted(() => {
   destroyEditor()
 })
 
-// Watch for content changes from store
+// Watch for content changes from store (incremental diff sync)
 watch(() => fileStore.fileContent, (newContent) => {
   const view = editorView.value
   if (!view) return
-  
+
   const currentContent = view.state.doc.toString()
-  if (currentContent !== newContent) {
-    isSyncing = true
-    view.dispatch({
-      changes: { from: 0, to: currentContent.length, insert: newContent }
-    })
-    isSyncing = false
-  }
+  if (currentContent === newContent) return
+
+  isSyncing = true
+
+  let prefixLen = 0
+  const minLen = Math.min(currentContent.length, newContent.length)
+  while (prefixLen < minLen && currentContent[prefixLen] === newContent[prefixLen]) prefixLen++
+  let suffixLen = 0
+  while (
+    suffixLen < minLen - prefixLen &&
+    currentContent[currentContent.length - 1 - suffixLen] === newContent[newContent.length - 1 - suffixLen]
+  ) suffixLen++
+
+  view.dispatch({
+    changes: {
+      from: prefixLen,
+      to: currentContent.length - suffixLen,
+      insert: newContent.slice(prefixLen, newContent.length - suffixLen)
+    }
+  })
+  isSyncing = false
 })
 
 // Watch for theme changes

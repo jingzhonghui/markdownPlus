@@ -20,31 +20,17 @@ const fileStore = useFileStore()
 async function handleConfirmClose(): Promise<void> {
   const canClose = await fileStore.confirmSaveBeforeClose()
   if (canClose && window.electronAPI?.closeConfirmed) {
-    fileStore.stopAutoSave()
+    fileStore.cleanupTimers()
     await window.electronAPI.closeConfirmed()
   }
 }
 
 let removeConfirmCloseListener: (() => void) | null = null
-let cleanupAutoSaveListeners: (() => void) | null = null
 
 onMounted(() => {
-  // 初始化主题
   themeStore.initTheme()
-  // 初始化文件状态
   void fileStore.init()
 
-  const saveOnBackground = (): void => {
-    void fileStore.autoSave()
-  }
-  document.addEventListener('visibilitychange', saveOnBackground)
-  window.addEventListener('blur', saveOnBackground)
-  cleanupAutoSaveListeners = () => {
-    document.removeEventListener('visibilitychange', saveOnBackground)
-    window.removeEventListener('blur', saveOnBackground)
-  }
-
-  // 监听窗口关闭确认事件
   if (window.electronAPI?.onConfirmClose) {
     removeConfirmCloseListener = window.electronAPI.onConfirmClose(handleConfirmClose)
   }
@@ -54,8 +40,7 @@ onUnmounted(() => {
   if (removeConfirmCloseListener) {
     removeConfirmCloseListener()
   }
-  cleanupAutoSaveListeners?.()
-  fileStore.stopAutoSave()
+  fileStore.cleanupTimers()
 })
 </script>
 

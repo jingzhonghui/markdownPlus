@@ -51,8 +51,6 @@ export interface MdxAssets {
 export interface MdxSettings {
   editor_theme: EditorTheme
   preview_style: PreviewStyle
-  auto_save?: boolean
-  auto_save_interval?: number // 秒
 }
 
 /** MDX 文件元数据 */
@@ -108,9 +106,7 @@ export interface FileInfo {
 export function createDefaultSettings(): MdxSettings {
   return {
     editor_theme: 'default',
-    preview_style: 'github',
-    auto_save: true,
-    auto_save_interval: 30
+    preview_style: 'github'
   }
 }
 

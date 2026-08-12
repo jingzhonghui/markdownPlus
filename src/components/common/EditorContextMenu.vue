@@ -21,7 +21,6 @@ const emit = defineEmits<{
       :style="{ left: `${props.x}px`, top: `${props.y}px` }"
       @click.stop
       @contextmenu.prevent.stop
-      @mouseleave="emit('close')"
     >
       <template
         v-for="(item, index) in props.items"

@@ -28,7 +28,7 @@ import {
   createPastePlugin,
 } from '../../utils/prosemirror'
 import type { IRPluginState } from '../../utils/prosemirror'
-import { NodeSelection, TextSelection } from 'prosemirror-state'
+import { NodeSelection, Selection, TextSelection } from 'prosemirror-state'
 import { wrapIn, setBlockType } from 'prosemirror-commands'
 import { undo, redo } from 'prosemirror-history'
 import { wrapInList } from 'prosemirror-schema-list'
@@ -113,6 +113,7 @@ class MathBlockView implements NodeView {
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
 const { fileContent, activeTabId } = storeToRefs(fileStore)
+const containerRef = ref<HTMLDivElement>()
 const editorRef = ref<HTMLDivElement>()
 const viewRef = shallowRef<EditorView | null>(null)
 let editorTabId: string | null = null
@@ -501,23 +502,62 @@ function deleteSelectedImage(view: EditorView): void {
   }
 }
 
+function moveSelectionToEnd(view: EditorView): void {
+  view.dispatch(view.state.tr.setSelection(Selection.atEnd(view.state.doc)))
+  view.focus()
+}
+
+function isOutsideProseMirror(event: Event): boolean {
+  const view = viewRef.value
+  return !!view && !view.dom.contains(event.target as Node)
+}
+
+function handleEditorBlankMouseDown(event: MouseEvent): void {
+  if (event.button !== 0 || !isOutsideProseMirror(event)) return
+  const view = viewRef.value
+  if (!view) return
+  event.preventDefault()
+  moveSelectionToEnd(view)
+}
+
+function handleEditorBlankContextMenu(event: MouseEvent): void {
+  if (!isOutsideProseMirror(event)) return
+  const view = viewRef.value
+  if (!view) return
+
+  event.preventDefault()
+  window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))
+  moveSelectionToEnd(view)
+  contextMenu.items = buildGeneralMenuItems(view)
+  contextMenu.type = 'general'
+  const pos = calculateMenuPosition(event.clientX, event.clientY, 170)
+  contextMenu.x = pos.x
+  contextMenu.y = pos.y
+  contextMenu.visible = true
+}
+
 // 右键菜单插件
 function createContextMenuPlugin(): ProseMirrorPlugin {
   return new ProseMirrorPlugin({
     props: {
       handleDOMEvents: {
         mousedown: (view, event) => {
-          if ((event as MouseEvent).button !== 0) return false
-          const target = event.target as HTMLElement
-          if (!target.closest('img')) return false
           const mouseEvent = event as MouseEvent
-          const coords = view.posAtCoords({ left: mouseEvent.clientX, top: mouseEvent.clientY })
-          if (!coords) return false
-          const node = view.state.doc.nodeAt(coords.pos) || view.state.doc.nodeAt(coords.pos - 1)
-          if (node?.type.name !== 'image') return false
-          const imagePos = view.state.doc.nodeAt(coords.pos)?.type.name === 'image' ? coords.pos : coords.pos - 1
-          view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, imagePos)))
-          return true
+          if (mouseEvent.button !== 0) return false
+          const target = event.target as HTMLElement
+
+          // 点击图片：选中图片节点
+          if (target.closest('img')) {
+            const coords = view.posAtCoords({ left: mouseEvent.clientX, top: mouseEvent.clientY })
+            if (!coords) return false
+            const node = view.state.doc.nodeAt(coords.pos) || view.state.doc.nodeAt(coords.pos - 1)
+            if (node?.type.name !== 'image') return false
+            const imagePos = view.state.doc.nodeAt(coords.pos)?.type.name === 'image' ? coords.pos : coords.pos - 1
+            view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, imagePos)))
+            return true
+          }
+
+          return false
         },
         contextmenu: (view, event) => {
           const target = event.target as HTMLElement
@@ -559,14 +599,14 @@ function createContextMenuPlugin(): ProseMirrorPlugin {
 
             contextMenu.items = buildTableMenuItems(view)
             contextMenu.type = 'table'
-            const pos = calculateMenuPosition(event.clientX, event.clientY, 240) // 表格菜单约10项
+            const pos = calculateMenuPosition(event.clientX, event.clientY, 240)
             contextMenu.x = pos.x
             contextMenu.y = pos.y
             contextMenu.visible = true
             return true
           }
 
-          // 检查是否在编辑器内容区域
+          // 编辑器内容区域保持原有光标定位逻辑。
           if (target.closest('.ProseMirror')) {
             event.preventDefault()
             window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))
@@ -917,6 +957,11 @@ onMounted(() => {
     el.addEventListener('drop', handleDrop)
     el.addEventListener('paste', handlePaste)
   }
+  const container = containerRef.value
+  if (container) {
+    container.addEventListener('mousedown', handleEditorBlankMouseDown)
+    container.addEventListener('contextmenu', handleEditorBlankContextMenu)
+  }
   window.addEventListener('editor:format', handleFormatEvent)
   window.addEventListener('editor:heading', handleHeadingEvent)
   window.addEventListener('editor:link', handleLinkEvent)
@@ -954,6 +999,11 @@ onUnmounted(() => {
     el.removeEventListener('drop', handleDrop)
     el.removeEventListener('paste', handlePaste)
   }
+  const container = containerRef.value
+  if (container) {
+    container.removeEventListener('mousedown', handleEditorBlankMouseDown)
+    container.removeEventListener('contextmenu', handleEditorBlankContextMenu)
+  }
   window.removeEventListener('editor:format', handleFormatEvent)
   window.removeEventListener('editor:heading', handleHeadingEvent)
   window.removeEventListener('editor:link', handleLinkEvent)
@@ -984,6 +1034,7 @@ defineExpose({
 
 <template>
   <div
+    ref="containerRef"
     class="ir-container"
     :class="{ dragging: isDragging, 'ir-show-markers': showMarkers }"
   >

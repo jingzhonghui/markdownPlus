@@ -29,6 +29,7 @@ import {
   sinkListItem
 } from 'prosemirror-schema-list'
 import { undo, redo } from 'prosemirror-history'
+import { isInTable } from 'prosemirror-tables'
 import { markdownSchema } from './schema'
 
 /**
@@ -226,9 +227,9 @@ function customSplitListItem(itemType: NodeType): Command {
  * 回车键处理
  * 在任务列表中点击复选框时切换状态
  */
-function handleEnter(_schema: Schema): Command {
+function handleEnter(schema: Schema): Command {
   return chainCommands(
-    convertBlockMarkerOnEnter(_schema),
+    convertBlockMarkerOnEnter(schema),
     (state, dispatch) => {
       if (state.selection.$from.parent.type.name === 'code_block') {
         if (dispatch) {
@@ -241,6 +242,42 @@ function handleEnter(_schema: Schema): Command {
     },
     exitCode
   )
+}
+
+/**
+ * 表格最后一行按回车时，跳出表格并在下方创建新段落
+ */
+function exitTableOnLastRow(schema: Schema): Command {
+  return (state, dispatch) => {
+    if (!isInTable(state)) return false
+    const { $from } = state.selection
+
+    // 向上找到 table_row
+    let rowDepth = -1
+    for (let i = $from.depth; i > 0; i--) {
+      if ($from.node(i).type.name === 'table_row') {
+        rowDepth = i
+        break
+      }
+    }
+    if (rowDepth === -1) return false
+
+    const tableDepth = rowDepth - 1
+    const tableNode = $from.node(tableDepth)
+    const rowIndex = $from.index(tableDepth)
+
+    // 只在表格最后一行生效
+    if (rowIndex < tableNode.childCount - 1) return false
+
+    if (dispatch) {
+      const tableEnd = $from.after(tableDepth)
+      const tr = state.tr
+      tr.insert(tableEnd, schema.nodes.paragraph.create())
+      tr.setSelection(TextSelection.create(tr.doc, tableEnd + 1))
+      dispatch(tr)
+    }
+    return true
+  }
 }
 
 /** 按回车时，将完整的块级 Markdown 标记转换为对应节点。 */
@@ -376,6 +413,7 @@ export function buildKeymap(schema: Schema): Record<string, Command> {
     'Enter': chainCommands(
       customSplitListItem(schema.nodes.list_item),
       customSplitListItem(schema.nodes.task_item),
+      exitTableOnLastRow(schema),
       handleEnter(schema)
     ),
 

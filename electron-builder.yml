@@ -4,6 +4,9 @@ copyright: Copyright © 2026 Markdown+ Team
 directories:
   output: dist
   buildResources: build
+electronLanguages:
+  - en-US
+  - zh-CN
 files:
   - '**/*'
   - '!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}'
@@ -23,11 +26,9 @@ win:
     - target: nsis
       arch:
         - x64
-        - ia32
     - target: zip
       arch:
         - x64
-        - ia32
   icon: resources/icon.ico
 nsis:
   oneClick: false

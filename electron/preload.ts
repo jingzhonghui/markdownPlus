@@ -135,8 +135,8 @@ const api: ElectronAPI = {
   saveAsFile: (content?, title?, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE_AS, content, title, filePath),
   closeFile: (filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.CLOSE, filePath),
   getRecentFiles: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT),
-  removeRecentFile: (filePath) => ipcRenderer.invoke('file:removeRecent', filePath),
-  clearRecentFiles: () => ipcRenderer.invoke('file:clearRecent'),
+  removeRecentFile: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT_REMOVE, filePath),
+  clearRecentFiles: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT_CLEAR),
 
   // MDX 操作
   readMdx: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.MDX.READ, filePath),

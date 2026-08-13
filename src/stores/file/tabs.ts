@@ -1,0 +1,251 @@
+import { computed, ref, type Ref } from 'vue'
+import type { ComputedRef } from 'vue'
+import type { MdxDocument } from '../../types/mdx'
+import type { FileInfo, TabInfo } from './types'
+import { requestDialog } from '../../utils/dialog'
+
+export interface TabState {
+  tabs: Ref<TabInfo[]>
+  activeTabId: Ref<string | null>
+  activeTab: ComputedRef<TabInfo | null>
+  stateVersion: Ref<number>
+  currentFile: ComputedRef<FileInfo | null>
+  document: ComputedRef<MdxDocument | null>
+  fileContent: ComputedRef<string>
+  hasFile: ComputedRef<boolean>
+  isModified: ComputedRef<boolean>
+  isDirty: ComputedRef<boolean>
+  fileName: ComputedRef<string>
+  displayTitle: ComputedRef<string>
+  imageAssets: ComputedRef<MdxDocument['assets']['images']>
+  hasMultipleTabs: ComputedRef<boolean>
+  createTab: () => TabInfo
+  findTabByPath: (filePath: string) => TabInfo | undefined
+  revealInExplorer: (filePath: string) => Promise<void>
+}
+
+/**
+ * Tab 状态与 getters（纯状态，不依赖文件操作）
+ */
+export function createTabState(): TabState {
+  const tabs = ref<TabInfo[]>([])
+  const activeTabId = ref<string | null>(null)
+  let tabIdCounter = 0
+
+  const activeTab = computed(() => tabs.value.find((t) => t.id === activeTabId.value) ?? null)
+  const stateVersion = ref(0)
+
+  // 向后兼容的代理 computed（从 activeTab 读取）
+  // 注意：Vue computed 对对象引用做缓存，直接修改 tab 属性不会触发下游更新。
+  // 使用 stateVersion 强制在属性变更时重新计算。
+  const currentFile = computed<FileInfo | null>(() => {
+    stateVersion.value
+    return activeTab.value?.fileInfo ?? null
+  })
+  const document = computed<MdxDocument | null>(() => {
+    stateVersion.value
+    return activeTab.value?.document ?? null
+  })
+  const fileContent = computed<string>(() => {
+    stateVersion.value
+    return activeTab.value?.content ?? ''
+  })
+
+  const hasFile = computed(() => {
+    stateVersion.value
+    return activeTab.value !== null && activeTab.value.document !== null
+  })
+  const isModified = computed(() => {
+    stateVersion.value
+    return activeTab.value?.fileInfo?.modified ?? false
+  })
+  const isDirty = computed(() => {
+    stateVersion.value
+    if (!activeTab.value?.document) return false
+    return (activeTab.value?.fileInfo?.modified ?? false) || !activeTab.value?.fileInfo?.path
+  })
+  const fileName = computed(() => {
+    stateVersion.value
+    const tab = activeTab.value
+    if (!tab) return '未命名.mdx'
+    if (tab.fileInfo?.format !== 'markdown' && tab.document?.metadata.title && tab.document.metadata.title !== '未命名文档') {
+      return `${tab.document.metadata.title}.mdx`
+    }
+    return tab.fileInfo?.name ?? '未命名.mdx'
+  })
+  const displayTitle = computed(() => {
+    stateVersion.value
+    const name = fileName.value.replace('.mdx', '')
+    return isModified.value ? `${name} *` : name
+  })
+  const imageAssets = computed(() => {
+    stateVersion.value
+    return activeTab.value?.document?.assets.images || []
+  })
+  const hasMultipleTabs = computed(() => tabs.value.length > 1)
+
+  function createTabId(): string {
+    return `tab_${++tabIdCounter}`
+  }
+
+  function createTab(): TabInfo {
+    const id = createTabId()
+    const tab: TabInfo = { id, fileInfo: null, document: null, content: '' }
+    tabs.value.push(tab)
+    return tab
+  }
+
+  function findTabByPath(filePath: string): TabInfo | undefined {
+    return tabs.value.find((t) => t.fileInfo?.path === filePath)
+  }
+
+  async function revealInExplorer(filePath: string): Promise<void> {
+    if (window.electronAPI?.revealInExplorer) {
+      await window.electronAPI.revealInExplorer(filePath)
+    }
+  }
+
+  return {
+    tabs,
+    activeTabId,
+    activeTab,
+    stateVersion,
+    currentFile,
+    document,
+    fileContent,
+    hasFile,
+    isModified,
+    isDirty,
+    fileName,
+    displayTitle,
+    imageAssets,
+    hasMultipleTabs,
+    createTab,
+    findTabByPath,
+    revealInExplorer
+  }
+}
+
+export interface TabOpsDeps {
+  saveFile: () => Promise<boolean>
+  persistSession: () => void
+  writeRecoverySnapshot: () => Promise<void>
+  revealFileInTree: (filePath: string) => Promise<void>
+  editorResetVersion: Ref<number>
+}
+
+export interface TabOps {
+  setActiveTab: (tabId: string) => Promise<void>
+  closeTab: (tabId: string) => Promise<boolean>
+  closeOtherTabs: (keepTabId: string) => Promise<void>
+  closeAllTabs: () => Promise<void>
+  confirmSaveForTab: (tab: TabInfo) => Promise<'save' | 'discard' | 'cancel'>
+  confirmSaveBeforeClose: () => Promise<boolean>
+}
+
+/**
+ * Tab 操作（依赖文件保存、会话持久化与文件树定位）
+ */
+export function createTabOps(state: TabState, deps: TabOpsDeps): TabOps {
+  const { tabs, activeTabId, stateVersion } = state
+
+  async function setActiveTab(tabId: string): Promise<void> {
+    activeTabId.value = tabId
+    const filePath = tabs.value.find((tab) => tab.id === tabId)?.fileInfo?.path
+    if (filePath) await deps.revealFileInTree(filePath)
+    deps.persistSession()
+  }
+
+  async function confirmSaveForTab(tab: TabInfo): Promise<'save' | 'discard' | 'cancel'> {
+    const isTabDirty = tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path)
+    if (!isTabDirty) return 'discard'
+
+    const title = tab.document?.metadata.title || '未命名文档'
+
+    const choice = await requestDialog({
+      title: '保存更改',
+      message: `是否将更改保存到"${title}"？`,
+      detail: '如果不保存，你的更改将会丢失。',
+      buttons: [
+        { label: '取消', value: 2 },
+        { label: '不保存', value: 1 },
+        { label: '保存', value: 0, primary: true }
+      ]
+    })
+    return choice === 0 ? 'save' : choice === 1 ? 'discard' : 'cancel'
+  }
+
+  async function closeTab(tabId: string): Promise<boolean> {
+    const index = tabs.value.findIndex((t) => t.id === tabId)
+    if (index === -1) return true
+    const tab = tabs.value[index]
+
+    const isTabDirty = tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path)
+    if (isTabDirty) {
+      const choice = await confirmSaveForTab(tab)
+      if (choice === 'cancel') return false
+      if (choice === 'save') {
+        activeTabId.value = tabId
+        const saved = await deps.saveFile()
+        if (!saved) return false
+      }
+    }
+
+    tabs.value.splice(index, 1)
+    deps.persistSession()
+    await deps.writeRecoverySnapshot()
+
+    if (activeTabId.value === tabId) {
+      if (tabs.value.length > 0) {
+        const nextIndex = Math.min(index, tabs.value.length - 1)
+        activeTabId.value = tabs.value[nextIndex].id
+      } else {
+        activeTabId.value = null
+      }
+      stateVersion.value++
+      deps.editorResetVersion.value++
+    }
+
+    return true
+  }
+
+  async function closeOtherTabs(keepTabId: string): Promise<void> {
+    const otherTabs = tabs.value.filter((t) => t.id !== keepTabId)
+    for (const tab of otherTabs) {
+      const result = await closeTab(tab.id)
+      if (!result) return
+    }
+  }
+
+  async function closeAllTabs(): Promise<void> {
+    while (tabs.value.length > 0) {
+      const result = await closeTab(tabs.value[0].id)
+      if (!result) return
+    }
+  }
+
+  async function confirmSaveBeforeClose(): Promise<boolean> {
+    for (const tab of tabs.value) {
+      const isTabDirty = tab.document && ((tab.fileInfo?.modified ?? false) || !tab.fileInfo?.path)
+      if (!isTabDirty) continue
+
+      const choice = await confirmSaveForTab(tab)
+      if (choice === 'cancel') return false
+      if (choice === 'save') {
+        activeTabId.value = tab.id
+        const saved = await deps.saveFile()
+        if (!saved) return false
+      }
+    }
+    return true
+  }
+
+  return {
+    setActiveTab,
+    closeTab,
+    closeOtherTabs,
+    closeAllTabs,
+    confirmSaveForTab,
+    confirmSaveBeforeClose
+  }
+}

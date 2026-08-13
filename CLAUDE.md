@@ -74,10 +74,8 @@ src/
 │   └── editor/       # 编辑器核心组件
 │       ├── EditorPanel.vue   # 编辑器容器（模式切换、欢迎页、分屏布局）
 │       ├── SourceEditor.vue  # CodeMirror 源码编辑器
-│       ├── WysiwygEditor.vue # 已废弃的历史实现，不接入当前 UI
 │       ├── IrEditor.vue      # ProseMirror 即时渲染编辑器（显示 Markdown 标记）
 │       ├── PreviewPanel.vue  # 预览面板（markdown-it + Shiki 高亮 + KaTeX）
-│       ├── FloatToolbar.vue  # 已废弃的 WYSIWYG 历史实现
 │       └── TabBar.vue        # 多标签页栏
 ├── utils/
 │   ├── markdown.ts                    # markdown-it 实例、数学公式插件、代码语言映射

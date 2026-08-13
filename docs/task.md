@@ -351,13 +351,13 @@
 
 ## 阶段 5：导出与高级功能
 
-### 5.1 PDF 导出
-- [ ] 安装 puppeteer-core 依赖
-- [ ] 实现 Markdown → HTML 渲染（带完整样式）
-- [ ] 使用 Puppeteer 将 HTML 转为 PDF
-- [ ] PDF 页面设置（纸张大小、边距、页眉页脚）
-- [ ] PDF 中图片嵌入（base64）
-- [ ] 导出进度提示
+### 5.1 PDF 导出 ✅
+- [x] 使用 Electron `webContents.printToPDF` 将 HTML 转为 PDF（非 Puppeteer）
+- [x] 实现 Markdown → HTML 渲染（带完整样式 + Shiki 代码高亮）
+- [x] PDF 页面设置（A4 纸张、边距、页眉页脚 + 页码）
+- [x] PDF 中图片嵌入（data URL，图片懒加载解析）
+- [x] 单文件导出 + 文件夹递归批量导出（保留目录结构）
+- [x] 批量导出进度提示（PdfBatchProgressDialog）
 
 ### 5.2 HTML 导出
 - [ ] 实现 Markdown → HTML 转换
@@ -440,13 +440,14 @@
 - [ ] 关于对话框（版本信息、开源协议）
 - [ ] 首次启动引导（可选）
 
-### 6.4 打包
-- [ ] 配置 electron-builder
-- [ ] Windows 打包（NSIS 安装包 + 便携版）
-- [ ] macOS 打包（DMG + 代码签名）
-- [ ] Linux 打包（AppImage + deb）
-- [ ] 应用图标设计（各平台适配）
-- [ ] 打包体积优化（asar、排除开发依赖）
+### 6.4 打包 ✅（Windows/Linux 已就绪，macOS 待启用）
+- [x] 配置 electron-builder（electron-builder.yml）
+- [x] Windows 打包（NSIS 安装包 + zip，x64）
+- [ ] macOS 打包（DMG + 代码签名，签名未就绪暂未启用）
+- [x] Linux 打包（AppImage + deb）
+- [x] 应用图标设计（各平台适配）
+- [x] 打包体积优化（asar 精简、排除 renderer 开发依赖、locales 裁剪、去 ia32）
+- [x] GitHub Actions 发布流水线（release.yml，tag 触发，Windows/Linux）
 
 ### 6.5 应用签名
 - [ ] macOS 代码签名（Developer ID）
@@ -455,6 +456,7 @@
 - [ ] 签名验证测试
 
 ### 6.6 集成测试与 Bug 修复
+- [x] 单元测试（vitest：schema/writer/import/recovery/markdown 转换/theme/file store，77 项）
 - [ ] 编写 E2E 测试（Playwright / Spectron）
 - [ ] 测试：完整编辑流程（新建→编辑→插入图片→保存→重新打开）
 - [ ] 测试：三种模式切换数据一致性
@@ -489,8 +491,8 @@
 | 阶段 3B：WYSIWYG 编辑器 | 历史实现 | 不再维护 | 已废弃 |
 | 阶段 3C：即时渲染(IR)编辑器 | ~12 | 0 | ✅ 已实现并启用 |
 | 阶段 4：图片与资源管理 | ~25 | 0 | ✅ 完成 |
-| 阶段 5：导出与高级功能 | 0 | ~33 | ⬜ 待开发 |
-| 阶段 6：打磨与发布 | 0 | ~30 | ⬜ 待开发 |
+| 阶段 5：导出与高级功能 | ~24 | ~13 | 🔄 部分完成（PDF/自动保存/撤销重做/崩溃恢复已完成） |
+| 阶段 6：打磨与发布 | ~8 | ~22 | 🔄 部分完成（打包 + CI 已完成） |
 
 ---
 

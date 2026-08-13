@@ -189,7 +189,7 @@ export function registerFileHandlers(): void {
   })
 
   // 添加到最近文件
-  ipcMain.handle('file:addRecent', async (_, filePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.FILE.RECENT_ADD, async (_, filePath: string) => {
     try {
       addRecentFile(filePath)
       return { success: true }
@@ -200,7 +200,7 @@ export function registerFileHandlers(): void {
   })
 
   // 从最近文件中移除
-  ipcMain.handle('file:removeRecent', async (_, filePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.FILE.RECENT_REMOVE, async (_, filePath: string) => {
     try {
       removeRecentFile(filePath)
       return { success: true }
@@ -211,7 +211,7 @@ export function registerFileHandlers(): void {
   })
 
   // 清空最近文件列表
-  ipcMain.handle('file:clearRecent', async () => {
+  ipcMain.handle(IPC_CHANNELS.FILE.RECENT_CLEAR, async () => {
     try {
       clearRecentFiles()
       return { success: true }

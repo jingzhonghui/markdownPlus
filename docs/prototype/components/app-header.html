@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AppHeader</title>
+  <link rel="stylesheet" href="../css/theme.css">
+  <style>
+    body { overflow: hidden; }
+
+    .app-header {
+      display: flex;
+      align-items: stretch;
+      height: 100vh;
+      padding: 0;
+      background-color: var(--color-bg-primary);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .menu-bar {
+      display: flex;
+      align-items: stretch;
+      flex-shrink: 0;
+      -webkit-app-region: no-drag;
+      height: 100%;
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      user-select: none;
+      transition: background-color var(--transition-fast), color var(--transition-fast);
+      white-space: nowrap;
+    }
+    .menu-item:hover, .menu-item.open { background-color: var(--color-bg-secondary); color: var(--color-text); }
+
+    .window-drag-region {
+      align-self: stretch;
+      flex: 1;
+      min-width: 24px;
+      -webkit-app-region: drag;
+      cursor: grab;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      gap: 2px;
+      padding-right: 6px;
+      -webkit-app-region: no-drag;
+    }
+
+    .icon-btn {
+      width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      border: none; background: transparent;
+      color: var(--color-text-secondary);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: background-color var(--transition-normal), color var(--transition-normal);
+    }
+    .icon-btn:hover { background-color: var(--color-bg-secondary); color: var(--color-text); }
+    .icon-btn:active { background-color: var(--color-bg-tertiary); }
+    .icon-btn .icon { width: 16px; height: 16px; }
+
+    .window-controls { display: flex; align-items: center; margin-left: 2px; gap: 1px; }
+
+    .window-btn {
+      width: 30px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      border: none; background: transparent;
+      color: var(--color-text-secondary);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background-color var(--transition-fast), color var(--transition-fast);
+    }
+    .window-btn:hover { background-color: var(--color-bg-secondary); color: var(--color-text); }
+    .window-btn:active { background-color: var(--color-bg-tertiary); }
+    .window-btn svg { width: 14px; height: 14px; }
+    .window-btn.close:hover { background-color: #e81123; color: white; }
+    .window-btn.close:active { background-color: #c50f1f; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <nav class="menu-bar" id="menu-bar">
+      <div class="menu-item" data-menu="file">文件</div>
+      <div class="menu-item" data-menu="edit">编辑</div>
+      <div class="menu-item" data-menu="view">视图</div>
+      <div class="menu-item" data-menu="insert">插入</div>
+      <div class="menu-item" data-menu="help">帮助</div>
+    </nav>
+
+    <div class="window-drag-region"></div>
+
+    <div class="header-right">
+      <button class="icon-btn" id="theme-toggle" title="切换主题">
+        <svg class="icon" id="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="display:none">
+          <circle cx="12" cy="12" r="5" stroke-width="2" />
+          <path stroke-width="2" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+        </svg>
+        <svg class="icon" id="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+        </svg>
+      </button>
+
+      <div class="window-controls">
+        <button class="window-btn" title="最小化">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 8h10v1H3z" /></svg>
+        </button>
+        <button class="window-btn" id="maximize-btn" title="最大化">
+          <svg id="maximize-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M3 3h10v10H3V3zm1 1v8h8V4H4z" /></svg>
+          <svg id="restore-icon" viewBox="0 0 16 16" fill="currentColor" style="display:none"><path d="M3 3h8v2H5v6H3V3zm2 2h8v8H5V5zm2 2v4h4V7H7z" /></svg>
+        </button>
+        <button class="window-btn close" title="关闭">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <script src="../js/theme-bridge.js"></script>
+  <script>
+    (function () {
+      var toggle = document.getElementById('theme-toggle');
+      var sun = document.getElementById('theme-icon-sun');
+      var moon = document.getElementById('theme-icon-moon');
+      var maxBtn = document.getElementById('maximize-btn');
+      var maxIcon = document.getElementById('maximize-icon');
+      var restoreIcon = document.getElementById('restore-icon');
+      var maximized = false;
+      var hasOpenMenu = false;
+
+      function send(msg) {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(msg, '*');
+        }
+      }
+
+      // ===== 主题 =====
+      function renderTheme() {
+        var dark = window.protoBridge.getTheme() === 'dark';
+        sun.style.display = dark ? 'block' : 'none';
+        moon.style.display = dark ? 'none' : 'block';
+      }
+      toggle.addEventListener('click', function () {
+        window.protoBridge.toggleTheme();
+      });
+      window.addEventListener('proto:theme', renderTheme);
+
+      // ===== 最大化 =====
+      maxBtn.addEventListener('click', function () {
+        maximized = !maximized;
+        maxIcon.style.display = maximized ? 'none' : 'block';
+        restoreIcon.style.display = maximized ? 'block' : 'none';
+        maxBtn.title = maximized ? '还原' : '最大化';
+      });
+
+      // ===== 菜单触发 =====
+      var menuItems = document.querySelectorAll('.menu-item');
+
+      menuItems.forEach(function (item) {
+        item.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var name = item.getAttribute('data-menu');
+          var rect = item.getBoundingClientRect();
+          send({ type: 'menu-open', menu: name, left: rect.left, top: rect.bottom });
+        });
+        item.addEventListener('mouseenter', function () {
+          if (hasOpenMenu && !item.classList.contains('open')) {
+            var name = item.getAttribute('data-menu');
+            var rect = item.getBoundingClientRect();
+            send({ type: 'menu-hover', menu: name, left: rect.left, top: rect.bottom });
+          }
+        });
+      });
+
+      // 监听 parent 通知菜单开关状态（用于高亮与 hover 切换）
+      window.addEventListener('message', function (event) {
+        var msg = event.data;
+        if (!msg || typeof msg !== 'object' || msg.type !== 'menu-state') return;
+        hasOpenMenu = !!msg.open;
+        menuItems.forEach(function (m) { m.classList.remove('open'); });
+      });
+
+      renderTheme();
+    })();
+  </script>
+</body>
+</html>

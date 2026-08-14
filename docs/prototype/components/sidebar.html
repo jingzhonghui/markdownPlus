@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SideBar</title>
+  <link rel="stylesheet" href="../css/theme.css">
+  <style>
+    body { overflow: hidden; }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background-color: var(--color-bg-primary);
+    }
+
+    /* 折叠态图标栏 */
+    .collapsed-bar {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 0;
+      gap: 4px;
+    }
+
+    .collapsed-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      color: var(--color-text-secondary);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .collapsed-btn:hover {
+      background-color: var(--color-bg-secondary);
+      color: var(--color-text);
+    }
+
+    .collapsed-btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .collapsed-divider {
+      width: 24px;
+      height: 1px;
+      background-color: var(--color-border);
+      margin: 8px 0;
+    }
+
+    /* 展开态 */
+    .file-explorer {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .explorer-titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 38px;
+      padding: 0 8px 0 14px;
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+
+    .explorer-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-text-secondary);
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    .explorer-collapse-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      color: var(--color-text-secondary);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .explorer-collapse-btn:hover {
+      color: var(--color-text);
+      background-color: var(--color-bg-secondary);
+    }
+
+    .explorer-collapse-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .file-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    /* 文件树 */
+    .tree-item { user-select: none; }
+
+    .item-content {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 8px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: background-color var(--transition-fast);
+      min-height: 29px;
+    }
+
+    .item-content:hover { background-color: var(--color-bg-secondary); }
+    .item-content.is-active { background-color: var(--color-primary-soft); }
+    .item-content.is-active .node-name { color: var(--color-primary); font-weight: 500; }
+
+    .expand-icon {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-text-tertiary);
+      transition: transform 0.15s ease;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .expand-icon:hover { background-color: var(--color-bg-tertiary); }
+    .expand-icon svg { width: 12px; height: 12px; transition: transform 0.15s ease; }
+    .expand-icon.is-expanded svg { transform: rotate(90deg); }
+
+    .expand-icon-placeholder { width: 16px; flex-shrink: 0; }
+
+    .node-icon {
+      width: 16px; height: 16px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      color: var(--color-text-secondary);
+    }
+    .node-icon svg { width: 16px; height: 16px; }
+    .node-icon .folder-icon { color: #eab308; }
+    .item-content.is-active .node-icon { color: var(--color-primary); }
+
+    .node-name {
+      flex: 1;
+      font-size: 13px;
+      color: var(--color-text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .modified-indicator {
+      font-size: 8px;
+      color: var(--color-warning);
+      flex-shrink: 0;
+    }
+
+    .tree-children { display: block; }
+
+    /* 空状态 */
+    .empty-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      text-align: center;
+      height: 100%;
+    }
+    .empty-icon { width: 48px; height: 48px; color: var(--color-text-tertiary); margin-bottom: 12px; }
+    .empty-text { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 12px; }
+    .empty-action {
+      padding: 6px 16px; font-size: 12px; font-weight: 500;
+      color: var(--color-primary); background-color: var(--color-primary-light);
+      border: none; border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s;
+    }
+    .empty-action:hover { background-color: var(--color-primary); color: white; }
+
+    /* 右键菜单 */
+    .context-menu {
+      position: fixed;
+      z-index: 10000;
+      min-width: 170px;
+      padding: 5px;
+      background: var(--color-bg-primary);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      display: none;
+    }
+    .context-menu.visible { display: block; }
+    .context-menu-item {
+      padding: 7px 14px; font-size: 13px; color: var(--color-text);
+      border-radius: var(--radius-md); cursor: pointer; white-space: nowrap;
+      transition: background var(--transition-fast);
+    }
+    .context-menu-item:hover { background: var(--color-bg-secondary); }
+
+    /* 对话框 */
+    .dialog-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.4);
+    }
+    .dialog-overlay.visible { display: flex; }
+    .dialog {
+      min-width: 360px; padding: 22px;
+      background: var(--color-bg-primary);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg);
+      animation: dialog-in 0.16s ease;
+    }
+    @keyframes dialog-in {
+      from { opacity: 0; transform: scale(0.96) translateY(4px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .dialog-title { margin: 0 0 12px; font-size: 15px; font-weight: 600; color: var(--color-text); }
+    .dialog-message { margin: 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; }
+    .dialog-input {
+      width: 100%; padding: 8px 12px; font-size: 13px; color: var(--color-text);
+      background: var(--color-bg-secondary); border: 1px solid var(--color-border);
+      border-radius: var(--radius-md); outline: none; box-sizing: border-box;
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+    .dialog-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .dialog-btn { padding: 7px 18px; font-size: 13px; border: none; border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast); font-weight: 500; }
+    .dialog-btn-cancel { color: var(--color-text-secondary); background: var(--color-bg-secondary); }
+    .dialog-btn-cancel:hover { color: var(--color-text); background: var(--color-bg-tertiary); }
+    .dialog-btn-confirm { color: #fff; background: var(--color-primary); box-shadow: 0 1px 3px rgba(59, 130, 246, 0.35); }
+    .dialog-btn-confirm:hover { background: var(--color-primary-hover); }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <!-- 折叠态图标栏 -->
+    <div class="collapsed-bar" id="collapsed-bar">
+      <button class="collapsed-btn" title="新建文件">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+      </button>
+      <button class="collapsed-btn" title="打开文件">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path stroke-width="2" d="M14 2v6h6" /></svg>
+      </button>
+      <button class="collapsed-btn" title="打开文件夹">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+      </button>
+      <div class="collapsed-divider"></div>
+      <button class="collapsed-btn" id="expand-btn" title="展开侧边栏">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" d="M13 17l5-5-5-5M6 17l5-5-5-5" /></svg>
+      </button>
+    </div>
+
+    <!-- 展开态 -->
+    <div class="file-explorer" id="file-explorer">
+      <div class="explorer-titlebar">
+        <span class="explorer-title">资源管理器</span>
+        <button class="explorer-collapse-btn" id="collapse-btn" title="收起侧边栏">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" d="M11 17l-5-5 5-5M18 17l-5-5 5-5" /></svg>
+        </button>
+      </div>
+
+      <div class="file-list" id="file-list">
+        <!-- 文件树（由 JS 渲染） -->
+      </div>
+
+      <div class="empty-state" id="empty-state">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="1.5" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+        <p class="empty-text">打开文件夹以浏览文件</p>
+        <button class="empty-action">打开文件夹</button>
+      </div>
+    </div>
+
+    <!-- 右键菜单 -->
+    <div class="context-menu" id="context-menu"></div>
+
+    <!-- 输入对话框 -->
+    <div class="dialog-overlay" id="input-dialog">
+      <div class="dialog">
+        <h3 class="dialog-title" id="input-title">新建文件</h3>
+        <input type="text" class="dialog-input" id="input-value" spellcheck="false">
+        <div class="dialog-actions">
+          <button class="dialog-btn dialog-btn-cancel" data-close="input-dialog">取消</button>
+          <button class="dialog-btn dialog-btn-confirm" data-close="input-dialog">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除确认对话框 -->
+    <div class="dialog-overlay" id="confirm-dialog">
+      <div class="dialog">
+        <h3 class="dialog-title" id="confirm-title">删除</h3>
+        <p class="dialog-message" id="confirm-message"></p>
+        <div class="dialog-actions">
+          <button class="dialog-btn dialog-btn-cancel" data-close="confirm-dialog">取消</button>
+          <button class="dialog-btn dialog-btn-confirm" data-close="confirm-dialog">删除</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <script src="../js/theme-bridge.js"></script>
+  <script>
+    (function () {
+      var collapsed = false;
+
+      // 示例文件树
+      var tree = [
+        { name: '我的文档', path: '/我的文档', isDirectory: true, expanded: true, children: [
+          { name: '项目', path: '/我的文档/项目', isDirectory: true, expanded: false, children: [
+            { name: 'README.mdx', path: '/我的文档/项目/README.mdx', isDirectory: false },
+            { name: '架构设计.mdx', path: '/我的文档/项目/架构设计.mdx', isDirectory: false }
+          ] },
+          { name: '示例文档.mdx', path: '/我的文档/示例文档.mdx', isDirectory: false, active: true, modified: true },
+          { name: '项目说明.mdx', path: '/我的文档/项目说明.mdx', isDirectory: false },
+          { name: '会议纪要.mdx', path: '/我的文档/会议纪要.mdx', isDirectory: false }
+        ] }
+      ];
+
+      var fileList = document.getElementById('file-list');
+      var contextMenu = document.getElementById('context-menu');
+      var collapsedBar = document.getElementById('collapsed-bar');
+      var fileExplorer = document.getElementById('file-explorer');
+
+      function renderTree() {
+        fileList.innerHTML = tree.map(function (node) { return renderNode(node, 0); }).join('');
+        bindTreeEvents();
+      }
+
+      function renderNode(node, depth) {
+        var pad = (depth * 12 + 8) + 'px';
+        var expandHtml = node.isDirectory
+          ? '<span class="expand-icon' + (node.expanded ? ' is-expanded' : '') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></span>'
+          : '<span class="expand-icon-placeholder"></span>';
+        var iconHtml = node.isDirectory
+          ? '<span class="node-icon"><svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg></span>'
+          : '<span class="node-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></span>';
+        var mod = node.modified ? '<span class="modified-indicator">●</span>' : '';
+        var children = (node.isDirectory && node.expanded && node.children && node.children.length)
+          ? '<div class="tree-children">' + node.children.map(function (c) { return renderNode(c, depth + 1); }).join('') + '</div>'
+          : '';
+
+        return '<div class="tree-item" data-path="' + node.path + '">' +
+          '<div class="item-content' + (node.active ? ' is-active' : '') + '" style="padding-left:' + pad + '">' +
+          expandHtml + iconHtml + '<span class="node-name">' + node.name + '</span>' + mod +
+          '</div>' + children + '</div>';
+      }
+
+      function findNode(path, nodes) {
+        nodes = nodes || tree;
+        for (var i = 0; i < nodes.length; i++) {
+          if (nodes[i].path === path) return nodes[i];
+          if (nodes[i].children) {
+            var found = findNode(path, nodes[i].children);
+            if (found) return found;
+          }
+        }
+        return null;
+      }
+
+      function bindTreeEvents() {
+        var items = fileList.querySelectorAll('.item-content');
+        items.forEach(function (el) {
+          el.addEventListener('click', function (e) {
+            var path = el.parentElement.getAttribute('data-path');
+            var node = findNode(path);
+            if (!node) return;
+            if (node.isDirectory) {
+              node.expanded = !node.expanded;
+            } else {
+              // 选中文件
+              fileList.querySelectorAll('.item-content').forEach(function (i) { i.classList.remove('is-active'); });
+              el.classList.add('is-active');
+            }
+            renderTree();
+          });
+
+          el.addEventListener('contextmenu', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var path = el.parentElement.getAttribute('data-path');
+            var node = findNode(path);
+            showContextMenu(e.clientX, e.clientY, node.isDirectory ? folderMenu() : fileMenu());
+          });
+        });
+      }
+
+      function fileMenu() {
+        return ['打开', '保存', '另存为', '导出 PDF', '重命名', '删除', '复制路径'];
+      }
+      function folderMenu() {
+        return ['新建文件', '新建文件夹', '打开文件', '打开文件夹', '批量导出 PDF', '刷新', '重命名', '删除', '复制路径'];
+      }
+
+      function showContextMenu(x, y, items) {
+        contextMenu.innerHTML = items.map(function (label) {
+          return '<div class="context-menu-item">' + label + '</div>';
+        }).join('');
+        contextMenu.style.left = x + 'px';
+        contextMenu.style.top = y + 'px';
+        contextMenu.classList.add('visible');
+
+        contextMenu.querySelectorAll('.context-menu-item').forEach(function (item) {
+          item.addEventListener('click', function () {
+            hideContextMenu();
+            var label = item.textContent;
+            if (label === '重命名') openInputDialog('重命名', '示例文档.mdx');
+            else if (label === '新建文件') openInputDialog('新建文件', '未命名.mdx');
+            else if (label === '新建文件夹') openInputDialog('新建文件夹', '新建文件夹');
+            else if (label === '删除') openConfirmDialog('删除文件', '确定要删除文件「示例文档.mdx」吗？此操作不可恢复。');
+          });
+        });
+      }
+
+      function hideContextMenu() {
+        contextMenu.classList.remove('visible');
+      }
+
+      function openInputDialog(title, initial) {
+        document.getElementById('input-title').textContent = title;
+        document.getElementById('input-value').value = initial;
+        document.getElementById('input-dialog').classList.add('visible');
+      }
+
+      function openConfirmDialog(title, message) {
+        document.getElementById('confirm-title').textContent = title;
+        document.getElementById('confirm-message').textContent = message;
+        document.getElementById('confirm-dialog').classList.add('visible');
+      }
+
+      // 关闭对话框
+      document.querySelectorAll('[data-close]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          document.getElementById(btn.getAttribute('data-close')).classList.remove('visible');
+        });
+      });
+
+      // 收起/展开
+      document.getElementById('collapse-btn').addEventListener('click', function () {
+        setCollapsed(true);
+      });
+      document.getElementById('expand-btn').addEventListener('click', function () {
+        setCollapsed(false);
+      });
+
+      function setCollapsed(value) {
+        collapsed = value;
+        if (collapsed) {
+          fileExplorer.style.display = 'none';
+          collapsedBar.style.display = 'flex';
+        } else {
+          fileExplorer.style.display = 'flex';
+          collapsedBar.style.display = 'none';
+        }
+        window.protoBridge.setSidebar(collapsed);
+      }
+
+      // 全局点击关闭菜单
+      document.addEventListener('click', hideContextMenu);
+      document.addEventListener('contextmenu', function (e) {
+        if (e.target.closest('.item-content')) return;
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, ['新建文件', '新建文件夹', '导入 Markdown', '导入文件夹', '打开文件', '打开文件夹', '刷新']);
+      });
+
+      renderTree();
+    })();
+  </script>
+</body>
+</html>

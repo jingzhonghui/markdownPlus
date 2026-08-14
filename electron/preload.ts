@@ -1,6 +1,7 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { clipboard, contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from './ipc/channels'
 import type { MdxAttachmentAsset, MdxDocument } from './mdx/schema'
+import type { UserGuideOpenResult } from './user-guide'
 
 export { IPC_CHANNELS }
 
@@ -68,6 +69,10 @@ export interface ElectronAPI {
   removeRecentFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
   clearRecentFiles: () => Promise<{ success: boolean; error?: string }>
 
+  // 剪贴板
+  clipboardReadText: () => Promise<string>
+  clipboardWriteText: (text: string) => Promise<void>
+
   // MDX 操作
   readMdx: (filePath: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   writeMdx: (filePath: string, data: unknown) => Promise<{ success: boolean; error?: string }>
@@ -98,6 +103,7 @@ export interface ElectronAPI {
   ping: () => Promise<string>
   getVersion: () => Promise<string>
   getPlatform: () => Promise<string>
+  openUserGuide: () => Promise<UserGuideOpenResult>
 
   // 对话框
   showOpenDialog: (options?: unknown) => Promise<{ success: boolean; data?: string[]; error?: string }>
@@ -138,6 +144,10 @@ const api: ElectronAPI = {
   removeRecentFile: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT_REMOVE, filePath),
   clearRecentFiles: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT_CLEAR),
 
+  // 剪贴板
+  clipboardReadText: async () => clipboard.readText(),
+  clipboardWriteText: async (text) => clipboard.writeText(text),
+
   // MDX 操作
   readMdx: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.MDX.READ, filePath),
   writeMdx: (filePath, data) => ipcRenderer.invoke(IPC_CHANNELS.MDX.WRITE, filePath, data),
@@ -168,6 +178,7 @@ const api: ElectronAPI = {
   ping: () => ipcRenderer.invoke(IPC_CHANNELS.APP.PING),
   getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP.GET_VERSION),
   getPlatform: () => ipcRenderer.invoke(IPC_CHANNELS.APP.GET_PLATFORM),
+  openUserGuide: () => ipcRenderer.invoke(IPC_CHANNELS.APP.OPEN_USER_GUIDE),
 
   // 对话框
   showOpenDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG.SHOW_OPEN, options),

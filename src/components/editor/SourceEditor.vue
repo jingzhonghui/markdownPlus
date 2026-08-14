@@ -823,6 +823,11 @@ function handleFormatEvent(e: Event): void {
     case 'table':
       insertTable(view)
       break
+    case 'horizontalRule': {
+      const { from } = view.state.selection.main
+      view.dispatch({ changes: { from, insert: '\n---\n' }, selection: { anchor: from + 5 } })
+      break
+    }
   }
   view.focus()
 }
@@ -901,6 +906,72 @@ function handleCodeBlockEvent(e: Event): void {
   view.focus()
 }
 
+function handleUndoEvent(): void {
+  const view = editorView.value
+  if (!view) return
+  undo(view)
+  view.focus()
+}
+
+function handleRedoEvent(): void {
+  const view = editorView.value
+  if (!view) return
+  redo(view)
+  view.focus()
+}
+
+async function handleCopyEvent(): Promise<void> {
+  const view = editorView.value
+  if (!view) return
+  const { from, to } = view.state.selection.main
+  if (from === to) return
+  await window.electronAPI?.clipboardWriteText(view.state.doc.sliceString(from, to))
+  view.focus()
+}
+
+function handleAttachmentEvent(e: Event): void {
+  const view = editorView.value
+  if (!view) return
+  const { path, name } = (e as CustomEvent).detail as { path: string; name: string }
+  const { from, to } = view.state.selection.main
+  const insert = `[${name}](${path})`
+  view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
+  view.focus()
+}
+
+async function handleCutEvent(): Promise<void> {
+  const view = editorView.value
+  if (!view) return
+  const { from, to } = view.state.selection.main
+  if (from === to) return
+  await window.electronAPI?.clipboardWriteText(view.state.doc.sliceString(from, to))
+  view.dispatch({ changes: { from, to, insert: '' }, selection: { anchor: from } })
+  view.focus()
+}
+
+async function handlePasteEvent(): Promise<void> {
+  const view = editorView.value
+  if (!view) return
+  const text = await window.electronAPI?.clipboardReadText()
+  if (!text) return
+  const { from, to } = view.state.selection.main
+  view.dispatch({
+    changes: { from, to, insert: text },
+    selection: { anchor: from + text.length }
+  })
+  view.focus()
+}
+
+function handleSearchEvent(): void {
+  const view = editorView.value
+  if (!view) return
+  if (!showSearchPanel.value) {
+    openSearchPanel(view)
+    showSearchPanel.value = true
+  }
+  view.focus()
+}
+
 /** 在当前行首插入前缀 */
 function prependLinePrefix(view: EditorView, prefix: string): void {
   const { from } = view.state.selection.main
@@ -949,7 +1020,15 @@ onMounted(() => {
   window.addEventListener('editor:heading', handleHeadingEvent)
   window.addEventListener('editor:link', handleLinkEvent)
   window.addEventListener('editor:image', handleImageEvent)
+  window.addEventListener('editor:attachment', handleAttachmentEvent)
   window.addEventListener('editor:codeBlock', handleCodeBlockEvent)
+  window.addEventListener('editor:undo', handleUndoEvent)
+  window.addEventListener('editor:redo', handleRedoEvent)
+  window.addEventListener('editor:cut', handleCutEvent)
+  window.addEventListener('editor:copy', handleCopyEvent)
+  window.addEventListener('editor:paste', handlePasteEvent)
+  window.addEventListener('editor:find', handleSearchEvent)
+  window.addEventListener('editor:replace', handleSearchEvent)
   document.addEventListener('click', closeSourceContextMenu)
 })
 
@@ -966,7 +1045,15 @@ onUnmounted(() => {
   window.removeEventListener('editor:heading', handleHeadingEvent)
   window.removeEventListener('editor:link', handleLinkEvent)
   window.removeEventListener('editor:image', handleImageEvent)
+  window.removeEventListener('editor:attachment', handleAttachmentEvent)
   window.removeEventListener('editor:codeBlock', handleCodeBlockEvent)
+  window.removeEventListener('editor:undo', handleUndoEvent)
+  window.removeEventListener('editor:redo', handleRedoEvent)
+  window.removeEventListener('editor:cut', handleCutEvent)
+  window.removeEventListener('editor:copy', handleCopyEvent)
+  window.removeEventListener('editor:paste', handlePasteEvent)
+  window.removeEventListener('editor:find', handleSearchEvent)
+  window.removeEventListener('editor:replace', handleSearchEvent)
   document.removeEventListener('click', closeSourceContextMenu)
 
   destroyEditor()

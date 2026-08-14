@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StatusBar</title>
+  <link rel="stylesheet" href="../css/theme.css">
+  <style>
+    body { overflow: hidden; }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 100vh;
+      padding: 0 var(--spacing-md);
+      background-color: var(--color-bg-secondary);
+      border-top: 1px solid var(--color-border);
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+
+    .status-left,
+    .status-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-item { white-space: nowrap; }
+
+    .status-file-name { color: var(--color-text); font-weight: 500; }
+
+    .status-separator { color: var(--color-border-hover); user-select: none; }
+
+    .saved { color: var(--color-success); }
+    .modified { color: var(--color-warning); }
+    .loading { color: var(--color-text-tertiary); }
+
+    .status-dot {
+      display: inline-block;
+      width: 7px; height: 7px; border-radius: 50%;
+      margin-right: 4px; vertical-align: 1px;
+      background: currentColor;
+    }
+
+    /* 模式切换按钮 */
+    .mode-toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      background-color: var(--color-bg-primary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mode-toggle-btn svg { width: 14px; height: 14px; }
+    .mode-toggle-btn:hover { border-color: var(--color-border-hover); background-color: var(--color-bg-secondary); }
+
+    .mode-toggle-btn.split { color: #8b5cf6; border-color: #8b5cf6; background-color: rgba(139, 92, 246, 0.1); }
+    .mode-toggle-btn.source { color: #10b981; border-color: #10b981; background-color: rgba(16, 185, 129, 0.1); }
+    .mode-toggle-btn.ir { color: #f59e0b; border-color: #f59e0b; background-color: rgba(245, 158, 11, 0.1); }
+
+    .mode-label { white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <footer class="status-bar">
+    <div class="status-left">
+      <span class="status-item status-file-name" id="file-name">示例文档.mdx</span>
+      <span class="status-separator">|</span>
+      <span class="status-item">字数: <span id="word-count">128</span></span>
+      <span class="status-separator">|</span>
+      <span class="status-item">文件大小: <span id="file-size">2.4 KB</span></span>
+      <span class="status-separator">|</span>
+      <span class="status-item">行 <span id="cursor-line">1</span>, 列 <span id="cursor-col">1</span></span>
+    </div>
+
+    <div class="status-right">
+      <button class="mode-toggle-btn ir" id="mode-toggle" title="即时渲染 (点击切换)">
+        <svg id="mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"></svg>
+        <span class="mode-label" id="mode-label">即时渲染</span>
+      </button>
+
+      <span class="status-separator">|</span>
+      <span class="status-item modified" id="save-status"><span class="status-dot"></span>未保存</span>
+      <span class="status-separator">|</span>
+      <span class="status-item">Markdown+ v1.0.0</span>
+    </div>
+  </footer>
+
+  <script src="../js/theme-bridge.js"></script>
+  <script>
+    (function () {
+      var modes = ['ir', 'source', 'split'];
+      var labels = { ir: '即时渲染', source: '源码编辑', split: '分屏预览' };
+      var current = 0;
+
+      var iconPaths = {
+        ir: '<path stroke-width="2" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" stroke-width="2" /><line x1="9" y1="15" x2="15" y2="15" stroke-width="2" />',
+        source: '<polyline points="16 18 22 12 16 6" stroke-width="2" /><polyline points="8 6 2 12 8 18" stroke-width="2" />',
+        split: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2" /><path stroke-width="2" d="M12 3v18" />'
+      };
+
+      var btn = document.getElementById('mode-toggle');
+      var icon = document.getElementById('mode-icon');
+      var label = document.getElementById('mode-label');
+
+      function render() {
+        var mode = modes[current];
+        btn.className = 'mode-toggle-btn ' + mode;
+        icon.innerHTML = iconPaths[mode];
+        label.textContent = labels[mode];
+        btn.title = labels[mode] + ' (点击切换)';
+      }
+
+      btn.addEventListener('click', function () {
+        current = (current + 1) % modes.length;
+        render();
+        window.protoBridge.setMode(modes[current]);
+      });
+
+      // 同步来自其它组件的模式（如果有）
+      window.addEventListener('proto:mode', function (e) {
+        var idx = modes.indexOf(e.detail);
+        if (idx !== -1) { current = idx; render(); }
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>

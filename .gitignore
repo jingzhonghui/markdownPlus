@@ -44,3 +44,6 @@ coverage
 # Electron
 app-update.yml
 dev-app-update.yml
+
+# Superpowers / 截图自动化临时工作区
+.superpowers/

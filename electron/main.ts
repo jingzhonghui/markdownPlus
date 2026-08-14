@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import * as fs from 'fs'
 import { join, resolve } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { IPC_CHANNELS } from './ipc/channels'
@@ -6,6 +7,7 @@ import { registerFileHandlers } from './ipc/file-handlers'
 import { registerMdxHandlers, cleanupAll, isCloseConfirmed, setCloseConfirmed, attachRecoveryAssetData } from './ipc/mdx-handlers'
 import { registerPdfHandlers } from './ipc/pdf-handlers'
 import { hadAbnormalExit, markAppRunning, readRecoverySnapshot, writeRecoverySnapshot, clearRecoverySnapshot } from './recovery'
+import { openUserGuide } from './user-guide'
 
 /**
  * 创建主窗口
@@ -94,6 +96,13 @@ app.whenReady().then(() => {
     if (is.dev) return ''
     return app.getVersion()
   })
+  ipcMain.handle(IPC_CHANNELS.APP.OPEN_USER_GUIDE, () => openUserGuide({
+    isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    existsSync: fs.existsSync,
+    openPath: shell.openPath
+  }))
   ipcMain.handle(IPC_CHANNELS.APP.RECOVERY_STATUS, () => ({ success: true, data: { available: hadAbnormalExit() } }))
   ipcMain.handle(IPC_CHANNELS.APP.RECOVERY_READ, () => ({ success: true, data: readRecoverySnapshot() }))
   ipcMain.handle(IPC_CHANNELS.APP.RECOVERY_WRITE, (_, snapshot) => {

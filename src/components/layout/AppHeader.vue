@@ -162,7 +162,6 @@ const imageDialogOpen = ref(false)
 const imageSrc = ref('')
 const imageAlt = ref('')
 const shortcutsOpen = ref(false)
-const docsOpen = ref(false)
 const aboutOpen = ref(false)
 const appVersion = ref('开发版')
 
@@ -316,7 +315,25 @@ async function runMenuItem(item: MenuItem): Promise<void> {
       shortcutsOpen.value = true
       break
     case 'docs':
-      docsOpen.value = true
+      {
+        try {
+          const result = await window.electronAPI.openUserGuide()
+          if (result.success) break
+
+          await window.electronAPI.showMessageBox({
+            type: 'error',
+            title: '打开使用教程失败',
+            message: result.error
+          })
+        } catch (error) {
+          const details = error instanceof Error ? error.message : String(error)
+          await window.electronAPI.showMessageBox({
+            type: 'error',
+            title: '打开使用教程失败',
+            message: `无法打开内置使用教程：${details}`
+          })
+        }
+      }
       break
     case 'about':
       aboutOpen.value = true
@@ -400,12 +417,11 @@ function handleClose(): void {
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
-    if (settingsOpen.value || linkDialogOpen.value || imageDialogOpen.value || shortcutsOpen.value || docsOpen.value || aboutOpen.value) {
+    if (settingsOpen.value || linkDialogOpen.value || imageDialogOpen.value || shortcutsOpen.value || aboutOpen.value) {
       settingsOpen.value = false
       linkDialogOpen.value = false
       imageDialogOpen.value = false
       shortcutsOpen.value = false
-      docsOpen.value = false
       aboutOpen.value = false
       return
     }
@@ -840,47 +856,6 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="docsOpen"
-        class="help-overlay"
-        @mousedown.self="docsOpen = false"
-      >
-        <section class="help-dialog docs-dialog">
-          <h2>使用文档</h2>
-          <div class="docs-content">
-            <section>
-              <h3>文件与文档</h3>
-              <p>Markdown+ 支持直接编辑 Markdown 文件，也可使用自包含的 .mdx 格式保存正文、图片和附件。</p>
-            </section>
-            <section>
-              <h3>编辑模式</h3>
-              <p>即时渲染适合沉浸式写作；源码编辑显示完整 Markdown；分屏预览同时显示源码和渲染结果。</p>
-            </section>
-            <section>
-              <h3>图片与附件</h3>
-              <p>通过“插入”菜单选择本地图片或附件。保存为 .mdx 时，资源会打包到文档内部。</p>
-            </section>
-            <section>
-              <h3>导入与导出</h3>
-              <p>文件菜单支持导入 Markdown、导出 Markdown、单文档 PDF 和文件夹批量 PDF。</p>
-            </section>
-            <section>
-              <h3>恢复与保存</h3>
-              <p>未保存内容会生成恢复快照；关闭文档或应用时，系统会提示保存更改。</p>
-            </section>
-          </div>
-          <div class="settings-actions">
-            <button
-              type="button"
-              class="primary"
-              @click="docsOpen = false"
-            >
-              确定
-            </button>
-          </div>
-        </section>
-      </div>
-
-      <div
         v-if="aboutOpen"
         class="help-overlay"
         @mousedown.self="aboutOpen = false"
@@ -1229,21 +1204,6 @@ onUnmounted(() => {
   font-size: 11px;
 }
 
-.docs-content section {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.docs-content section:last-child {
-  border-bottom: none;
-}
-
-.docs-content h3 {
-  margin: 0 0 5px;
-  font-size: 13px;
-}
-
-.docs-content p,
 .about-dialog p {
   margin: 0;
   color: var(--color-text-secondary);

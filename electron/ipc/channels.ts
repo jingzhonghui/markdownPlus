@@ -40,6 +40,7 @@ export const IPC_CHANNELS = {
     PING: 'ping',
     GET_VERSION: 'app:getVersion',
     GET_PLATFORM: 'app:getPlatform',
+    OPEN_USER_GUIDE: 'app:openUserGuide',
     CONFIRM_CLOSE: 'app:confirm-close',
     CLOSE_CONFIRMED: 'app:close-confirmed',
     RECOVERY_STATUS: 'recovery:status',

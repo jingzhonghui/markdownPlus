@@ -1,6 +1,7 @@
 import { clipboard, contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from './ipc/channels'
 import type { MdxAttachmentAsset, MdxDocument } from './mdx/schema'
+import type { UserGuideOpenResult } from './user-guide'
 
 export { IPC_CHANNELS }
 
@@ -102,6 +103,7 @@ export interface ElectronAPI {
   ping: () => Promise<string>
   getVersion: () => Promise<string>
   getPlatform: () => Promise<string>
+  openUserGuide: () => Promise<UserGuideOpenResult>
 
   // 对话框
   showOpenDialog: (options?: unknown) => Promise<{ success: boolean; data?: string[]; error?: string }>
@@ -176,6 +178,7 @@ const api: ElectronAPI = {
   ping: () => ipcRenderer.invoke(IPC_CHANNELS.APP.PING),
   getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP.GET_VERSION),
   getPlatform: () => ipcRenderer.invoke(IPC_CHANNELS.APP.GET_PLATFORM),
+  openUserGuide: () => ipcRenderer.invoke(IPC_CHANNELS.APP.OPEN_USER_GUIDE),
 
   // 对话框
   showOpenDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG.SHOW_OPEN, options),

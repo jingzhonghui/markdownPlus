@@ -227,8 +227,8 @@ class CodeBlockView implements NodeView {
 
   ignoreMutation(mutation: ViewMutationRecord): boolean {
     // contentDOM 内的文本变更必须交给 ProseMirror 处理，否则空代码块中
-    // 输入回车、删除到空等操作无法同步到文档模型。
-    if (mutation.type === 'selection') return true
+    // 输入回车、删除到空以及鼠标选区都无法同步到文档模型。
+    if (mutation.type === 'selection') return false
     return !this.contentDOM.contains(mutation.target)
   }
 }
@@ -908,6 +908,11 @@ const format = (e as CustomEvent).detail as string
     case 'table':
       insertTableNode()
       return
+    case 'horizontalRule': {
+      const rule = nodes.horizontal_rule.create()
+      view.dispatch(view.state.tr.replaceSelectionWith(rule))
+      break
+    }
   }
   view.focus()
 }
@@ -939,11 +944,65 @@ function handleImageEvent(e: Event): void {
   insertImageNode(view, src, alt)
 }
 
+function handleAttachmentEvent(e: Event): void {
+  const view = viewRef.value
+  if (!view) return
+  const { path, name } = (e as CustomEvent).detail as { path: string; name: string }
+  const link = view.state.schema.marks.link.create({ href: path, title: name })
+  const text = view.state.schema.text(name, [link])
+  view.dispatch(view.state.tr.replaceSelectionWith(text))
+  view.focus()
+}
+
 function handleCodeBlockEvent(e: Event): void {
   const view = viewRef.value
   if (!view) return
   const { language } = (e as CustomEvent).detail as { language?: string }
   setBlockType(view.state.schema.nodes.code_block, { language: language || '' })(view.state, (tr) => applyAndSync(view, tr))
+  view.focus()
+}
+
+function handleUndoEvent(): void {
+  const view = viewRef.value
+  if (!view) return
+  undo(view.state, (tr) => applyAndSync(view, tr))
+  view.focus()
+}
+
+function handleRedoEvent(): void {
+  const view = viewRef.value
+  if (!view) return
+  redo(view.state, (tr) => applyAndSync(view, tr))
+  view.focus()
+}
+
+async function handleCopyEvent(): Promise<void> {
+  const view = viewRef.value
+  if (!view) return
+  const { from, to } = view.state.selection
+  if (from === to) return
+  const text = view.state.doc.textBetween(from, to, '\n')
+  await window.electronAPI?.clipboardWriteText(text)
+  view.focus()
+}
+
+async function handleCutEvent(): Promise<void> {
+  const view = viewRef.value
+  if (!view) return
+  const { from, to } = view.state.selection
+  if (from === to) return
+  const text = view.state.doc.textBetween(from, to, '\n')
+  await window.electronAPI?.clipboardWriteText(text)
+  view.dispatch(view.state.tr.deleteSelection())
+  view.focus()
+}
+
+async function handlePasteEvent(): Promise<void> {
+  const view = viewRef.value
+  if (!view) return
+  const text = await window.electronAPI?.clipboardReadText()
+  if (!text) return
+  view.dispatch(view.state.tr.insertText(text))
   view.focus()
 }
 
@@ -966,7 +1025,13 @@ onMounted(() => {
   window.addEventListener('editor:heading', handleHeadingEvent)
   window.addEventListener('editor:link', handleLinkEvent)
   window.addEventListener('editor:image', handleImageEvent)
+  window.addEventListener('editor:attachment', handleAttachmentEvent)
   window.addEventListener('editor:codeBlock', handleCodeBlockEvent)
+  window.addEventListener('editor:undo', handleUndoEvent)
+  window.addEventListener('editor:redo', handleRedoEvent)
+  window.addEventListener('editor:cut', handleCutEvent)
+  window.addEventListener('editor:copy', handleCopyEvent)
+  window.addEventListener('editor:paste', handlePasteEvent)
   document.addEventListener('click', closeContextMenu)
   document.addEventListener('contextmenu', closeContextMenu, true)
   window.addEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
@@ -1008,7 +1073,13 @@ onUnmounted(() => {
   window.removeEventListener('editor:heading', handleHeadingEvent)
   window.removeEventListener('editor:link', handleLinkEvent)
   window.removeEventListener('editor:image', handleImageEvent)
+  window.removeEventListener('editor:attachment', handleAttachmentEvent)
   window.removeEventListener('editor:codeBlock', handleCodeBlockEvent)
+  window.removeEventListener('editor:undo', handleUndoEvent)
+  window.removeEventListener('editor:redo', handleRedoEvent)
+  window.removeEventListener('editor:cut', handleCutEvent)
+  window.removeEventListener('editor:copy', handleCopyEvent)
+  window.removeEventListener('editor:paste', handlePasteEvent)
   document.removeEventListener('click', closeContextMenu)
   document.removeEventListener('contextmenu', closeContextMenu, true)
   window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)

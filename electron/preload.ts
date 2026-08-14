@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { clipboard, contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from './ipc/channels'
 import type { MdxAttachmentAsset, MdxDocument } from './mdx/schema'
 
@@ -67,6 +67,10 @@ export interface ElectronAPI {
   getRecentFiles: () => Promise<{ success: boolean; data?: string[]; error?: string }>
   removeRecentFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
   clearRecentFiles: () => Promise<{ success: boolean; error?: string }>
+
+  // 剪贴板
+  clipboardReadText: () => Promise<string>
+  clipboardWriteText: (text: string) => Promise<void>
 
   // MDX 操作
   readMdx: (filePath: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
@@ -137,6 +141,10 @@ const api: ElectronAPI = {
   getRecentFiles: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT),
   removeRecentFile: (filePath) => ipcRenderer.invoke('file:removeRecent', filePath),
   clearRecentFiles: () => ipcRenderer.invoke('file:clearRecent'),
+
+  // 剪贴板
+  clipboardReadText: async () => clipboard.readText(),
+  clipboardWriteText: async (text) => clipboard.writeText(text),
 
   // MDX 操作
   readMdx: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.MDX.READ, filePath),

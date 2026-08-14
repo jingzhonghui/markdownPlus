@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 
@@ -7,14 +7,205 @@ const fileStore = useFileStore()
 const themeStore = useThemeStore()
 const isMaximized = ref(false)
 
+// ===== 菜单状态 =====
+interface MenuItem {
+  kind: 'item' | 'divider' | 'submenu'
+  label?: string
+  action?: string
+  shortcut?: string
+  payload?: string
+  checked?: boolean
+  children?: MenuItem[]
+}
+
+const activeMenu = ref<string | null>(null)
+const menuPosition = ref({ left: 0, top: 0 })
+
+const fileMenu = computed<MenuItem[]>(() => {
+  const recentItems: MenuItem[] = fileStore.recentFiles.map((filePath) => ({
+    kind: 'item',
+    label: filePath.split(/[/\\]/).pop() || filePath,
+    action: 'recent',
+    payload: filePath
+  }))
+
+  const recentMenu: MenuItem =
+    recentItems.length > 0
+      ? { kind: 'submenu', label: '最近文件', children: recentItems }
+      : { kind: 'submenu', label: '最近文件', children: [{ kind: 'item', label: '（无最近文件）', action: 'none' }] }
+
+  return [
+    { kind: 'item', label: '新建文件', action: 'new', shortcut: 'Ctrl+N' },
+    { kind: 'item', label: '打开文件...', action: 'open', shortcut: 'Ctrl+O' },
+    { kind: 'item', label: '打开文件夹...', action: 'open-folder' },
+    { kind: 'divider' },
+    { kind: 'item', label: '保存', action: 'save', shortcut: 'Ctrl+S' },
+    { kind: 'item', label: '另存为...', action: 'save-as', shortcut: 'Ctrl+Shift+S' },
+    { kind: 'divider' },
+    { kind: 'item', label: '导入 Markdown...', action: 'import-md' },
+    { kind: 'item', label: '导入文件夹...', action: 'import-folder' },
+    { kind: 'divider' },
+    { kind: 'item', label: '导出为 Markdown...', action: 'export-md' },
+    { kind: 'item', label: '导出为 PDF...', action: 'export-pdf' },
+    { kind: 'item', label: '批量导出 PDF...', action: 'export-batch-pdf' },
+    { kind: 'divider' },
+    recentMenu,
+    { kind: 'divider' },
+    { kind: 'item', label: '退出', action: 'exit' }
+  ]
+})
+
+const editMenu: MenuItem[] = [
+  { kind: 'item', label: '撤销', action: 'undo', shortcut: 'Ctrl+Z' },
+  { kind: 'item', label: '重做', action: 'redo', shortcut: 'Ctrl+Y' },
+  { kind: 'divider' },
+  { kind: 'item', label: '剪切', action: 'cut', shortcut: 'Ctrl+X' },
+  { kind: 'item', label: '复制', action: 'copy', shortcut: 'Ctrl+C' },
+  { kind: 'item', label: '粘贴', action: 'paste', shortcut: 'Ctrl+V' },
+  { kind: 'divider' },
+  { kind: 'item', label: '查找', action: 'find', shortcut: 'Ctrl+F' },
+  { kind: 'item', label: '替换', action: 'replace', shortcut: 'Ctrl+H' }
+]
+
+const viewMenu = computed<MenuItem[]>(() => [
+  {
+    kind: 'submenu',
+    label: '编辑器模式',
+    children: [
+      { kind: 'item', label: '即时渲染', action: 'mode-ir', checked: fileStore.editorMode === 'ir' },
+      { kind: 'item', label: '源码编辑', action: 'mode-source', checked: fileStore.editorMode === 'source' },
+      { kind: 'item', label: '分屏预览', action: 'mode-split', checked: fileStore.editorMode === 'split' }
+    ]
+  },
+  {
+    kind: 'submenu',
+    label: '主题',
+    children: [
+      { kind: 'item', label: '浅色', action: 'theme-light', checked: themeStore.theme === 'light' },
+      { kind: 'item', label: '深色', action: 'theme-dark', checked: themeStore.theme === 'dark' },
+      { kind: 'item', label: '跟随系统', action: 'theme-system', checked: themeStore.theme === 'system' }
+    ]
+  },
+  { kind: 'divider' },
+  { kind: 'item', label: '显示侧边栏', action: 'toggle-sidebar', checked: !fileStore.sidebarCollapsed },
+  { kind: 'divider' },
+  { kind: 'item', label: '设置...', action: 'settings', shortcut: 'Ctrl+,' }
+])
+
+const insertMenu: MenuItem[] = [
+  { kind: 'item', label: '插入图片', action: 'insert-image', shortcut: 'Ctrl+Shift+K' },
+  { kind: 'item', label: '插入链接', action: 'insert-link', shortcut: 'Ctrl+K' },
+  { kind: 'divider' },
+  { kind: 'item', label: '插入表格', action: 'insert-table' },
+  { kind: 'item', label: '插入代码块', action: 'insert-code' },
+  { kind: 'item', label: '插入分割线', action: 'insert-hr' },
+  { kind: 'divider' },
+  { kind: 'item', label: '插入附件', action: 'insert-attachment' }
+]
+
+const helpMenu: MenuItem[] = [
+  { kind: 'item', label: '快捷键速查', action: 'shortcuts' },
+  { kind: 'item', label: '使用文档', action: 'docs' },
+  { kind: 'divider' },
+  { kind: 'item', label: '关于 Markdown+', action: 'about' }
+]
+
+const shortcuts = [
+  { keys: 'Ctrl+N', label: '新建文件' },
+  { keys: 'Ctrl+O', label: '打开文件' },
+  { keys: 'Ctrl+S', label: '保存文件' },
+  { keys: 'Ctrl+Shift+S', label: '另存为' },
+  { keys: 'Ctrl+Z', label: '撤销' },
+  { keys: 'Ctrl+Y', label: '重做' },
+  { keys: 'Ctrl+X', label: '剪切' },
+  { keys: 'Ctrl+C', label: '复制' },
+  { keys: 'Ctrl+V', label: '粘贴' },
+  { keys: 'Ctrl+B', label: '粗体' },
+  { keys: 'Ctrl+I', label: '斜体' },
+  { keys: 'Ctrl+K', label: '插入链接' },
+  { keys: 'Ctrl+Shift+K', label: '插入图片' },
+  { keys: 'Ctrl+F', label: '查找（源码模式）' },
+  { keys: 'Ctrl+H', label: '替换（源码模式）' },
+  { keys: 'Ctrl+/', label: '切换注释（源码模式）' },
+  { keys: 'Ctrl+,', label: '打开设置' }
+]
+
+const MENU_DEFS = [
+  { name: 'file', label: '文件' },
+  { name: 'edit', label: '编辑' },
+  { name: 'view', label: '视图' },
+  { name: 'insert', label: '插入' },
+  { name: 'help', label: '帮助' }
+]
+
+const menus = computed<Record<string, MenuItem[]>>(() => ({
+  file: fileMenu.value,
+  edit: editMenu,
+  view: viewMenu.value,
+  insert: insertMenu,
+  help: helpMenu
+}))
+
+const currentMenuItems = computed<MenuItem[]>(() => {
+  if (!activeMenu.value) return []
+  return menus.value[activeMenu.value] ?? []
+})
+
+const EDIT_ACTIONS = new Set(['undo', 'redo', 'cut', 'copy', 'paste', 'find', 'replace'])
+const settingsOpen = ref(false)
+const settingsCompressEnabled = ref(true)
+const settingsCompressQuality = ref(85)
+const linkDialogOpen = ref(false)
+const linkHref = ref('')
+const linkTitle = ref('')
+const imageDialogOpen = ref(false)
+const imageSrc = ref('')
+const imageAlt = ref('')
+const shortcutsOpen = ref(false)
+const docsOpen = ref(false)
+const aboutOpen = ref(false)
+const appVersion = ref('开发版')
+
+function closeMenu(): void {
+  activeMenu.value = null
+}
+
+function toggleMenu(name: string, event: MouseEvent): void {
+  if (activeMenu.value === name) {
+    closeMenu()
+    return
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  activeMenu.value = name
+  menuPosition.value = { left: rect.left, top: rect.bottom }
+}
+
+function onMenuHover(name: string, event: MouseEvent): void {
+  if (!activeMenu.value || activeMenu.value === name) return
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  activeMenu.value = name
+  menuPosition.value = { left: rect.left, top: rect.bottom }
+}
+
+function handleDocumentMousedown(event: MouseEvent): void {
+  if (!activeMenu.value) return
+  const target = event.target as HTMLElement
+  const dropdown = document.querySelector('.menu-dropdown')
+  if (dropdown && dropdown.contains(target)) return
+  if (target.closest('.menu-bar')) return
+  closeMenu()
+}
+
+// ===== 文件操作 =====
+
 async function newFile(): Promise<void> {
   if (!await fileStore.confirmSaveBeforeAction()) return
   await fileStore.newFile()
 }
 
-async function openFile(): Promise<void> {
+async function openFile(filePath?: string): Promise<void> {
   if (!await fileStore.confirmSaveBeforeAction()) return
-  await fileStore.openFile()
+  await fileStore.openFile(filePath)
 }
 
 async function saveFile(): Promise<void> {
@@ -23,6 +214,172 @@ async function saveFile(): Promise<void> {
 
 async function saveAsFile(): Promise<void> {
   await fileStore.saveAsFile()
+}
+
+async function exportCurrentPdf(): Promise<void> {
+  const tabId = fileStore.activeTabId
+  if (!tabId) return
+  await fileStore.exportTabToPdf(tabId)
+}
+
+async function exportBatchPdf(): Promise<void> {
+  if (!fileStore.openedFolderPath) {
+    const opened = await fileStore.openFolder()
+    if (!opened || !fileStore.openedFolderPath) return
+  }
+  await fileStore.exportFolderToPdf(fileStore.openedFolderPath)
+}
+
+async function runMenuItem(item: MenuItem): Promise<void> {
+  if (item.kind !== 'item' || !item.action || item.action === 'none') return
+  closeMenu()
+  if (EDIT_ACTIONS.has(item.action)) {
+    window.dispatchEvent(new CustomEvent(`editor:${item.action}`))
+    return
+  }
+  if (item.action.startsWith('mode-')) {
+    fileStore.setEditorMode(item.action.replace('mode-', '') as 'ir' | 'source' | 'split')
+    return
+  }
+  if (item.action.startsWith('theme-')) {
+    themeStore.setTheme(item.action.replace('theme-', '') as 'light' | 'dark' | 'system')
+    return
+  }
+  switch (item.action) {
+    case 'new':
+      await newFile()
+      break
+    case 'open':
+      await openFile()
+      break
+    case 'open-folder':
+      await fileStore.openFolder()
+      break
+    case 'save':
+      await saveFile()
+      break
+    case 'save-as':
+      await saveAsFile()
+      break
+    case 'import-md':
+      await fileStore.importMarkdown()
+      break
+    case 'import-folder':
+      await fileStore.importFolder()
+      break
+    case 'export-md':
+      await fileStore.exportMarkdown()
+      break
+    case 'export-pdf':
+      await exportCurrentPdf()
+      break
+    case 'export-batch-pdf':
+      await exportBatchPdf()
+      break
+    case 'recent':
+      await openFile(item.payload)
+      break
+    case 'exit':
+      window.electronAPI?.windowClose()
+      break
+    case 'toggle-sidebar':
+      fileStore.toggleSidebar()
+      break
+    case 'settings':
+      settingsCompressEnabled.value = fileStore.imageCompressSettings.enabled
+      settingsCompressQuality.value = fileStore.imageCompressSettings.quality
+      settingsOpen.value = true
+      break
+    case 'insert-image':
+      imageSrc.value = ''
+      imageAlt.value = ''
+      imageDialogOpen.value = true
+      break
+    case 'insert-link':
+      linkHref.value = ''
+      linkTitle.value = ''
+      linkDialogOpen.value = true
+      break
+    case 'insert-table':
+      window.dispatchEvent(new CustomEvent('editor:format', { detail: 'table' }))
+      break
+    case 'insert-code':
+      window.dispatchEvent(new CustomEvent('editor:codeBlock', { detail: { language: '' } }))
+      break
+    case 'insert-hr':
+      window.dispatchEvent(new CustomEvent('editor:format', { detail: 'horizontalRule' }))
+      break
+    case 'insert-attachment':
+      await selectAttachmentFile()
+      break
+    case 'shortcuts':
+      shortcutsOpen.value = true
+      break
+    case 'docs':
+      docsOpen.value = true
+      break
+    case 'about':
+      aboutOpen.value = true
+      break
+  }
+}
+
+function chooseFile(accept?: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    if (accept) input.accept = accept
+    input.addEventListener('change', () => resolve(input.files?.[0] ?? null), { once: true })
+    input.addEventListener('cancel', () => resolve(null), { once: true })
+    input.click()
+  })
+}
+
+function confirmInsertLink(): void {
+  const href = linkHref.value.trim()
+  if (!href) return
+  window.dispatchEvent(new CustomEvent('editor:link', {
+    detail: { href, title: linkTitle.value.trim() }
+  }))
+  linkDialogOpen.value = false
+}
+
+function confirmInsertImage(): void {
+  const src = imageSrc.value.trim()
+  if (!src) return
+  window.dispatchEvent(new CustomEvent('editor:image', {
+    detail: { src, alt: imageAlt.value.trim() }
+  }))
+  imageDialogOpen.value = false
+}
+
+async function selectImageFile(): Promise<void> {
+  const file = await chooseFile('image/*')
+  if (!file) return
+  const result = await fileStore.addImage(file)
+  if (!result.success || !result.path) return
+  window.dispatchEvent(new CustomEvent('editor:image', {
+    detail: { src: result.path, alt: file.name }
+  }))
+  imageDialogOpen.value = false
+}
+
+async function selectAttachmentFile(): Promise<void> {
+  const file = await chooseFile()
+  if (!file) return
+  const result = await fileStore.addAttachment(file)
+  if (!result.success || !result.path) return
+  window.dispatchEvent(new CustomEvent('editor:attachment', {
+    detail: { path: result.path, name: file.name }
+  }))
+}
+
+function saveSettings(): void {
+  fileStore.setImageCompressSettings({
+    enabled: settingsCompressEnabled.value,
+    quality: settingsCompressQuality.value
+  })
+  settingsOpen.value = false
 }
 
 function toggleTheme(): void {
@@ -42,6 +399,20 @@ function handleClose(): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    if (settingsOpen.value || linkDialogOpen.value || imageDialogOpen.value || shortcutsOpen.value || docsOpen.value || aboutOpen.value) {
+      settingsOpen.value = false
+      linkDialogOpen.value = false
+      imageDialogOpen.value = false
+      shortcutsOpen.value = false
+      docsOpen.value = false
+      aboutOpen.value = false
+      return
+    }
+    closeMenu()
+    return
+  }
+
   if (!event.ctrlKey) return
 
   if (event.key === 'n') {
@@ -57,6 +428,11 @@ function handleKeydown(event: KeyboardEvent): void {
     } else {
       saveFile()
     }
+  } else if (event.key === ',') {
+    event.preventDefault()
+    settingsCompressEnabled.value = fileStore.imageCompressSettings.enabled
+    settingsCompressQuality.value = fileStore.imageCompressSettings.quality
+    settingsOpen.value = true
   }
 }
 
@@ -65,9 +441,13 @@ let removeUnmaximizedListener: (() => void) | null = null
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
+  document.addEventListener('mousedown', handleDocumentMousedown)
 
   const maximized = await window.electronAPI?.windowIsMaximized()
   isMaximized.value = maximized ?? false
+
+  const version = await window.electronAPI?.getVersion()
+  if (version) appVersion.value = version
 
   removeMaximizedListener = window.electronAPI?.onWindowMaximized(() => {
     isMaximized.value = true
@@ -79,6 +459,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('mousedown', handleDocumentMousedown)
   removeMaximizedListener?.()
   removeUnmaximizedListener?.()
 })
@@ -86,13 +467,24 @@ onUnmounted(() => {
 
 <template>
   <header class="app-header">
-    <div class="header-left">
-      <img
-        src="../../assets/logo.svg"
-        alt="M+"
-        class="logo-icon"
+    <img
+      src="../../assets/logo.svg"
+      alt="M+"
+      class="logo-icon"
+    >
+
+    <nav class="menu-bar">
+      <div
+        v-for="menu in MENU_DEFS"
+        :key="menu.name"
+        class="menu-item"
+        :class="{ open: activeMenu === menu.name }"
+        @click.stop="toggleMenu(menu.name, $event)"
+        @mouseenter="onMenuHover(menu.name, $event)"
       >
-    </div>
+        {{ menu.label }}
+      </div>
+    </nav>
 
     <div class="window-drag-region" />
 
@@ -184,6 +576,341 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
+
+    <teleport to="body">
+      <div
+        v-if="activeMenu"
+        class="menu-dropdown"
+        :style="{ left: menuPosition.left + 'px', top: menuPosition.top + 'px' }"
+        @click.stop
+      >
+        <template
+          v-for="(item, index) in currentMenuItems"
+          :key="index"
+        >
+          <div
+            v-if="item.kind === 'divider'"
+            class="menu-divider"
+          />
+          <div
+            v-else-if="item.kind === 'submenu'"
+            class="menu-entry has-sub"
+          >
+            <span>{{ item.label }}</span>
+            <span class="sub-indicator">▸</span>
+            <div class="submenu">
+              <div
+                v-for="(sub, subIndex) in item.children"
+                :key="subIndex"
+                class="menu-entry"
+                :class="{ disabled: sub.action === 'none' }"
+                :title="sub.payload || undefined"
+                @click="runMenuItem(sub)"
+              >
+                <span class="menu-entry-label">
+                  <span
+                    v-if="sub.checked !== undefined"
+                    class="menu-check"
+                  >{{ sub.checked ? '✓' : '' }}</span>
+                  {{ sub.label }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div
+            v-else
+            class="menu-entry"
+            @click="runMenuItem(item)"
+          >
+            <span class="menu-entry-label">
+              <span
+                v-if="item.checked !== undefined"
+                class="menu-check"
+              >{{ item.checked ? '✓' : '' }}</span>
+              {{ item.label }}
+            </span>
+            <span
+              v-if="item.shortcut"
+              class="shortcut"
+            >{{ item.shortcut }}</span>
+          </div>
+        </template>
+      </div>
+
+      <div
+        v-if="settingsOpen"
+        class="settings-overlay"
+        @mousedown.self="settingsOpen = false"
+      >
+        <section class="settings-dialog">
+          <h2>设置</h2>
+
+          <label class="settings-row">
+            <span>
+              <strong>图片自动压缩</strong>
+              <small>插入图片时自动压缩以减小文档体积</small>
+            </span>
+            <input
+              v-model="settingsCompressEnabled"
+              type="checkbox"
+            >
+          </label>
+
+          <label class="settings-row">
+            <span>
+              <strong>压缩质量</strong>
+              <small>数值越高画质越好、体积越大</small>
+            </span>
+            <span class="quality-control">
+              <input
+                v-model.number="settingsCompressQuality"
+                type="range"
+                min="1"
+                max="100"
+                :disabled="!settingsCompressEnabled"
+              >
+              <output>{{ settingsCompressQuality }}</output>
+            </span>
+          </label>
+
+          <div class="settings-theme">
+            <strong>默认主题</strong>
+            <div class="theme-options">
+              <button
+                v-for="option in [
+                  { value: 'light', label: '浅色' },
+                  { value: 'dark', label: '深色' },
+                  { value: 'system', label: '跟随系统' }
+                ]"
+                :key="option.value"
+                type="button"
+                :class="{ active: themeStore.theme === option.value }"
+                @click="themeStore.setTheme(option.value as 'light' | 'dark' | 'system')"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-actions">
+            <button
+              type="button"
+              class="secondary"
+              @click="settingsOpen = false"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="primary"
+              @click="saveSettings"
+            >
+              完成
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div
+        v-if="linkDialogOpen"
+        class="insert-dialog-overlay"
+        @mousedown.self="linkDialogOpen = false"
+      >
+        <section class="insert-dialog">
+          <h2>插入链接</h2>
+          <label>
+            <span>链接地址</span>
+            <input
+              v-model="linkHref"
+              type="url"
+              placeholder="https://example.com"
+              autofocus
+              @keydown.enter="confirmInsertLink"
+            >
+          </label>
+          <label>
+            <span>显示文本</span>
+            <input
+              v-model="linkTitle"
+              type="text"
+              placeholder="可选，默认使用选中文本"
+              @keydown.enter="confirmInsertLink"
+            >
+          </label>
+          <div class="settings-actions">
+            <button
+              type="button"
+              class="secondary"
+              @click="linkDialogOpen = false"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="primary"
+              :disabled="!linkHref.trim()"
+              @click="confirmInsertLink"
+            >
+              插入
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div
+        v-if="imageDialogOpen"
+        class="insert-dialog-overlay"
+        @mousedown.self="imageDialogOpen = false"
+      >
+        <section class="insert-dialog">
+          <h2>插入图片</h2>
+          <label>
+            <span>图片地址</span>
+            <input
+              v-model="imageSrc"
+              type="text"
+              placeholder="URL 或相对路径"
+              autofocus
+              @keydown.enter="confirmInsertImage"
+            >
+          </label>
+          <label>
+            <span>替代文本</span>
+            <input
+              v-model="imageAlt"
+              type="text"
+              placeholder="可选"
+              @keydown.enter="confirmInsertImage"
+            >
+          </label>
+          <button
+            type="button"
+            class="local-file-button"
+            @click="selectImageFile"
+          >
+            选择本地图片
+          </button>
+          <div class="settings-actions">
+            <button
+              type="button"
+              class="secondary"
+              @click="imageDialogOpen = false"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="primary"
+              :disabled="!imageSrc.trim()"
+              @click="confirmInsertImage"
+            >
+              插入
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div
+        v-if="shortcutsOpen"
+        class="help-overlay"
+        @mousedown.self="shortcutsOpen = false"
+      >
+        <section class="help-dialog shortcuts-dialog">
+          <h2>快捷键速查</h2>
+          <div class="shortcuts-grid">
+            <div
+              v-for="shortcut in shortcuts"
+              :key="shortcut.keys"
+              class="shortcut-row"
+            >
+              <kbd>{{ shortcut.keys }}</kbd>
+              <span>{{ shortcut.label }}</span>
+            </div>
+          </div>
+          <div class="settings-actions">
+            <button
+              type="button"
+              class="primary"
+              @click="shortcutsOpen = false"
+            >
+              确定
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div
+        v-if="docsOpen"
+        class="help-overlay"
+        @mousedown.self="docsOpen = false"
+      >
+        <section class="help-dialog docs-dialog">
+          <h2>使用文档</h2>
+          <div class="docs-content">
+            <section>
+              <h3>文件与文档</h3>
+              <p>Markdown+ 支持直接编辑 Markdown 文件，也可使用自包含的 .mdx 格式保存正文、图片和附件。</p>
+            </section>
+            <section>
+              <h3>编辑模式</h3>
+              <p>即时渲染适合沉浸式写作；源码编辑显示完整 Markdown；分屏预览同时显示源码和渲染结果。</p>
+            </section>
+            <section>
+              <h3>图片与附件</h3>
+              <p>通过“插入”菜单选择本地图片或附件。保存为 .mdx 时，资源会打包到文档内部。</p>
+            </section>
+            <section>
+              <h3>导入与导出</h3>
+              <p>文件菜单支持导入 Markdown、导出 Markdown、单文档 PDF 和文件夹批量 PDF。</p>
+            </section>
+            <section>
+              <h3>恢复与保存</h3>
+              <p>未保存内容会生成恢复快照；关闭文档或应用时，系统会提示保存更改。</p>
+            </section>
+          </div>
+          <div class="settings-actions">
+            <button
+              type="button"
+              class="primary"
+              @click="docsOpen = false"
+            >
+              确定
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div
+        v-if="aboutOpen"
+        class="help-overlay"
+        @mousedown.self="aboutOpen = false"
+      >
+        <section class="help-dialog about-dialog">
+          <img
+            src="../../assets/logo.svg"
+            alt="Markdown+"
+            class="about-logo"
+          >
+          <h2>Markdown+</h2>
+          <p class="about-version">
+            版本 {{ appVersion }}
+          </p>
+          <p>一款支持自包含 .mdx 文件格式的轻量级 Markdown 编辑器。</p>
+          <p class="about-copyright">
+            Copyright © 2026 Markdown+ Team
+          </p>
+          <div class="settings-actions">
+            <button
+              type="button"
+              class="primary"
+              @click="aboutOpen = false"
+            >
+              确定
+            </button>
+          </div>
+        </section>
+      </div>
+    </teleport>
   </header>
 </template>
 
@@ -192,24 +919,52 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   height: var(--header-height);
-  padding: 0 var(--spacing-md);
+  padding: 0 var(--spacing-sm);
   background-color: var(--color-bg-primary);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
-.header-left,
+.logo-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex-shrink: 0;
+  margin-right: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.menu-bar {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+
+.menu-item:hover,
+.menu-item.open {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text);
+}
+
 .header-right {
   display: flex;
   align-items: center;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
-}
-
-.logo-icon {
-  width: 32px;
-  height: 32px;
-  display: block;
 }
 
 .window-drag-region {
@@ -224,8 +979,8 @@ onUnmounted(() => {
 }
 
 .icon-btn {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -243,8 +998,8 @@ onUnmounted(() => {
 }
 
 .icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .window-controls {
@@ -254,8 +1009,8 @@ onUnmounted(() => {
 }
 
 .window-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -273,12 +1028,396 @@ onUnmounted(() => {
 }
 
 .window-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .window-btn.close:hover {
   background-color: #e81123;
   color: white;
+}
+</style>
+
+<style>
+.menu-dropdown {
+  position: fixed;
+  z-index: 10002;
+  min-width: 220px;
+  padding: 5px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  user-select: none;
+}
+
+.menu-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.menu-entry:hover {
+  background: var(--color-bg-secondary);
+}
+
+.menu-entry .shortcut {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.menu-entry .sub-indicator {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.menu-entry-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.menu-check {
+  width: 18px;
+  color: var(--color-primary);
+  font-weight: 600;
+  text-align: left;
+}
+
+.menu-entry.disabled {
+  color: var(--color-text-tertiary);
+  cursor: default;
+  pointer-events: none;
+}
+
+.menu-divider {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--color-border);
+}
+
+.menu-entry.has-sub {
+  position: relative;
+}
+
+.submenu {
+  position: absolute;
+  left: calc(100% - 4px);
+  top: -6px;
+  min-width: 180px;
+  padding: 5px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  display: none;
+  z-index: 10003;
+}
+
+.menu-entry.has-sub:hover > .submenu {
+  display: block;
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10010;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.insert-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10010;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10010;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.settings-dialog {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  padding: 24px;
+  color: var(--color-text);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24);
+}
+
+.insert-dialog {
+  width: 390px;
+  max-width: calc(100vw - 32px);
+  padding: 22px;
+  color: var(--color-text);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24);
+}
+
+.help-dialog {
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  padding: 24px;
+  overflow-y: auto;
+  color: var(--color-text);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24);
+}
+
+.help-dialog h2 {
+  margin: 0 0 18px;
+  font-size: 17px;
+}
+
+.shortcuts-dialog {
+  width: 560px;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 24px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 7px 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.shortcut-row kbd {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.docs-content section {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.docs-content section:last-child {
+  border-bottom: none;
+}
+
+.docs-content h3 {
+  margin: 0 0 5px;
+  font-size: 13px;
+}
+
+.docs-content p,
+.about-dialog p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.about-dialog {
+  width: 390px;
+  text-align: center;
+}
+
+.about-dialog h2 {
+  margin-bottom: 4px;
+  font-size: 19px;
+}
+
+.about-logo {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 10px;
+  border-radius: 12px;
+}
+
+.about-version {
+  margin-bottom: 14px !important;
+  color: var(--color-text-tertiary) !important;
+}
+
+.about-copyright {
+  margin-top: 16px !important;
+  color: var(--color-text-tertiary) !important;
+  font-size: 12px !important;
+}
+
+.insert-dialog h2 {
+  margin: 0 0 18px;
+  font-size: 17px;
+}
+
+.insert-dialog label {
+  display: block;
+  margin-bottom: 13px;
+}
+
+.insert-dialog label > span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.insert-dialog input {
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+}
+
+.insert-dialog input:focus {
+  border-color: var(--color-primary);
+}
+
+.local-file-button {
+  width: 100%;
+  padding: 9px;
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  border: 1px dashed var(--color-border-hover);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.local-file-button:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.settings-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-row strong,
+.settings-theme > strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-row small {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.quality-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quality-control input {
+  width: 120px;
+}
+
+.quality-control output {
+  width: 24px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-align: right;
+}
+
+.settings-theme {
+  padding-top: 14px;
+}
+
+.theme-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.theme-options button,
+.settings-actions button {
+  padding: 7px 12px;
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.theme-options button:hover,
+.theme-options button.active {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.settings-actions button.primary {
+  color: white;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.settings-actions button:hover {
+  filter: brightness(1.05);
+}
+
+.settings-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  filter: none;
 }
 </style>

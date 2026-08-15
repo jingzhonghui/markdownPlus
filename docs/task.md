@@ -465,12 +465,13 @@
 - [ ] Bug 修复与回归测试
 
 ### 6.7 自动更新
-- [ ] 集成 electron-updater
-- [ ] 配置更新源（GitHub Releases）
-- [ ] 实现更新检查逻辑
-- [ ] 更新提示 UI（版本号、更新内容、下载进度）
-- [ ] 后台下载 + 重启安装
-- [ ] 支持回滚
+- [x] 集成 electron-updater
+- [x] 配置更新源（GitHub Releases，publish 块 + CI 上传 latest*.yml / blockmap）
+- [x] 实现更新检查逻辑（启动延迟静默检查 + 菜单手动检查）
+- [x] 更新提示 UI（版本号、更新内容、下载进度）
+- [x] 后台下载 + 重启安装（弹窗确认后下载，与未保存修改确认流程协同）
+- [ ] 支持回滚（后续版本）
+- [x] 上线前将 electron-builder.yml publish.owner/repo 修正为真实公开仓库
 
 ### 6.8 首次发布
 - [ ] 版本号锁定为首次正式发布版本

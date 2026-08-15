@@ -8,6 +8,9 @@ import { registerMdxHandlers, cleanupAll, isCloseConfirmed, setCloseConfirmed, a
 import { registerPdfHandlers } from './ipc/pdf-handlers'
 import { hadAbnormalExit, markAppRunning, readRecoverySnapshot, writeRecoverySnapshot, clearRecoverySnapshot } from './recovery'
 import { openUserGuide } from './user-guide'
+import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater'
+
+let mainWindow: BrowserWindow | null = null
 
 /**
  * 创建主窗口
@@ -18,7 +21,7 @@ function createWindow(): void {
     ? resolve(__dirname, '../../resources/icon.png')
     : join(__dirname, '../resources/icon.png')
 
-  const mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1400,
     height: 900,
     show: false,
@@ -31,51 +34,52 @@ function createWindow(): void {
       contextIsolation: true
     }
   })
+  mainWindow = win
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+  win.on('ready-to-show', () => {
+    win.show()
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   // 拦截窗口关闭事件：始终通知渲染进程检查未保存的修改
-  mainWindow.on('close', (e) => {
+  win.on('close', (e) => {
     if (isCloseConfirmed()) {
       setCloseConfirmed(false)
       return
     }
     e.preventDefault()
-    mainWindow.webContents.send('app:confirm-close')
+    win.webContents.send('app:confirm-close')
   })
 
   // 窗口控制 IPC handlers
-  ipcMain.handle(IPC_CHANNELS.WINDOW.MINIMIZE, () => mainWindow.minimize())
+  ipcMain.handle(IPC_CHANNELS.WINDOW.MINIMIZE, () => win.minimize())
   ipcMain.handle(IPC_CHANNELS.WINDOW.MAXIMIZE, () => {
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize()
+    if (win.isMaximized()) {
+      win.unmaximize()
     } else {
-      mainWindow.maximize()
+      win.maximize()
     }
   })
-  ipcMain.handle(IPC_CHANNELS.WINDOW.CLOSE, () => mainWindow.close())
-  ipcMain.handle(IPC_CHANNELS.WINDOW.IS_MAXIMIZED, () => mainWindow.isMaximized())
+  ipcMain.handle(IPC_CHANNELS.WINDOW.CLOSE, () => win.close())
+  ipcMain.handle(IPC_CHANNELS.WINDOW.IS_MAXIMIZED, () => win.isMaximized())
 
   // 监听最大化状态变化，通知渲染进程
-  mainWindow.on('maximize', () => {
-    mainWindow.webContents.send(IPC_CHANNELS.WINDOW.MAXIMIZED)
+  win.on('maximize', () => {
+    win.webContents.send(IPC_CHANNELS.WINDOW.MAXIMIZED)
   })
-  mainWindow.on('unmaximize', () => {
-    mainWindow.webContents.send(IPC_CHANNELS.WINDOW.UNMAXIMIZED)
+  win.on('unmaximize', () => {
+    win.webContents.send(IPC_CHANNELS.WINDOW.UNMAXIMIZED)
   })
 
   // 根据开发/生产环境加载页面
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -118,6 +122,16 @@ app.whenReady().then(() => {
     return { success: true }
   })
 
+  // 自动更新 handlers
+  ipcMain.handle(IPC_CHANNELS.UPDATE.CHECK, () => checkForUpdates())
+  ipcMain.handle(IPC_CHANNELS.UPDATE.DOWNLOAD, () => downloadUpdate())
+  ipcMain.handle(IPC_CHANNELS.UPDATE.QUIT_AND_INSTALL, () => {
+    // 绕过 window close 守卫（渲染层已确认无未保存修改）
+    setCloseConfirmed(true)
+    quitAndInstall()
+    return { success: true }
+  })
+
   markAppRunning()
 
   // 注册文件操作 handlers
@@ -130,6 +144,14 @@ app.whenReady().then(() => {
   registerPdfHandlers()
 
   createWindow()
+
+  // 初始化自动更新，并在启动后延迟静默检查一次
+  initUpdater(() => mainWindow)
+  if (app.isPackaged) {
+    setTimeout(() => {
+      void checkForUpdates()
+    }, 3000)
+  }
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

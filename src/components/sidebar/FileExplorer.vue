@@ -80,7 +80,8 @@ function onEmptyContextMenu(event: MouseEvent): void {
         { label: '导入文件夹', action: () => fileStore.importFolder() },
         { label: '打开文件', action: () => openFile() },
         { label: '打开文件夹', action: () => openFolder() },
-        { label: '刷新', action: () => fileStore.readFolder(folderPath) }
+        { label: '刷新', action: () => fileStore.readFolder(folderPath) },
+        { label: '关闭文件夹', action: () => fileStore.closeFolder() }
       ]
     : [
         { label: '导入 Markdown', action: () => fileStore.importMarkdown() },
@@ -116,7 +117,10 @@ function onFolderContextMenu(event: MouseEvent, node: FileTreeNode): void {
     { label: '刷新', action: () => fileStore.loadChildren(node) },
     { label: '重命名', action: () => promptRename(node) },
     { label: '删除', action: () => promptDelete(node) },
-    { label: '复制路径', action: () => fileStore.copyPath(node.path) }
+    { label: '复制路径', action: () => fileStore.copyPath(node.path) },
+    ...(node.path === fileStore.openedFolderPath
+      ? [{ label: '关闭文件夹', action: () => fileStore.closeFolder() }]
+      : [])
   ]
   showContextMenu(event, items)
 }

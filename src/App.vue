@@ -2,6 +2,8 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useThemeStore } from './stores/theme'
 import { useFileStore } from './stores/file'
+import { useUpdateStore } from './stores/update'
+import { useFileDrop } from './composables/useFileDrop'
 import AppHeader from './components/layout/AppHeader.vue'
 import SideBar from './components/layout/SideBar.vue'
 import StatusBar from './components/layout/StatusBar.vue'
@@ -9,9 +11,13 @@ import EditorPanel from './components/editor/EditorPanel.vue'
 import ConfirmDialog from './components/common/ConfirmDialog.vue'
 import PdfExportView from './components/export/PdfExportView.vue'
 import PdfBatchProgressDialog from './components/export/PdfBatchProgressDialog.vue'
+import UpdateDialog from './components/update/UpdateDialog.vue'
+import FileDropOverlay from './components/common/FileDropOverlay.vue'
 
 const themeStore = useThemeStore()
 const fileStore = useFileStore()
+const updateStore = useUpdateStore()
+const { init: initFileDrop, dispose: disposeFileDrop } = useFileDrop()
 
 /**
  * 处理窗口关闭确认事件
@@ -30,6 +36,8 @@ let removeConfirmCloseListener: (() => void) | null = null
 onMounted(() => {
   themeStore.initTheme()
   void fileStore.init()
+  updateStore.init()
+  initFileDrop()
 
   if (window.electronAPI?.onConfirmClose) {
     removeConfirmCloseListener = window.electronAPI.onConfirmClose(handleConfirmClose)
@@ -40,6 +48,8 @@ onUnmounted(() => {
   if (removeConfirmCloseListener) {
     removeConfirmCloseListener()
   }
+  disposeFileDrop()
+  updateStore.dispose()
   fileStore.cleanupTimers()
 })
 </script>
@@ -70,6 +80,8 @@ onUnmounted(() => {
     <ConfirmDialog />
     <PdfExportView />
     <PdfBatchProgressDialog />
+    <UpdateDialog />
+    <FileDropOverlay />
   </div>
 </template>
 

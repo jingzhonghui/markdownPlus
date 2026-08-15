@@ -52,7 +52,8 @@ linux:
   icon: resources/icon.png
   category: Office
   maintainer: Markdown+ Team
+# 自动更新发布源配置（GitHub Releases）
 publish:
   provider: github
-  owner: markdown-plus
-  repo: markdown-plus
+  owner: jingzhonghui
+  repo: markdownPlus

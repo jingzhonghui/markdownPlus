@@ -2,9 +2,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
+import { useUpdateStore } from '../../stores/update'
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
+const updateStore = useUpdateStore()
 const isMaximized = ref(false)
 
 // ===== 菜单状态 =====
@@ -38,6 +40,9 @@ const fileMenu = computed<MenuItem[]>(() => {
     { kind: 'item', label: '新建文件', action: 'new', shortcut: 'Ctrl+N' },
     { kind: 'item', label: '打开文件...', action: 'open', shortcut: 'Ctrl+O' },
     { kind: 'item', label: '打开文件夹...', action: 'open-folder' },
+    ...(fileStore.openedFolderPath
+      ? [{ kind: 'item', label: '关闭文件夹', action: 'close-folder' } as MenuItem]
+      : []),
     { kind: 'divider' },
     { kind: 'item', label: '保存', action: 'save', shortcut: 'Ctrl+S' },
     { kind: 'item', label: '另存为...', action: 'save-as', shortcut: 'Ctrl+Shift+S' },
@@ -104,6 +109,7 @@ const insertMenu: MenuItem[] = [
 ]
 
 const helpMenu: MenuItem[] = [
+  { kind: 'item', label: '检查更新', action: 'check-updates' },
   { kind: 'item', label: '快捷键速查', action: 'shortcuts' },
   { kind: 'item', label: '使用文档', action: 'docs' },
   { kind: 'divider' },
@@ -254,6 +260,9 @@ async function runMenuItem(item: MenuItem): Promise<void> {
     case 'open-folder':
       await fileStore.openFolder()
       break
+    case 'close-folder':
+      fileStore.closeFolder()
+      break
     case 'save':
       await saveFile()
       break
@@ -310,6 +319,25 @@ async function runMenuItem(item: MenuItem): Promise<void> {
       break
     case 'insert-attachment':
       await selectAttachmentFile()
+      break
+    case 'check-updates':
+      {
+        const result = await updateStore.check()
+        if (result === 'not-available') {
+          await window.electronAPI.showMessageBox({
+            type: 'info',
+            title: '检查更新',
+            message: '当前已是最新版本'
+          })
+        } else if (result === 'error') {
+          await window.electronAPI.showMessageBox({
+            type: 'error',
+            title: '检查更新失败',
+            message: updateStore.errorMessage || '检查更新失败'
+          })
+        }
+        // available 时由 UpdateDialog 自动弹出
+      }
       break
     case 'shortcuts':
       shortcutsOpen.value = true

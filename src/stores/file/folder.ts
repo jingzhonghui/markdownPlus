@@ -72,39 +72,42 @@ export function useFolder(deps: FolderDeps) {
         return false
       }
 
-      const dirPath = dialogResult.data[0]
-      const success = await readFolder(dirPath)
-
-      // 初始化文件树
-      if (success) {
-        const folderName = dirPath.split(/[/\\]/).pop() || dirPath
-        fileTree.value = [
-          {
-            name: folderName,
-            path: dirPath,
-            isDirectory: true,
-            isExpanded: true,
-            isLoading: false,
-            children: folderItems.value.map((item) => ({
-              name: item.name,
-              path: item.path,
-              isDirectory: item.isDirectory,
-              isExpanded: false,
-              isLoading: false,
-              children: []
-            }))
-          }
-        ]
-        deps.persistSession()
-      }
-
-      return success
+      return await openFolderPath(dialogResult.data[0])
     } catch (err) {
       deps.error.value = err instanceof Error ? err.message : '打开文件夹失败'
       return false
     } finally {
       deps.isLoading.value = false
     }
+  }
+
+  async function openFolderPath(dirPath: string): Promise<boolean> {
+    const success = await readFolder(dirPath)
+
+    // 初始化文件树
+    if (success) {
+      const folderName = dirPath.split(/[/\\]/).pop() || dirPath
+      fileTree.value = [
+        {
+          name: folderName,
+          path: dirPath,
+          isDirectory: true,
+          isExpanded: true,
+          isLoading: false,
+          children: folderItems.value.map((item) => ({
+            name: item.name,
+            path: item.path,
+            isDirectory: item.isDirectory,
+            isExpanded: false,
+            isLoading: false,
+            children: []
+          }))
+        }
+      ]
+      deps.persistSession()
+    }
+
+    return success
   }
 
   async function loadChildren(node: FileTreeNode): Promise<void> {
@@ -287,6 +290,7 @@ export function useFolder(deps: FolderDeps) {
     folderItems,
     fileTree,
     openFolder,
+    openFolderPath,
     readFolder,
     loadChildren,
     expandNode,

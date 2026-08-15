@@ -1,7 +1,10 @@
-import { clipboard, contextBridge, ipcRenderer } from 'electron'
+import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC_CHANNELS } from './ipc/channels'
 import type { MdxAttachmentAsset, MdxDocument } from './mdx/schema'
 import type { UserGuideOpenResult } from './user-guide'
+import type { UpdateInfoPayload, UpdateProgressPayload } from './updater'
+
+export type { UpdateInfoPayload, UpdateProgressPayload }
 
 export { IPC_CHANNELS }
 
@@ -73,6 +76,9 @@ export interface ElectronAPI {
   clipboardReadText: () => Promise<string>
   clipboardWriteText: (text: string) => Promise<void>
 
+  // 拖放文件路径
+  getPathForFile: (file: File) => string
+
   // MDX 操作
   readMdx: (filePath: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   writeMdx: (filePath: string, data: unknown) => Promise<{ success: boolean; error?: string }>
@@ -130,6 +136,16 @@ export interface ElectronAPI {
   windowIsMaximized: () => Promise<boolean>
   onWindowMaximized: (callback: () => void) => () => void
   onWindowUnmaximized: (callback: () => void) => () => void
+
+  // 自动更新
+  checkForUpdates: () => Promise<{ success: boolean; error?: string }>
+  downloadUpdate: () => Promise<{ success: boolean; error?: string }>
+  quitAndInstall: () => Promise<{ success: boolean; error?: string }>
+  onUpdateAvailable: (callback: (info: UpdateInfoPayload) => void) => () => void
+  onUpdateNotAvailable: (callback: (info: UpdateInfoPayload) => void) => () => void
+  onUpdateProgress: (callback: (progress: UpdateProgressPayload) => void) => () => void
+  onUpdateDownloaded: (callback: (info: UpdateInfoPayload) => void) => () => void
+  onUpdateError: (callback: (error: { message: string }) => void) => () => void
 }
 
 // 通过 contextBridge 暴露安全的 API
@@ -147,6 +163,9 @@ const api: ElectronAPI = {
   // 剪贴板
   clipboardReadText: async () => clipboard.readText(),
   clipboardWriteText: async (text) => clipboard.writeText(text),
+
+  // 拖放文件路径
+  getPathForFile: (file) => webUtils.getPathForFile(file),
 
   // MDX 操作
   readMdx: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.MDX.READ, filePath),
@@ -214,6 +233,36 @@ const api: ElectronAPI = {
     const handler = (): void => callback()
     ipcRenderer.on(IPC_CHANNELS.WINDOW.UNMAXIMIZED, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW.UNMAXIMIZED, handler)
+  },
+
+  // 自动更新
+  checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE.CHECK),
+  downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE.DOWNLOAD),
+  quitAndInstall: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE.QUIT_AND_INSTALL),
+  onUpdateAvailable: (callback) => {
+    const handler = (_event: unknown, info: UpdateInfoPayload): void => callback(info)
+    ipcRenderer.on(IPC_CHANNELS.UPDATE.AVAILABLE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE.AVAILABLE, handler)
+  },
+  onUpdateNotAvailable: (callback) => {
+    const handler = (_event: unknown, info: UpdateInfoPayload): void => callback(info)
+    ipcRenderer.on(IPC_CHANNELS.UPDATE.NOT_AVAILABLE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE.NOT_AVAILABLE, handler)
+  },
+  onUpdateProgress: (callback) => {
+    const handler = (_event: unknown, progress: UpdateProgressPayload): void => callback(progress)
+    ipcRenderer.on(IPC_CHANNELS.UPDATE.PROGRESS, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE.PROGRESS, handler)
+  },
+  onUpdateDownloaded: (callback) => {
+    const handler = (_event: unknown, info: UpdateInfoPayload): void => callback(info)
+    ipcRenderer.on(IPC_CHANNELS.UPDATE.DOWNLOADED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE.DOWNLOADED, handler)
+  },
+  onUpdateError: (callback) => {
+    const handler = (_event: unknown, error: { message: string }): void => callback(error)
+    ipcRenderer.on(IPC_CHANNELS.UPDATE.ERROR, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE.ERROR, handler)
   }
 }
 

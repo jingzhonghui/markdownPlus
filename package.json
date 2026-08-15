@@ -4,7 +4,7 @@
   "description": "Markdown+ 编辑器 - 自包含 Markdown 文档编辑器",
   "main": "./out/main/main.cjs",
   "author": "Markdown+ Team",
-  "homepage": "https://github.com/markdown-plus/markdown-plus",
+  "homepage": "https://github.com/jingzhonghui/markdownPlus",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts,.vue --fix",
@@ -27,6 +27,7 @@
   "dependencies": {
     "@electron-toolkit/utils": "^3.0.0",
     "adm-zip": "^0.5.16",
+    "electron-updater": "^6.6.2",
     "sharp": "^0.34.5"
   },
   "devDependencies": {

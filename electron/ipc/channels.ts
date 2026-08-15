@@ -59,6 +59,16 @@ export const IPC_CHANNELS = {
     CLOSE: 'window:close',
     IS_MAXIMIZED: 'window:isMaximized'
   },
+  UPDATE: {
+    CHECK: 'update:check',
+    DOWNLOAD: 'update:download',
+    QUIT_AND_INSTALL: 'update:quitAndInstall',
+    AVAILABLE: 'update:available',
+    NOT_AVAILABLE: 'update:not-available',
+    PROGRESS: 'update:progress',
+    DOWNLOADED: 'update:downloaded',
+    ERROR: 'update:error'
+  },
   DIALOG: {
     SHOW_OPEN: 'dialog:showOpen',
     SHOW_SAVE: 'dialog:showSave',

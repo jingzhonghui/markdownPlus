@@ -26,12 +26,16 @@ jobs:
             artifact_glob: |
               dist/*.exe
               dist/*.zip
+              dist/*.yml
+              dist/*.blockmap
           - os: ubuntu-latest
             name: linux
             build_cmd: npm run build:linux:ci
             artifact_glob: |
               dist/*.AppImage
               dist/*.deb
+              dist/*.yml
+              dist/*.blockmap
           # macOS release packaging can be enabled later when signing/notarization is ready.
           # - os: macos-latest
           #   name: macos
@@ -105,6 +109,8 @@ jobs:
             artifacts/**/*.AppImage
             artifacts/**/*.deb
             artifacts/**/*.dmg
+            artifacts/**/*.yml
+            artifacts/**/*.blockmap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

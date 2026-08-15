@@ -916,6 +916,7 @@ export const useFileStore = defineStore('file', () => {
 
     // 文件夹操作
     openFolder: folder.openFolder,
+    openFolderPath: folder.openFolderPath,
     readFolder: folder.readFolder,
     closeFolder: folder.closeFolder,
     navigateToFolder: folder.navigateToFolder,

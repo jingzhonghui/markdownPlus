@@ -3,10 +3,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { useUpdateStore } from '../../stores/update'
+import { useAiStore } from '../../stores/ai'
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
 const updateStore = useUpdateStore()
+const aiStore = useAiStore()
 const isMaximized = ref(false)
 
 // ===== 菜单状态 =====
@@ -93,6 +95,7 @@ const viewMenu = computed<MenuItem[]>(() => [
   },
   { kind: 'divider' },
   { kind: 'item', label: '显示侧边栏', action: 'toggle-sidebar', checked: !fileStore.sidebarCollapsed },
+  { kind: 'item', label: 'AI 助手', action: 'open-ai', checked: aiStore.panelOpen },
   { kind: 'divider' },
   { kind: 'item', label: '设置...', action: 'settings', shortcut: 'Ctrl+,' }
 ])
@@ -293,6 +296,9 @@ async function runMenuItem(item: MenuItem): Promise<void> {
     case 'toggle-sidebar':
       fileStore.toggleSidebar()
       break
+    case 'open-ai':
+      aiStore.openPanel()
+      break
     case 'settings':
       settingsCompressEnabled.value = fileStore.imageCompressSettings.enabled
       settingsCompressQuality.value = fileStore.imageCompressSettings.quality
@@ -431,6 +437,14 @@ function toggleTheme(): void {
   themeStore.toggleTheme()
 }
 
+function toggleAiPanel(): void {
+  if (aiStore.panelOpen) {
+    void aiStore.requestClosePanel()
+  } else {
+    aiStore.openPanel()
+  }
+}
+
 function handleMinimize(): void {
   window.electronAPI?.windowMinimize()
 }
@@ -533,6 +547,29 @@ onUnmounted(() => {
     <div class="window-drag-region" />
 
     <div class="header-right">
+      <button
+        class="icon-btn"
+        :class="{ active: aiStore.panelOpen }"
+        :title="aiStore.panelOpen ? '关闭 AI 助手' : 'AI 助手'"
+        @click="toggleAiPanel"
+      >
+        <svg
+          class="icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3z"
+          />
+          <path
+            stroke-width="2"
+            d="M19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"
+          />
+        </svg>
+      </button>
+
       <button
         class="icon-btn"
         :title="themeStore.isDark ? '切换到浅色主题' : '切换到深色主题'"
@@ -998,6 +1035,11 @@ onUnmounted(() => {
 .icon-btn:hover {
   background-color: var(--color-bg-secondary);
   color: var(--color-text);
+}
+
+.icon-btn.active {
+  color: var(--color-primary);
+  background-color: var(--color-primary-light);
 }
 
 .icon {

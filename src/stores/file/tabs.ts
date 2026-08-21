@@ -90,7 +90,7 @@ export function createTabState(): TabState {
 
   function createTab(): TabInfo {
     const id = createTabId()
-    const tab: TabInfo = { id, fileInfo: null, document: null, content: '' }
+    const tab: TabInfo = { id, fileInfo: null, document: null, content: '', revision: 0 }
     tabs.value.push(tab)
     return tab
   }

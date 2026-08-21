@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue'
+import { useAiStore } from '../ai'
 import type { FileTreeNode, FolderItem, TabInfo } from './types'
 
 export interface FolderDeps {
@@ -105,6 +106,7 @@ export function useFolder(deps: FolderDeps) {
         }
       ]
       deps.persistSession()
+      await useAiStore().loadConversations(dirPath)
     }
 
     return success
@@ -158,6 +160,7 @@ export function useFolder(deps: FolderDeps) {
     folderHistory.value = []
     fileTree.value = []
     deps.persistSession()
+    void useAiStore().loadConversations(null)
   }
 
   async function navigateToFolder(dirPath: string): Promise<boolean> {

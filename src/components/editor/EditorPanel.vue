@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useFileStore } from '../../stores/file'
+import { useAiStore } from '../../stores/ai'
+import AiPanel from '../ai/AiPanel.vue'
 import SourceEditor from './SourceEditor.vue'
 import IrEditor from './IrEditor.vue'
 import PreviewPanel from './PreviewPanel.vue'
@@ -9,6 +11,9 @@ import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
 
 const fileStore = useFileStore()
+const aiStore = useAiStore()
+defineProps<{ aiReady?: boolean }>()
+const emit = defineEmits<{ openAiSettings: [] }>()
 
 const showPreview = computed(() => fileStore.editorMode === 'split')
 const isIrMode = computed(() => fileStore.editorMode === 'ir')
@@ -49,7 +54,7 @@ function onPreviewScroll(ratio: number): void {
 
     <!-- 无文件打开时：显示欢迎页 -->
     <div
-      v-if="!hasOpenFile"
+      v-show="!hasOpenFile && !aiStore.panelActive"
       class="welcome-page"
     >
       <div class="welcome-content">
@@ -171,7 +176,11 @@ function onPreviewScroll(ratio: number): void {
     </div>
 
     <!-- 有文件打开时：显示编辑器 -->
-    <template v-else>
+    <div
+      v-if="hasOpenFile"
+      v-show="!aiStore.panelActive"
+      class="document-view"
+    >
       <!-- 即时渲染模式 -->
       <IrEditor
         v-if="isIrMode"
@@ -202,7 +211,14 @@ function onPreviewScroll(ratio: number): void {
           />
         </Pane>
       </Splitpanes>
-    </template>
+    </div>
+
+    <AiPanel
+      v-if="aiStore.panelOpen"
+      v-show="aiStore.panelActive"
+      :ready="aiReady ?? false"
+      @open-settings="emit('openAiSettings')"
+    />
   </div>
 </template>
 
@@ -215,6 +231,15 @@ function onPreviewScroll(ratio: number): void {
   flex-direction: column;
   overflow: hidden;
   background-color: var(--color-bg-primary);
+}
+
+.document-view {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* 欢迎页 */

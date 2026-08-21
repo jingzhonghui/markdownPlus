@@ -77,5 +77,32 @@ export const IPC_CHANNELS = {
   FOLDER: {
     READ: 'folder:read',
     CREATE: 'folder:create'
+  },
+  AI: {
+    CONFIG: {
+      GET: 'ai:config:get',
+      SET: 'ai:config:set',
+      TEST: 'ai:config:test'
+    },
+    RUN: {
+      START: 'ai:run:start',
+      CANCEL: 'ai:run:cancel'
+    },
+    APPROVAL: {
+      CLAIM: 'ai:approval:claim',
+      RESOLVE: 'ai:approval:resolve'
+    },
+    CONVERSATION: {
+      LIST: 'ai:conversation:list',
+      LOAD: 'ai:conversation:load',
+      SAVE: 'ai:conversation:save',
+      DELETE: 'ai:conversation:delete',
+      SUMMARIZE: 'ai:conversation:summarize'
+    },
+    WORKSPACE: {
+      ENSURE_SUMMARY: 'ai:workspace:ensureSummary',
+      SUMMARY_GENERATING: 'ai:workspace:summaryGenerating'
+    },
+    EVENT: 'ai:run:event'
   }
 } as const

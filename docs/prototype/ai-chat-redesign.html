@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown+ AI 助手 — 对话界面原型</title>
+  <link rel="stylesheet" href="css/theme.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: var(--font-sans); background-color: var(--color-bg); color: var(--color-text); }
+
+    .app { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ===== 标题栏 ===== */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      min-height: 46px; padding: 0 16px; flex-shrink: 0;
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-bg-primary);
+    }
+    .topbar-left { display: flex; align-items: center; gap: 9px; }
+    .topbar-left strong { font-size: 13px; }
+    .topbar-left .badge { color: var(--color-primary); font-size: 10px; font-weight: 600; }
+    .topbar-right { display: flex; gap: 6px; }
+    .topbar-right button {
+      padding: 5px 10px; border: 0; border-radius: 4px;
+      background: transparent; color: var(--color-text-secondary); cursor: pointer; font: inherit; font-size: 12px;
+    }
+    .topbar-right button:hover { background: var(--color-bg-secondary); }
+
+    /* theme toggle */
+    .theme-toggle {
+      width: 32px; height: 32px; border: 0; border-radius: 6px;
+      background: transparent; cursor: pointer; font-size: 16px; display: grid; place-items: center;
+    }
+    .theme-toggle:hover { background: var(--color-bg-secondary); }
+
+    /* ===== 主区域 ===== */
+    .chat-area {
+      flex: 1; min-height: 0; display: flex; flex-direction: column;
+      background: var(--color-bg);
+    }
+
+    /* ===== 消息列表 ===== */
+    .message-list {
+      flex: 1; min-height: 0; overflow-y: auto;
+      padding: 20px clamp(18px, 5vw, 64px);
+      display: flex; flex-direction: column; gap: 16px;
+      scroll-behavior: smooth;
+    }
+    .message-list::-webkit-scrollbar { width: 5px; }
+    .message-list::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+
+    /* 欢迎页 */
+    .welcome {
+      display: grid; place-content: center; flex: 1; gap: 8px;
+      text-align: center; color: var(--color-text-secondary);
+    }
+    .welcome strong { color: var(--color-text); font-size: 17px; }
+    .welcome span { font-size: 13px; max-width: 360px; margin: 0 auto; line-height: 1.6; }
+
+    /* ===== 消息气泡 ===== */
+    .msg {
+      display: flex; flex-direction: column;
+      max-width: 82%; min-width: 80px;
+      animation: msg-in .18s ease;
+    }
+    @keyframes msg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* 用户消息 — 右侧深色气泡 */
+    .msg-user {
+      align-self: flex-end; align-items: flex-end;
+    }
+    .msg-user .bubble {
+      background: var(--color-primary);
+      color: #fff;
+      border-radius: 12px 12px 4px 12px;
+      padding: 10px 14px;
+      line-height: 1.6;
+      box-shadow: 0 2px 8px rgba(0,0,0,.1);
+    }
+
+    /* AI 消息 — 左侧浅色气泡 */
+    .msg-assistant {
+      align-self: flex-start; align-items: flex-start;
+    }
+    .msg-assistant .bubble {
+      background: var(--color-bg-secondary);
+      color: var(--color-text);
+      border-radius: 12px 12px 12px 4px;
+      padding: 10px 14px;
+      line-height: 1.65;
+      overflow-wrap: anywhere;
+    }
+
+    /* 气泡内 Markdown */
+    .bubble > :first-child { margin-top: 0; }
+    .bubble > :last-child { margin-bottom: 0; }
+    .bubble p { margin: 6px 0; }
+    .bubble pre {
+      overflow: auto; padding: 10px; margin: 8px 0;
+      border-radius: 5px; background: rgba(0,0,0,.06);
+      font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5;
+    }
+    [data-theme="dark"] .bubble pre, [data-theme="dark"] .msg-user .bubble pre {
+      background: rgba(255,255,255,.06);
+    }
+    .bubble code {
+      padding: 1px 5px; border-radius: 3px; font-size: .9em;
+      background: rgba(0,0,0,.06); font-family: ui-monospace, monospace;
+    }
+    .msg-user .bubble code { background: rgba(255,255,255,.15); }
+    .bubble a { color: var(--color-primary); }
+    .msg-user .bubble a { color: #a5d6ff; }
+    .bubble ul, .bubble ol { padding-left: 1.4em; margin: 6px 0; }
+    .bubble blockquote {
+      margin: 6px 0; padding-left: 10px;
+      border-left: 2px solid var(--color-border); color: var(--color-text-secondary);
+    }
+    .msg-user .bubble blockquote { border-color: rgba(255,255,255,.3); color: rgba(255,255,255,.8); }
+
+    /* 消息元信息 */
+    .msg-meta {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+      color: var(--color-text-tertiary);
+    }
+    .msg-user .msg-meta { flex-direction: row-reverse; }
+
+    /* ===== 工具调用卡片（内联在消息流中） ===== */
+    .tool-card {
+      align-self: stretch; max-width: 90%;
+      border: 1px solid var(--color-border);
+      border-radius: 8px; overflow: hidden;
+      background: var(--color-bg-primary);
+      font-size: 12px; margin: -4px 0 0;
+      animation: msg-in .18s ease;
+    }
+    .tool-card summary {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 12px; cursor: pointer; user-select: none;
+      font-family: ui-monospace, monospace; font-size: 11.5px;
+      color: var(--color-text-secondary);
+      list-style: none;
+    }
+    .tool-card summary::-webkit-details-marker { display: none; }
+    .tool-card summary::before {
+      content: "⚙️"; font-size: 13px; margin-right: 8px; flex-shrink: 0;
+    }
+    .tool-card summary .tool-label {
+      display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
+    }
+    .tool-card summary .tool-name {
+      color: var(--color-text); font-weight: 600;
+    }
+    .tool-card summary .tool-badge {
+      padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; flex-shrink: 0;
+    }
+    .tool-badge.running { background: var(--color-primary); color: #fff; }
+    .tool-badge.completed { background: #16a34a; color: #fff; }
+    .tool-badge.failed { background: #ef4444; color: #fff; }
+    .tool-badge.waiting { background: var(--color-bg-secondary); color: var(--color-primary); }
+    .tool-badge.applied { background: #16a34a; color: #fff; }
+    .tool-badge.rejected { background: var(--color-bg-secondary); color: var(--color-text-secondary); }
+    .tool-card summary .chevron {
+      width: 16px; height: 16px; transition: transform .2s; flex-shrink: 0;
+      display: grid; place-items: center; color: var(--color-text-tertiary);
+    }
+    .tool-card[open] summary .chevron { transform: rotate(180deg); }
+    .tool-card pre {
+      margin: 0; padding: 10px 14px 14px;
+      border-top: 1px solid var(--color-border);
+      white-space: pre-wrap; overflow: auto; max-height: 240px;
+      background: var(--color-bg-secondary); color: var(--color-text);
+      font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.5;
+    }
+    .tool-card .tool-reason {
+      display: block; padding: 6px 14px 0; color: var(--color-text-secondary);
+      font-size: 11px; font-style: italic;
+    }
+
+    /* ===== 输入区域 ===== */
+    .composer-area {
+      padding: 10px clamp(18px, 5vw, 64px) 18px; flex-shrink: 0;
+    }
+    .composer {
+      display: flex; align-items: flex-end; gap: 10px;
+      padding: 12px; border: 1px solid var(--color-border); border-radius: 12px;
+      background: var(--color-bg-primary);
+      box-shadow: 0 2px 12px rgba(0,0,0,.05);
+      transition: border-color .2s;
+    }
+    .composer:focus-within { border-color: var(--color-primary); }
+    .composer textarea {
+      flex: 1; min-height: 42px; resize: none;
+      border: 0; outline: none; background: transparent;
+      color: var(--color-text); font: inherit; font-size: 13px; line-height: 1.5;
+    }
+    .composer button {
+      min-width: 62px; padding: 8px 13px; border: 0; border-radius: 6px;
+      background: var(--color-primary); color: #fff; cursor: pointer; font: inherit; font-size: 13px;
+    }
+    .composer button:disabled { opacity: .4; cursor: not-allowed; }
+    .composer button.stop { background: var(--color-text-secondary); }
+
+    /* ===== 错误 ===== */
+    .error-msg {
+      padding: 8px 14px; margin: 0 clamp(18px, 5vw, 64px); border-radius: 6px;
+      background: rgba(239,68,68,.08); color: var(--color-error, #ef4444); font-size: 12px;
+    }
+
+    /* ===== 流式光标 ===== */
+    .stream-caret {
+      display: inline-block; width: 2px; height: 1em; margin-left: 2px;
+      background: var(--color-primary); animation: blink 1s steps(1) infinite; vertical-align: text-bottom;
+    }
+    @keyframes blink { 50% { opacity: .15; } }
+    @media (prefers-reduced-motion: reduce) { .stream-caret { animation: none; } }
+
+    /* ===== 暗色模式微调 ===== */
+    [data-theme="dark"] .msg-user .bubble { box-shadow: 0 2px 12px rgba(0,0,0,.3); }
+    [data-theme="dark"] .composer { box-shadow: 0 2px 16px rgba(0,0,0,.15); }
+    [data-theme="dark"] .tool-card { border-color: var(--color-border); }
+    [data-theme="dark"] .tool-card pre { background: rgba(0,0,0,.2); }
+
+    /* ===== 审批弹窗 ===== */
+    .approval-backdrop { position: fixed; z-index: 10000; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / 48%); }
+    .approval-dialog { width: min(620px, 100%); max-height: calc(100vh - 48px); overflow: auto; padding: 22px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg); color: var(--color-text); box-shadow: 0 20px 56px rgb(0 0 0 / 28%); animation: dialog-in .15s ease; }
+    @keyframes dialog-in { from { opacity: 0; transform: scale(.97); } }
+    .approval-dialog h2 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 10px; }
+    .approval-dialog h2 .risk-badge { padding: 3px 8px; border-radius: 4px; background: var(--color-bg-secondary); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    .approval-dialog .desc { margin: 6px 0 16px; color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; }
+    .approval-dialog .preview-box { padding: 14px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg-secondary); font-size: 12px; line-height: 1.6; }
+    .approval-dialog .preview-box dt { margin-top: 12px; color: var(--color-text-secondary); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+    .approval-dialog .preview-box dt:first-of-type { margin-top: 0; }
+    .approval-dialog .preview-box dd { margin: 2px 0 0; color: var(--color-text); }
+    .approval-dialog .preview-box .preview-body { margin-top: 12px; padding: 10px; border-radius: 4px; background: rgba(0,0,0,.04); font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; max-height: 180px; overflow: auto; }
+    .approval-dialog footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .approval-dialog footer button { padding: 7px 14px; border: 1px solid var(--color-border); border-radius: 5px; background: var(--color-bg-secondary); color: var(--color-text); cursor: pointer; font: inherit; }
+    .approval-dialog footer button.primary { border-color: var(--color-primary); background: var(--color-primary); color: #fff; }
+    .approval-dialog footer button:disabled { opacity: .5; cursor: not-allowed; }
+    [data-theme="dark"] .approval-dialog .preview-box .preview-body { background: rgba(255,255,255,.04); }
+    .tool-card.waiting-card { cursor: pointer; }
+    .tool-card.waiting-card summary:hover { background: rgba(0,0,0,.03); }
+    [data-theme="dark"] .tool-card.waiting-card summary:hover { background: rgba(255,255,255,.03); }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ========== 顶部工具栏 ========== -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <strong>AI 助手</strong>
+      <span class="badge" id="readiness-badge">配置可用</span>
+    </div>
+    <div class="topbar-right">
+      <button onclick="toggleTheme()" class="theme-toggle" title="切换主题">☀️</button>
+      <button onclick="resetChat()">清空</button>
+      <button onclick="document.getElementById('mock-settings').showModal()">设置</button>
+    </div>
+  </div>
+
+  <!-- ========== 对话区域 ========== -->
+  <div class="chat-area">
+
+    <!-- 消息列表 -->
+    <div class="message-list" id="messageList">
+      <!-- 欢迎页 -->
+      <div class="welcome" id="welcome">
+        <strong>从文稿开始</strong>
+        <span>提问、改写、润色、总结。需要引用外部网页或本地文件时，在消息中粘贴 URL 或带引号的绝对路径。</span>
+      </div>
+    </div>
+
+    <!-- 输入区域 -->
+    <div class="composer-area">
+      <form class="composer" onsubmit="sendMessage(event)">
+        <textarea id="chatInput" rows="2" placeholder="与文稿协作…" aria-label="AI 消息"></textarea>
+        <button type="submit" id="sendBtn">发送</button>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+<!-- ========== 设置模拟对话框 ========== -->
+<dialog id="mock-settings" style="border:1px solid var(--color-border); border-radius:10px; padding:20px; max-width:420px; background:var(--color-bg-primary); color:var(--color-text);">
+  <h3 style="margin:0 0 16px;">AI 设置</h3>
+  <p style="font-size:12px;color:var(--color-text-secondary);">此为原型模拟对话框，功能示意。</p>
+  <form method="dialog"><button style="margin-top:12px;padding:6px 14px;border:1px solid var(--color-border);border-radius:5px;background:var(--color-bg-secondary);color:var(--color-text);cursor:pointer;">关闭</button></form>
+</dialog>
+
+<!-- ========== 审批弹窗 ========== -->
+<div class="approval-backdrop" id="approvalBackdrop" style="display:none">
+  <section class="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="approval-title">
+    <h2 id="approval-title"><span id="approvalToolName">read_web_url</span><span class="risk-badge" id="approvalRisk">来源读取</span></h2>
+    <p class="desc" id="approvalDesc">该工具请求读取用户指定的公开 HTTPS 网页内容，需获得你的批准。</p>
+    <dl class="preview-box" id="approvalPreview">
+      <dt>请求方法</dt><dd id="apMethod">GET</dd>
+      <dt>目标 URL</dt><dd id="apUrl">https://example.com/spec</dd>
+      <dt>读取理由</dt><dd id="apReason">用户请求读取公开 HTTPS 网页内容并整理为大纲</dd>
+    </dl>
+    <footer>
+      <button onclick="resolveApproval(false)">拒绝</button>
+      <button class="primary" onclick="resolveApproval(true)">允许本次</button>
+    </footer>
+  </section>
+</div>
+
+<script>
+// ==============================
+// 主题切换
+// ==============================
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  document.querySelector('.theme-toggle').textContent = next === 'dark' ? '🌙' : '☀️';
+}
+
+// ==============================
+// 对话模拟
+// ==============================
+const sampleConversation = [
+  { role: 'user', content: '帮我总结当前文档的核心要点。' },
+  {
+    role: 'assistant',
+    content: '当前文档包含三个核心要点：\n\n1. **模块化架构** — 编辑器、预览和 AI 面板各自独立\n2. **MDX 格式** — 自包含的文件格式，将 Markdown 与附件打包\n3. **安全来源读取** — AI 助手通过工具调用读取网页和本地文件，需逐次审批',
+    toolCalls: [
+      { name: 'read_current_document', status: 'completed', reason: '正在读取当前文档，了解内容以便总结', result: '{\n  "available": true,\n  "documentId": "doc-1",\n  "title": "Markdown+ 设计方案",\n  "content": "# Markdown+ 设计方案\\n\\n## 1. 模块化架构\\n编辑器、预览和 AI 面板各自独立...\\n\\n## 2. MDX 格式\\n自包含的文件格式..."\n}' }
+    ]
+  },
+  { role: 'user', content: '详细解释一下 MDX 格式的优点。' },
+  {
+    role: 'assistant',
+    content: 'MDX 格式有以下优点：\n\n- **单一文件分发** — 一篇文档连带所有图片、附件打包为一个 `.mdx` 文件，便于分享和归档\n- **版本控制友好** — 底层 Markdown 正文可独立 diff，二进制资源单独存放\n- **离线完整** — 打开 `.mdx` 后所有资源已本地解压，不依赖网络\n- **导入导出** — 支持从标准 `.md` 导入图片，也支持导出回纯 Markdown\n\n需要我详细展开某一点吗？'
+  },
+  {
+    role: 'user',
+    content: '请读取这个网页，并帮我把它的内容整理成大纲：https://example.com/spec'
+  },
+  {
+    role: 'assistant',
+    content: '正准备读取网页内容。这将调用 `read_web_url` 工具，需要你的批准。',
+    toolCalls: [
+      { name: 'read_web_url', status: 'waiting', target: 'https://example.com/spec', reason: '用户请求读取公开 HTTPS 网页内容并整理为大纲' }
+    ]
+  }
+];
+
+let messageIndex = sampleConversation.length;
+
+function buildMessageElement(role, content, toolCalls, toolPending) {
+  const msg = document.createElement('article');
+  msg.className = 'msg msg-' + role;
+
+  // meta
+  const meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  meta.textContent = role === 'user' ? '你' : 'AI';
+  msg.appendChild(meta);
+
+  // bubble
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  // simple markdown-like rendering
+  bubble.innerHTML = renderSimpleMarkdown(content);
+  msg.appendChild(bubble);
+
+  // tool calls
+  if (toolCalls) {
+    toolCalls.forEach(tc => {
+      const card = buildToolCard(tc);
+      msg.appendChild(card);
+    });
+  }
+
+  if (toolPending && role === 'assistant') {
+    const pending = document.createElement('div');
+    pending.className = 'tool-card';
+    pending.innerHTML = '<summary style="padding:9px 12px;color:var(--color-text-tertiary);font-size:11px;">处理工具调用中…</summary>';
+    msg.appendChild(pending);
+  }
+
+  return msg;
+}
+
+function renderSimpleMarkdown(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^### (.+)/gm, '<h4 style="margin:10px 0 4px;font-size:14px;">$1</h4>')
+    .replace(/^## (.+)/gm, '<h3 style="margin:10px 0 4px;font-size:15px;">$1</h3>')
+    .replace(/^# (.+)/gm, '<h2 style="margin:10px 0 4px;font-size:16px;">$1</h2>')
+    .replace(/^- (.+)/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+    .replace(/^> (.+)/gm, '<blockquote>$1</blockquote>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/^(?!<[a-z/])/gm, '<p>')
+    + '</p>';
+}
+
+function buildToolCard(tc) {
+  const card = document.createElement('details');
+  card.className = 'tool-card';
+  card.open = tc.status === 'running' || tc.status === 'waiting';
+
+  // store tool data for approval dialog
+  const toolId = 'tool_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  card.dataset.toolId = toolId;
+  card.dataset.toolName = tc.name;
+  card.dataset.toolReason = tc.reason || '';
+  card.dataset.toolTarget = tc.target || '';
+
+  if (tc.status === 'waiting') {
+    card.classList.add('waiting-card');
+    card.addEventListener('click', function(e) {
+      // don't trigger when clicking details toggle
+      if (e.target.tagName === 'SUMMARY') return;
+      openApproval(card);
+    });
+  }
+
+  const summary = document.createElement('summary');
+  summary.innerHTML = `
+    <span class="tool-label">
+      <span class="tool-name">${tc.name}</span>
+    </span>
+    <span class="tool-badge ${tc.status}">${toolStatusLabel(tc.status)}</span>
+    <span class="chevron">▾</span>`;
+  card.appendChild(summary);
+
+  if (tc.reason) {
+    const reason = document.createElement('span');
+    reason.className = 'tool-reason';
+    reason.textContent = tc.reason;
+    card.appendChild(reason);
+  }
+
+  if (tc.result) {
+    const pre = document.createElement('pre');
+    pre.textContent = tc.result;
+    card.appendChild(pre);
+  }
+
+  return card;
+}
+
+function toolStatusLabel(status) {
+  const labels = {
+    waiting: '等待审批', running: '运行中', completed: '已完成', applied: '已应用',
+    rejected: '已拒绝', failed: '失败', cancelled: '已取消'
+  };
+  return labels[status] || status;
+}
+
+function sendMessage(event) {
+  event.preventDefault();
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+
+  // hide welcome
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.style.display = 'none';
+
+  // user message
+  const list = document.getElementById('messageList');
+  const userMsg = buildMessageElement('user', text);
+  list.appendChild(userMsg);
+  scrollToBottom();
+
+  // simulate AI response (like the sample conversation)
+  if (messageIndex < sampleConversation.length) {
+    setTimeout(() => {
+      const sample = sampleConversation[messageIndex++];
+      if (sample.role !== 'user') {
+        const aiMsg = buildMessageElement(
+          sample.role,
+          sample.content,
+          sample.toolCalls,
+          sample.toolPending
+        );
+        list.appendChild(aiMsg);
+        scrollToBottom();
+      }
+    }, 800);
+  } else {
+    // generic fallback
+    setTimeout(() => {
+      const resp = buildMessageElement('assistant',
+        '好的，我来帮你处理。这是在原型中模拟的 AI 回复。\n\n如果你部署了真实的后端 AI 服务，这里将显示模型的实际输出，包括 Markdown 格式、代码块、列表等丰富内容。',
+        [{ name: 'read_current_document', status: 'completed', reason: '分析用户意图并读取当前文档', result: '{"available": true, "documentId": "doc-1", "title": "当前文档", "content": "..."}' }]
+      );
+      list.appendChild(resp);
+      scrollToBottom();
+    }, 800);
+  }
+}
+
+function scrollToBottom() {
+  const list = document.getElementById('messageList');
+  list.scrollTop = list.scrollHeight;
+}
+
+function resetChat() {
+  messageIndex = 0;
+  const list = document.getElementById('messageList');
+  list.innerHTML = `
+    <div class="welcome" id="welcome">
+      <strong>从文稿开始</strong>
+      <span>提问、改写、润色、总结。需要引用外部网页或本地文件时，在消息中粘贴 URL 或带引号的绝对路径。</span>
+    </div>`;
+}
+
+// Enter to send, shift+enter for newline
+document.getElementById('chatInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    document.querySelector('.composer').dispatchEvent(new Event('submit'));
+  }
+});
+
+// 页面加载时预填示例对话
+(function initChat() {
+  const list = document.getElementById('messageList');
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.style.display = 'none';
+  sampleConversation.forEach(function(sample) {
+    const el = buildMessageElement(sample.role, sample.content, sample.toolCalls, sample.toolPending);
+    list.appendChild(el);
+  });
+  scrollToBottom();
+})();
+
+// ==============================
+// 审批弹窗
+// ==============================
+function openApproval(card) {
+  const backdrop = document.getElementById('approvalBackdrop');
+  document.getElementById('approvalToolName').textContent = card.dataset.toolName;
+  document.getElementById('approvalRisk').textContent = card.dataset.toolName === 'read_web_url' ? '来源读取' : card.dataset.toolName === 'read_local_file' ? '本地读取' : '文档操作';
+  document.getElementById('approvalDesc').textContent = '该工具请求执行操作，需获得你的批准后才会执行。';
+  document.getElementById('apMethod').textContent = '—';
+  document.getElementById('apUrl').textContent = card.dataset.toolTarget || '—';
+  document.getElementById('apReason').textContent = card.dataset.toolReason || '—';
+  backdrop.style.display = 'grid';
+  backdrop.dataset.toolCardId = card.dataset.toolId || '';
+}
+
+function resolveApproval(allow) {
+  const backdrop = document.getElementById('approvalBackdrop');
+  backdrop.style.display = 'none';
+  const cardId = backdrop.dataset.toolCardId;
+  if (cardId) {
+    const card = document.querySelector('.tool-card[data-tool-id="' + cardId + '"]');
+    if (card) {
+      const badge = card.querySelector('.tool-badge');
+      if (badge) {
+        badge.textContent = allow ? '已完成' : '已拒绝';
+        badge.className = 'tool-badge ' + (allow ? 'completed' : 'rejected');
+      }
+      card.open = allow;
+      card.classList.remove('waiting-card');
+    }
+  }
+}
+</script>
+
+</body>
+</html>

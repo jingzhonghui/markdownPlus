@@ -1,9 +1,11 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { DocumentFormat, MdxDocument } from '../../types/mdx'
+import { createMdxDocument } from '../../types/mdx'
 import { loadSessionState, saveSessionState } from '../session'
+import { useAiStore } from '../ai'
 import { requestDialog } from '../../utils/dialog'
-import type { FileInfo, EditorMode } from './types'
+import type { FileInfo, EditorMode, EditorSelectionSnapshot, TabInfo } from './types'
 import { createTabState, createTabOps } from './tabs'
 import { useAssets } from './assets'
 import { useFolder } from './folder'
@@ -43,6 +45,8 @@ export const useFileStore = defineStore('file', () => {
   const cursorLine = ref(1)
   const cursorColumn = ref(1)
   const editorResetVersion = ref(0)
+  // 归一化的编辑器选区快照（供 AI 运行读取当前选区/光标）
+  const editorSelection = ref<EditorSelectionSnapshot | null>(null)
 
   let recoveryWriteTimer: ReturnType<typeof setTimeout> | null = null
   let recoveryWriteInProgress = false
@@ -166,6 +170,7 @@ export const useFileStore = defineStore('file', () => {
     const tab = activeTab.value
     if (!tab) return
     tab.content = content
+    tab.revision++
     if (tab.document) {
       tab.document.content = content
     }
@@ -175,6 +180,57 @@ export const useFileStore = defineStore('file', () => {
     stateVersion.value++
     updateWordCount()
     scheduleRecoverySnapshot()
+  }
+
+  /**
+   * 定向变更指定 tab 的内容（不假设目标 tab 是当前激活 tab）。
+   * 供 AI 已批准文档操作调用：只修改 target tab，标记已修改并递增其 revision。
+   */
+  function updateTabContent(tabId: string, content: string): void {
+    const tab = tabs.value.find((t) => t.id === tabId)
+    if (!tab) return
+    tab.content = content
+    if (tab.document) {
+      tab.document.content = content
+    }
+    if (tab.fileInfo) {
+      tab.fileInfo.modified = true
+    }
+    tab.revision++
+    stateVersion.value++
+    updateWordCount()
+    scheduleRecoverySnapshot()
+  }
+
+  /**
+   * 发布归一化的编辑器选区快照（含所属 tabId）。
+   * 传入 null 表示当前没有可用选区（例如没有活动 tab，或 IR 映射校验失败）。
+   */
+  function updateEditorSelection(sel: EditorSelectionSnapshot | null): void {
+    editorSelection.value = sel
+  }
+
+  /**
+   * 创建一篇由 AI 生成的新文档（未保存的新 tab），并激活它。
+   */
+  function createGeneratedDocument(
+    title: string,
+    content: string,
+    format: 'markdown' | 'mdx'
+  ): TabInfo {
+    const tab = tabState.createTab()
+    tab.document = createMdxDocument(title, content)
+    tab.content = content
+    tab.fileInfo = {
+      path: '',
+      name: format === 'markdown' ? `${title}.md` : `${title}.mdx`,
+      modified: true,
+      format
+    }
+    activeTabId.value = tab.id
+    stateVersion.value++
+    updateWordCount()
+    return tab
   }
 
   function markSaved(): void {
@@ -235,6 +291,7 @@ export const useFileStore = defineStore('file', () => {
             format: 'mdx'
           }
           activeTabId.value = tab.id
+          useAiStore().deactivatePanel()
           return true
         }
       }
@@ -250,6 +307,7 @@ export const useFileStore = defineStore('file', () => {
         format: 'mdx'
       }
       activeTabId.value = tab.id
+      useAiStore().deactivatePanel()
       return true
     } catch (err) {
       error.value = err instanceof Error ? err.message : '新建文件失败'
@@ -274,6 +332,7 @@ export const useFileStore = defineStore('file', () => {
         const existing = tabState.findTabByPath(filePath)
         if (existing) {
           activeTabId.value = existing.id
+          useAiStore().deactivatePanel()
           return true
         }
       }
@@ -288,6 +347,7 @@ export const useFileStore = defineStore('file', () => {
         const existing = tabState.findTabByPath(fPath)
         if (existing) {
           activeTabId.value = existing.id
+          useAiStore().deactivatePanel()
           return true
         }
 
@@ -318,6 +378,7 @@ export const useFileStore = defineStore('file', () => {
           format: result.data.format || (fPath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx')
         }
         activeTabId.value = tab.id
+        useAiStore().deactivatePanel()
 
         await loadRecentFiles()
         persistSession()
@@ -490,7 +551,10 @@ export const useFileStore = defineStore('file', () => {
       activeFilePath: activeTab.value?.fileInfo?.path ?? null,
       sidebarCollapsed: sidebarCollapsed.value,
       sidebarWidth: sidebarWidth.value,
-      editorMode: editorMode.value
+      editorMode: editorMode.value,
+      aiPanelOpen: useAiStore().panelOpen,
+      aiPanelActive: useAiStore().panelActive,
+      aiActiveConversationId: useAiStore().activeConversationId
     })
   }
 
@@ -534,7 +598,10 @@ export const useFileStore = defineStore('file', () => {
   // ====== 会话恢复 ======
   async function restoreSession(): Promise<void> {
     const state = loadSessionState()
-    if (!state) return
+    if (!state) {
+      await useAiStore().loadConversations(null)
+      return
+    }
 
     if (state.editorMode === 'ir' || state.editorMode === 'source' || state.editorMode === 'split') {
       editorMode.value = state.editorMode
@@ -565,10 +632,11 @@ export const useFileStore = defineStore('file', () => {
             }))
           }
         ]
+        await useAiStore().loadConversations(state.openedFolderPath)
       }
     }
 
-    for (const filePath of state.openFilePaths) {
+    for (const filePath of state.openFilePaths ?? []) {
       await openFile(filePath)
     }
 
@@ -578,6 +646,17 @@ export const useFileStore = defineStore('file', () => {
         activeTabId.value = tab.id
         await folder.revealFileInTree(state.activeFilePath)
       }
+    }
+
+    if (state.aiPanelOpen) {
+      useAiStore().openPanel()
+      if (state.aiPanelActive === false) {
+        useAiStore().deactivatePanel()
+      }
+    }
+
+    if (!state.openedFolderPath) {
+      await useAiStore().loadConversations(null)
     }
   }
 
@@ -678,6 +757,7 @@ export const useFileStore = defineStore('file', () => {
         const existing = tabState.findTabByPath(fPath)
         if (existing) {
           activeTabId.value = existing.id
+          useAiStore().deactivatePanel()
           return true
         }
 
@@ -691,6 +771,7 @@ export const useFileStore = defineStore('file', () => {
           format: result.data.format || (fPath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx')
         }
         activeTabId.value = tab.id
+        useAiStore().deactivatePanel()
 
         await loadRecentFiles()
 
@@ -838,6 +919,7 @@ export const useFileStore = defineStore('file', () => {
     cursorLine,
     cursorColumn,
     editorResetVersion,
+    editorSelection,
     pdfBatchProgress: pdf.pdfBatchProgress,
 
     // 文件夹浏览
@@ -872,6 +954,15 @@ export const useFileStore = defineStore('file', () => {
     markSaved,
     writeRecoverySnapshot,
     cleanupTimers,
+
+    // AI 桥接：定向变更、选区快照、生成文档
+    updateTabContent,
+    updateEditorSelection,
+    createGeneratedDocument,
+
+    // 会话持久化
+    persistSession,
+    restoreSession,
 
     // 编辑器操作
     setEditorMode,

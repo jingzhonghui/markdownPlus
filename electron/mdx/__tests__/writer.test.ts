@@ -6,6 +6,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import AdmZip from 'adm-zip'
 import { createMdxDocument } from '../schema'
 import {
   generateAssetId,
@@ -217,6 +218,18 @@ describe('Writer Module', () => {
 
         cleanupTempDir(tempDir)
       }
+    })
+
+    it('rejects a ZIP entry whose declared inflated size exceeds the extraction cap', () => {
+      const filePath = path.join(testDir, 'inflated-entry.mdx')
+      const zip = new AdmZip()
+      zip.addFile('mdx.json', Buffer.from(JSON.stringify({ content_file: 'content.md' })))
+      zip.addFile('content.md', Buffer.from('A'.repeat(51 * 1024 * 1024)))
+      zip.writeZip(filePath)
+
+      const result = openMdx(filePath)
+      expect(result).toMatchObject({ success: false })
+      expect(result.error).toContain('解压后大小')
     })
 
     it('should return error for invalid file path', async () => {

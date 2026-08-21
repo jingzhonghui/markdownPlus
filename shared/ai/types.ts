@@ -1,0 +1,254 @@
+export interface ApiResult<T = void> {
+  success: boolean
+  data?: T
+  error?: string
+}
+
+export interface AiConfigInput {
+  baseUrl: string
+  model: string
+  apiKey?: string
+  temperature: number
+  maxOutputTokens?: number
+  contextWindow?: number
+  maxSteps?: number
+}
+
+export interface AiConfigView extends Omit<AiConfigInput, 'apiKey'> {
+  hasApiKey: boolean
+  ready: boolean
+  capabilities?: AiConnectionTestResult
+}
+
+export interface AiRuntimeConfig extends AiConfigInput {
+  apiKey: string
+}
+
+export type AiErrorCode =
+  | 'CONFIG_MISSING'
+  | 'AUTH_FAILED'
+  | 'MODEL_NOT_FOUND'
+  | 'TOOLS_NOT_SUPPORTED'
+  | 'RATE_LIMITED'
+  | 'PROVIDER_UNAVAILABLE'
+  | 'REQUEST_TIMEOUT'
+  | 'STREAM_INVALID'
+  | 'TOOL_NOT_FOUND'
+  | 'TOOL_INPUT_INVALID'
+  | 'TOOL_LIMIT_REACHED'
+  | 'APPROVAL_EXPIRED'
+  | 'DOCUMENT_CONFLICT'
+  | 'SOURCE_NOT_AUTHORIZED'
+  | 'SOURCE_AMBIGUOUS'
+  | 'SOURCE_INVALID'
+  | 'SOURCE_TOO_LARGE'
+  | 'SOURCE_POLICY_BLOCKED'
+  | 'RUN_CANCELLED'
+
+export interface AiError {
+  code: AiErrorCode
+  message: string
+}
+
+export interface AiConnectionTestResult {
+  textGeneration: boolean
+  toolCalling: boolean
+}
+
+export interface AiConversationMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  content: string
+  toolCallId?: string
+  toolName?: string
+  createdAt?: number
+}
+
+export interface SourceChunk {
+  index: number
+  content: string
+  startOffset: number
+  endOffset: number
+}
+
+export interface WebSourceReadResult {
+  url: string
+  finalUrl: string
+  title: string
+  content: string
+  contentType: string
+  chunks: SourceChunk[]
+  truncated: boolean
+}
+
+export type LocalFileType = 'pdf' | 'markdown' | 'mdx' | 'text'
+
+export interface LocalFileInspection {
+  requestedPath: string
+  normalizedPath: string
+  fileType: LocalFileType
+  size?: number
+}
+
+export interface LocalFileReadResult extends LocalFileInspection {
+  content: string
+  chunks: SourceChunk[]
+  truncated: boolean
+}
+
+export interface ToolPolicy {
+  effect: 'read' | 'network' | 'write' | 'external-action' | 'dangerous'
+  approval: 'never' | 'always' | 'policy'
+  riskLevel: 'low' | 'medium' | 'high' | 'critical'
+  supportsRememberDecision: boolean
+}
+
+export interface AiDocumentSnapshot {
+  id: string
+  title: string
+  path: string | null
+  format: 'markdown' | 'mdx'
+  content: string
+  revision: number
+  contentHash: string
+  modified: boolean
+}
+
+export interface WorkspaceFileEntry {
+  name: string
+  path: string
+  isOpen: boolean
+  isDirectory?: boolean
+  /** 从工作区根目录到该文件所在目录的所有父级目录名（不含文件名），越靠近文件越靠后 */
+  parentDirs: string[]
+}
+
+export interface AiSelectionSnapshot {
+  text: string
+  from: number
+  to: number
+  cursor: number
+}
+
+export interface AiExecutionSnapshot {
+  runId?: string
+  conversationId: string
+  activeDocument: AiDocumentSnapshot | null
+  selection: AiSelectionSnapshot | null
+  cursor: number | null
+  workspaceFiles?: WorkspaceFileEntry[]
+}
+
+export type ApprovedDocumentOperation =
+  | {
+      type: 'replace-document'
+      target: AiDocumentSnapshot
+      content: string
+      reason: string
+    }
+  | {
+      type: 'insert-document'
+      target: AiDocumentSnapshot
+      content: string
+      position: 'selection' | 'cursor' | 'start' | 'end'
+      selection: AiSelectionSnapshot | null
+      cursor: number | null
+      reason: string
+    }
+  | {
+      type: 'create-document'
+      title: string
+      content: string
+      format: 'markdown' | 'mdx'
+      reason: string
+    }
+
+export type ApprovalPreview =
+  | { type: 'markdown-diff'; title: string; before: string; after: string }
+  | { type: 'document'; title: string; content: string }
+  | {
+      type: 'network-request'
+      method: string
+      url: string
+      reason?: string
+      bodySummary?: string
+    }
+  | {
+      type: 'local-file-read'
+      requestedPath: string
+      normalizedPath: string
+      fileType: LocalFileType
+      size?: number
+      reason: string
+    }
+
+export type ApprovalDecision =
+  | { status: 'approved'; scope: 'once' }
+  | { status: 'rejected'; reason?: string }
+  | { status: 'cancelled' }
+  | { status: 'expired' }
+
+export type ToolExecutionResult<T = unknown> =
+  | { status: 'completed' | 'applied'; data?: T }
+  | { status: 'rejected' | 'conflict' | 'failed' | 'cancelled'; message: string }
+
+export interface ToolApprovalRequest {
+  id: string
+  runId: string
+  toolCallId: string
+  toolName: string
+  title: string
+  description: string
+  reason?: string
+  effect: ToolPolicy['effect']
+  riskLevel: ToolPolicy['riskLevel']
+  preview: ApprovalPreview
+  execution: { location: 'main' } | { location: 'renderer'; operation: ApprovedDocumentOperation }
+  createdAt: number
+  expiresAt: number
+}
+
+export interface AiRunInput {
+  conversationId: string
+  message: string
+  history: AiConversationMessage[]
+  snapshot: AiExecutionSnapshot
+  /** 当前工作区内容概要（可选），LLM 据此判断问题与工作区内容的相关性。 */
+  workspaceSummary?: string
+}
+
+export type AiRunEvent =
+  | { type: 'run-started'; runId: string }
+  | { type: 'text-delta'; runId: string; text: string }
+  | { type: 'tool-call-started'; runId: string; toolCallId: string; toolName: string }
+  | {
+      type: 'tool-call-completed'
+      runId: string
+      toolCallId: string
+      result: ToolExecutionResult
+    }
+  | { type: 'approval-required'; runId: string; approval: ToolApprovalRequest }
+  | { type: 'run-completed'; runId: string }
+  | { type: 'run-failed'; runId: string; error: AiError }
+  | { type: 'run-cancelled'; runId: string }
+
+export interface ConversationToolSummary {
+  toolCallId: string
+  toolName: string
+  status: string
+  messageId?: string
+}
+
+export interface ConversationMeta {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  messageCount: number
+}
+
+export interface ConversationRecord extends ConversationMeta {
+  version: 1
+  messages: AiConversationMessage[]
+  toolSummaries: ConversationToolSummary[]
+}

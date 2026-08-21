@@ -107,8 +107,9 @@ function createExtensions(): Extension[] {
         fileStore.updateContent(content)
         emit('update:content', content)
       }
-      if (update.selectionSet) {
+      if (update.selectionSet || update.docChanged) {
         updateCursorPosition(update.state)
+        updateEditorSelectionSnapshot(update.state)
       }
     })
   ]
@@ -662,6 +663,21 @@ function updateCursorPosition(state: EditorState): void {
 }
 
 /**
+ * 发布归一化的编辑器选区快照（CodeMirror 偏移即 Markdown 偏移）。
+ * 无活动 tab 时发布 null。
+ */
+function updateEditorSelectionSnapshot(state: EditorState): void {
+  const tabId = fileStore.activeTabId
+  if (!tabId) {
+    fileStore.updateEditorSelection(null)
+    return
+  }
+  const { from, to, head } = state.selection.main
+  const text = state.doc.sliceString(from, to)
+  fileStore.updateEditorSelection({ tabId, from, to, cursor: head, text })
+}
+
+/**
  * 初始化编辑器
  */
 function initEditor(): void {
@@ -682,6 +698,8 @@ function initEditor(): void {
   scroller.addEventListener('scroll', handleScroll)
 
   editorView.value = view
+  updateCursorPosition(view.state)
+  updateEditorSelectionSnapshot(view.state)
 }
 
 /**
@@ -1060,12 +1078,18 @@ onUnmounted(() => {
 })
 
 // Watch for content changes from store (incremental diff sync)
-watch(() => fileStore.fileContent, (newContent) => {
+watch(() => [fileStore.activeTabId, fileStore.fileContent] as const, ([newTabId, newContent], [oldTabId]) => {
   const view = editorView.value
   if (!view) return
 
   const currentContent = view.state.doc.toString()
-  if (currentContent === newContent) return
+  const tabChanged = newTabId !== oldTabId
+  if (currentContent === newContent) {
+    if (tabChanged) view.dispatch({ selection: { anchor: 0 } })
+    updateCursorPosition(view.state)
+    updateEditorSelectionSnapshot(view.state)
+    return
+  }
 
   isSyncing = true
 
@@ -1083,9 +1107,12 @@ watch(() => fileStore.fileContent, (newContent) => {
       from: prefixLen,
       to: currentContent.length - suffixLen,
       insert: newContent.slice(prefixLen, newContent.length - suffixLen)
-    }
+    },
+    selection: tabChanged ? { anchor: 0 } : undefined
   })
   isSyncing = false
+  updateCursorPosition(view.state)
+  updateEditorSelectionSnapshot(view.state)
 })
 
 // Watch for theme changes

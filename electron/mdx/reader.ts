@@ -14,6 +14,7 @@ import { validateMdxJson, createDefaultSettings, createDefaultAssets } from './s
 
 /** 临时目录前缀 */
 const TEMP_PREFIX = 'mdx_'
+const MAX_INFLATED_ENTRY_BYTES = 50 * 1024 * 1024
 
 /** 临时目录根路径 */
 let tempRoot: string
@@ -255,6 +256,11 @@ export function openMdx(filePath: string): MdxResult<{ document: MdxDocument; te
         if (!isSafePath(entry.entryName)) {
           cleanupTempDir(tempDir)
           return { success: false, error: `不安全的 ZIP 条目路径: ${entry.entryName}` }
+        }
+
+        if (!entry.isDirectory && entry.header.size > MAX_INFLATED_ENTRY_BYTES) {
+          cleanupTempDir(tempDir)
+          return { success: false, error: `ZIP 条目解压后大小超过限制: ${entry.entryName}` }
         }
 
         const targetPath = path.join(tempDir, entry.entryName)

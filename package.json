@@ -25,10 +25,15 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.68",
     "@electron-toolkit/utils": "^3.0.0",
     "adm-zip": "^0.5.16",
+    "ai": "^6.0.256",
     "electron-updater": "^6.6.2",
-    "sharp": "^0.34.5"
+    "node-html-parser": "^9.0.1",
+    "pdf-parse": "^2.4.5",
+    "sharp": "^0.34.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.2",
@@ -55,12 +60,15 @@
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/eslint-config-typescript": "^14.4.0",
+    "@vue/test-utils": "^2.4.11",
     "autoprefixer": "^10.4.20",
+    "diff": "^9.0.0",
     "electron": "^34.2.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^3.0.0",
     "eslint": "^9.20.1",
     "eslint-plugin-vue": "^9.32.0",
+    "jsdom": "^30.0.1",
     "katex": "^0.16.46",
     "markdown-it": "^14.1.1",
     "pinia": "^2.3.0",

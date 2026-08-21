@@ -684,6 +684,86 @@ function syncShowMarkers(): void {
   showMarkers.value = pluginState?.showMarkers ?? false
 }
 
+/**
+ * 把 ProseMirror 选区映射为 Markdown 偏移，校验通过后发布归一化选区快照。
+ *
+ * 映射策略：分别序列化「选区前的文档前缀」与「选中的切片」为 Markdown，
+ * 前缀长度即为候选 from 偏移，加上选中切片长度得到 to 偏移；
+ * 随后校验 fileContent.slice(from, to) === text。任何一步不匹配（例如
+ * 节点选区、序列化与文档正文不一致）都 fail-closed 发布 null。
+ * 绝不把 ProseMirror 位置直接当作 Markdown 偏移。
+ */
+function publishSelectionFromProseMirror(): void {
+  const view = viewRef.value
+  if (!view) return
+  const tabId = activeTabId.value
+  if (!tabId) {
+    fileStore.updateEditorSelection(null)
+    return
+  }
+  const { selection, doc } = view.state
+  if (!(selection instanceof TextSelection)) {
+    fileStore.updateEditorSelection(null)
+    return
+  }
+  const { from, to } = selection
+  const content = fileStore.fileContent
+
+  // collapsed 光标：slice(from, from) === '' 恒真，前缀序列化又可能丢失块间分隔符，
+  // 因此改用「完整序列化 - 后缀序列化」反推光标 offset，并在不一致时 fail-closed。
+  if (from === to) {
+    let fullMarkdown: string
+    let suffixMarkdown: string
+    try {
+      fullMarkdown = serializeMarkdown(doc)
+      suffixMarkdown = serializeMarkdown(doc.cut(from, doc.content.size))
+    } catch {
+      fileStore.updateEditorSelection(null)
+      return
+    }
+    if (fullMarkdown !== content) {
+      fileStore.updateEditorSelection(null)
+      return
+    }
+    const cursorOffset = fullMarkdown.length - suffixMarkdown.length
+    if (fullMarkdown.slice(cursorOffset) !== suffixMarkdown) {
+      fileStore.updateEditorSelection(null)
+      return
+    }
+    fileStore.updateEditorSelection({
+      tabId,
+      from: cursorOffset,
+      to: cursorOffset,
+      cursor: cursorOffset,
+      text: ''
+    })
+    return
+  }
+
+  let prefixMarkdown: string
+  let selectedMarkdown: string
+  try {
+    prefixMarkdown = serializeMarkdown(doc.cut(0, from))
+    selectedMarkdown = serializeMarkdown(doc.cut(from, to))
+  } catch {
+    fileStore.updateEditorSelection(null)
+    return
+  }
+  const fromOffset = prefixMarkdown.length
+  const toOffset = fromOffset + selectedMarkdown.length
+  if (content.slice(fromOffset, toOffset) !== selectedMarkdown) {
+    fileStore.updateEditorSelection(null)
+    return
+  }
+  fileStore.updateEditorSelection({
+    tabId,
+    from: fromOffset,
+    to: toOffset,
+    cursor: toOffset,
+    text: selectedMarkdown
+  })
+}
+
 function initEditor(): void {
   if (!editorRef.value) {
     console.warn('[IrEditor] init skipped: editorRef is null')
@@ -697,8 +777,10 @@ function initEditor(): void {
     dispatchTransaction(tr) {
       const view = viewRef.value
       if (!view) return
+      const selectionChanged = tr.selectionSet
       view.updateState(view.state.apply(tr))
       syncShowMarkers()
+      if (selectionChanged) publishSelectionFromProseMirror()
       if (!view.hasFocus()) view.focus()
     },
     attributes: {
@@ -823,6 +905,8 @@ watch([activeTabId, fileContent], ([newTabId, newContent], [oldTabId]) => {
   view.updateState(newState)
   isUpdatingFromStore = false
   syncShowMarkers()
+  // 切换 tab 后编辑器选区被重置为文档开头，重新发布快照避免残留旧 tab 的选区。
+  if (tabChanged) publishSelectionFromProseMirror()
   nextTick(() => loadEditorImages())
 })
 

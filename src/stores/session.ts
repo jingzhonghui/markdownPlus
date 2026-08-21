@@ -9,6 +9,9 @@ export interface SessionState {
   sidebarCollapsed: boolean
   sidebarWidth?: number
   editorMode: EditorMode
+  aiPanelOpen: boolean
+  aiPanelActive?: boolean
+  aiActiveConversationId: string | null
 }
 
 export function loadSessionState(): SessionState | null {

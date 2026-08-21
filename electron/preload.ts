@@ -3,6 +3,18 @@ import { IPC_CHANNELS } from './ipc/channels'
 import type { MdxAttachmentAsset, MdxDocument } from './mdx/schema'
 import type { UserGuideOpenResult } from './user-guide'
 import type { UpdateInfoPayload, UpdateProgressPayload } from './updater'
+import type {
+  AiConfigInput,
+  AiConfigView,
+  AiConnectionTestResult,
+  AiRunEvent,
+  AiRunInput,
+  ApprovalDecision,
+  ConversationMeta,
+  ConversationRecord,
+  ToolExecutionResult,
+  WorkspaceFileEntry
+} from '../shared/ai/types'
 
 export type { UpdateInfoPayload, UpdateProgressPayload }
 
@@ -146,6 +158,27 @@ export interface ElectronAPI {
   onUpdateProgress: (callback: (progress: UpdateProgressPayload) => void) => () => void
   onUpdateDownloaded: (callback: (info: UpdateInfoPayload) => void) => () => void
   onUpdateError: (callback: (error: { message: string }) => void) => () => void
+
+  // AI 助手
+  getAiConfig: () => Promise<{ success: boolean; data?: AiConfigView; error?: string }>
+  setAiConfig: (config: AiConfigInput) => Promise<{ success: boolean; data?: AiConfigView; error?: string }>
+  testAiConfig: (config: AiConfigInput) => Promise<{ success: boolean; data?: AiConnectionTestResult; error?: string }>
+  startAiRun: (input: AiRunInput) => Promise<{ success: boolean; data?: { runId: string }; error?: string }>
+  cancelAiRun: (runId: string) => Promise<{ success: boolean; error?: string }>
+  claimAiApproval: (approvalId: string) => Promise<{ success: boolean; error?: string }>
+  resolveAiApproval: (
+    approvalId: string,
+    decision: ApprovalDecision,
+    executionResult?: ToolExecutionResult
+  ) => Promise<{ success: boolean; error?: string }>
+  onAiRunEvent: (callback: (event: AiRunEvent) => void) => () => void
+  listAiConversations: (root: string | null) => Promise<{ success: boolean; data?: ConversationMeta[]; error?: string }>
+  loadAiConversation: (root: string | null, id: string) => Promise<{ success: boolean; data?: ConversationRecord; error?: string }>
+  saveAiConversation: (root: string | null, record: ConversationRecord) => Promise<{ success: boolean; error?: string }>
+  deleteAiConversation: (root: string | null, id: string) => Promise<{ success: boolean; error?: string }>
+  summarizeAiConversation: (text: string) => Promise<{ success: boolean; data?: { title: string }; error?: string }>
+  ensureWorkspaceSummary: (root: string) => Promise<{ success: boolean; data?: { summary: string | null; status: 'ok' | 'skipped'; generated: boolean; files: WorkspaceFileEntry[] | null }; error?: string }>
+  onWorkspaceSummaryGenerating: (callback: () => void) => () => void
 }
 
 // 通过 contextBridge 暴露安全的 API
@@ -263,6 +296,32 @@ const api: ElectronAPI = {
     const handler = (_event: unknown, error: { message: string }): void => callback(error)
     ipcRenderer.on(IPC_CHANNELS.UPDATE.ERROR, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE.ERROR, handler)
+  },
+
+  // AI 助手
+  getAiConfig: () => ipcRenderer.invoke(IPC_CHANNELS.AI.CONFIG.GET),
+  setAiConfig: (config) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONFIG.SET, config),
+  testAiConfig: (config) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONFIG.TEST, config),
+  startAiRun: (input) => ipcRenderer.invoke(IPC_CHANNELS.AI.RUN.START, input),
+  cancelAiRun: (runId) => ipcRenderer.invoke(IPC_CHANNELS.AI.RUN.CANCEL, runId),
+  claimAiApproval: (approvalId) => ipcRenderer.invoke(IPC_CHANNELS.AI.APPROVAL.CLAIM, approvalId),
+  resolveAiApproval: (approvalId, decision, executionResult) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AI.APPROVAL.RESOLVE, approvalId, decision, executionResult),
+  listAiConversations: (root) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONVERSATION.LIST, root),
+  loadAiConversation: (root, id) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONVERSATION.LOAD, root, id),
+  saveAiConversation: (root, record) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONVERSATION.SAVE, root, record),
+  deleteAiConversation: (root, id) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONVERSATION.DELETE, root, id),
+  summarizeAiConversation: (text) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONVERSATION.SUMMARIZE, text),
+  ensureWorkspaceSummary: (root) => ipcRenderer.invoke(IPC_CHANNELS.AI.WORKSPACE.ENSURE_SUMMARY, root),
+  onWorkspaceSummaryGenerating: (callback) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(IPC_CHANNELS.AI.WORKSPACE.SUMMARY_GENERATING, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.AI.WORKSPACE.SUMMARY_GENERATING, handler)
+  },
+  onAiRunEvent: (callback) => {
+    const handler = (_event: unknown, payload: AiRunEvent): void => callback(payload)
+    ipcRenderer.on(IPC_CHANNELS.AI.EVENT, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.AI.EVENT, handler)
   }
 }
 

@@ -1,0 +1,262 @@
+import { describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { aiRunInputSchema, approvalResolutionSchema } from '../contracts'
+import { useFileStore } from '../../../src/stores/file'
+import { createExecutionSnapshot } from '../../../src/utils/ai/workspace-context'
+
+describe('AI IPC contracts', () => {
+  it('accepts a run without registered source IDs', () => {
+    expect(
+      aiRunInputSchema.parse({
+        conversationId: 'conv-1',
+        message: '总结 https://example.com/report',
+        history: [],
+        snapshot: {
+          conversationId: 'conv-1',
+          activeDocument: null,
+          selection: null,
+          cursor: null
+        }
+      }).message
+    ).toBe('总结 https://example.com/report')
+  })
+
+  it('preserves leading and trailing message whitespace exactly', () => {
+    const message = ' \t总结 https://example.com/report\r\n '
+
+    expect(
+      aiRunInputSchema.parse({
+        conversationId: 'conv-1',
+        message,
+        history: [],
+        snapshot: {
+          conversationId: 'conv-1',
+          activeDocument: null,
+          selection: null,
+          cursor: null
+        }
+      }).message
+    ).toBe(message)
+  })
+
+  it('rejects a whitespace-only message without transforming nonempty messages', () => {
+    expect(() =>
+      aiRunInputSchema.parse({
+        conversationId: 'conv-1',
+        message: ' \t\r\n ',
+        history: [],
+        snapshot: {
+          conversationId: 'conv-1',
+          activeDocument: null,
+          selection: null,
+          cursor: null
+        }
+      })
+    ).toThrow()
+  })
+
+  it('rejects legacy materialIds because the snapshot is strict', () => {
+    expect(() =>
+      aiRunInputSchema.parse({
+        conversationId: 'conv-1',
+        message: 'hello',
+        history: [],
+        snapshot: {
+          conversationId: 'conv-1',
+          activeDocument: null,
+          selection: null,
+          cursor: null,
+          materialIds: ['legacy-id']
+        }
+      })
+    ).toThrow()
+  })
+
+  it('rejects renderer-supplied source authorization candidates', () => {
+    expect(() =>
+      aiRunInputSchema.parse({
+        conversationId: 'conv-1',
+        message: 'summarize the source',
+        history: [],
+        snapshot: {
+          conversationId: 'conv-1',
+          activeDocument: null,
+          selection: null,
+          cursor: null
+        },
+        sourceCandidates: ['https://example.com/report']
+      })
+    ).toThrow()
+  })
+
+  it('accepts a snapshot with workspaceFiles', () => {
+    const result = aiRunInputSchema.parse({
+      conversationId: 'conv-1',
+      message: 'summarize notes',
+      history: [],
+      snapshot: {
+        conversationId: 'conv-1',
+        activeDocument: null,
+        selection: null,
+        cursor: null,
+        workspaceFiles: [
+          { name: 'notes.md', path: '/docs/notes.md', isOpen: true, parentDirs: ['docs'] }
+        ]
+      }
+    })
+    expect(result.snapshot.workspaceFiles).toEqual([
+      { name: 'notes.md', path: '/docs/notes.md', isOpen: true, parentDirs: ['docs'] }
+    ])
+  })
+
+  it('rejects workspaceFiles with extra fields', () => {
+    expect(() =>
+      aiRunInputSchema.parse({
+        conversationId: 'conv-1',
+        message: 'summarize notes',
+        history: [],
+        snapshot: {
+          conversationId: 'conv-1',
+          activeDocument: null,
+          selection: null,
+          cursor: null,
+          workspaceFiles: [{ name: 'notes.md', path: '/docs/notes.md', isOpen: true, extra: true }]
+        }
+      })
+    ).toThrow()
+  })
+
+  it('accepts an optional workspace summary on the run input', () => {
+    const result = aiRunInputSchema.parse({
+      conversationId: 'conv-1',
+      message: 'k8s 如何安装',
+      history: [],
+      workspaceSummary: '该工作区是云原生运维知识库，包含 k8s、docker、helm 相关文档。',
+      snapshot: {
+        conversationId: 'conv-1',
+        activeDocument: null,
+        selection: null,
+        cursor: null
+      }
+    })
+    expect(result.workspaceSummary).toContain('云原生运维')
+  })
+
+  it('omits the workspace summary when absent', () => {
+    const result = aiRunInputSchema.parse({
+      conversationId: 'conv-1',
+      message: 'hello',
+      history: [],
+      snapshot: {
+        conversationId: 'conv-1',
+        activeDocument: null,
+        selection: null,
+        cursor: null
+      }
+    })
+    expect(result.workspaceSummary).toBeUndefined()
+  })
+
+  it('accepts the real renderer start payload without a renderer-owned run id', () => {
+    setActivePinia(createPinia())
+    const fileStore = useFileStore()
+    fileStore.createGeneratedDocument('Draft', 'hello', 'markdown')
+    const conversationId = 'conv-renderer-1'
+    const snapshot = createExecutionSnapshot(fileStore)
+    const contractSnapshot = {
+      conversationId,
+      activeDocument: snapshot.activeDocument,
+      selection: snapshot.selection,
+      cursor: snapshot.cursor
+    }
+
+    const result = aiRunInputSchema.safeParse({
+      conversationId,
+      message: 'continue',
+      history: [],
+      snapshot: contractSnapshot
+    })
+
+    expect(snapshot).not.toHaveProperty('runId')
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects unknown run input fields', () => {
+    expect(() =>
+      aiRunInputSchema.parse({
+        conversationId: 'conv-1',
+        message: 'hello',
+        history: [],
+        snapshot: {
+          runId: 'run-1',
+          conversationId: 'conv-1',
+          activeDocument: null,
+          selection: null,
+          cursor: null,
+          materialIds: []
+        },
+        unexpected: true
+      })
+    ).toThrow()
+  })
+
+  it('rejects an execution result when the approval was not approved', () => {
+    expect(() =>
+      approvalResolutionSchema.parse({
+        id: 'approval-1',
+        decision: { status: 'rejected' },
+        result: { status: 'applied' }
+      })
+    ).toThrow()
+  })
+
+  it('accepts an approved Main decision without an execution result', () => {
+    expect(
+      approvalResolutionSchema.parse({
+        id: 'approval-main-1',
+        decision: { status: 'approved', scope: 'once' }
+      })
+    ).not.toHaveProperty('result')
+  })
+
+  it.each(['applied', 'conflict', 'failed'] as const)(
+    'accepts an approved Renderer decision with a %s result',
+    (status) => {
+      const result =
+        status === 'applied'
+          ? { status }
+          : { status, message: `Renderer operation ${status}` }
+
+      expect(
+        approvalResolutionSchema.parse({
+          id: 'approval-renderer-1',
+          decision: { status: 'approved', scope: 'once' },
+          result
+        }).result?.status
+      ).toBe(status)
+    }
+  )
+
+  it.each(['rejected', 'cancelled', 'expired'] as const)(
+    'rejects an execution result attached to a %s decision',
+    (status) => {
+      expect(() =>
+        approvalResolutionSchema.parse({
+          id: 'approval-1',
+          decision: { status },
+          result: { status: 'applied' }
+        })
+      ).toThrow()
+    }
+  )
+
+  it('rejects unknown fields inside approval decisions', () => {
+    expect(() =>
+      approvalResolutionSchema.parse({
+        id: 'approval-1',
+        decision: { status: 'approved', scope: 'once', unexpected: true },
+        result: { status: 'applied' }
+      })
+    ).toThrow()
+  })
+})

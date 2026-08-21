@@ -1,12 +1,26 @@
 <script setup lang="ts">
 import { reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { useFileStore } from '../../stores/file'
+import { useAiStore } from '../../stores/ai'
 import type { TabInfo } from '../../stores/file'
 
 const fileStore = useFileStore()
+const aiStore = useAiStore()
 
 async function handleTabClick(tabId: string): Promise<void> {
+  aiStore.deactivatePanel()
   await fileStore.setActiveTab(tabId)
+}
+
+function handleAiMiddleClick(event: MouseEvent): void {
+  if (event.button !== 1) return
+  event.preventDefault()
+  void aiStore.requestClosePanel()
+}
+
+function handleAiClose(event: MouseEvent): void {
+  event.stopPropagation()
+  void aiStore.requestClosePanel()
 }
 
 function handleMiddleClick(tabId: string, event: MouseEvent): void {
@@ -109,14 +123,15 @@ onUnmounted(() => {
 
 <template>
   <div
-    v-if="fileStore.tabs.length > 0"
+    v-if="fileStore.tabs.length > 0 || aiStore.panelOpen"
     class="tab-bar"
   >
     <div
       v-for="tab in fileStore.tabs"
       :key="tab.id"
+      :data-tab-id="tab.id"
       class="tab"
-      :class="{ active: tab.id === fileStore.activeTabId }"
+      :class="{ active: !aiStore.panelActive && tab.id === fileStore.activeTabId }"
       @click="handleTabClick(tab.id)"
       @mousedown="handleMiddleClick(tab.id, $event)"
       @contextmenu.prevent.stop="onTabContextMenu($event, tab)"
@@ -146,6 +161,56 @@ onUnmounted(() => {
       <button
         class="tab-close-btn"
         @click="handleCloseTab(tab.id, $event)"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        >
+          <path d="M4 4l8 8M12 4l-8 8" />
+        </svg>
+      </button>
+    </div>
+
+    <div
+      v-if="aiStore.panelOpen"
+      class="tab ai-tab"
+      :class="{ active: aiStore.panelActive }"
+      data-testid="ai-tab"
+      @click="aiStore.activatePanel()"
+      @mousedown="handleAiMiddleClick"
+    >
+      <svg
+        class="tab-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+      >
+        <path
+          stroke-width="2"
+          d="M12 3l1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3zm6 10l.8 2.2L21 16l-2.2.8L18 19l-.8-2.2L15 16l2.2-.8L18 13z"
+        />
+      </svg>
+      <span class="tab-label">AI 助手</span>
+      <span
+        v-if="aiStore.pendingApprovals.length > 0"
+        class="ai-status-marker approval"
+        data-testid="ai-approval-marker"
+        title="等待审批"
+      >!</span>
+      <span
+        v-else-if="aiStore.running"
+        class="ai-status-marker running"
+        data-testid="ai-running-marker"
+        title="正在生成"
+      />
+      <button
+        class="tab-close-btn"
+        data-testid="ai-tab-close"
+        title="关闭 AI 助手"
+        @click="handleAiClose"
       >
         <svg
           viewBox="0 0 16 16"
@@ -265,6 +330,36 @@ onUnmounted(() => {
   border-radius: 50%;
   background-color: var(--color-warning);
   flex-shrink: 0;
+}
+
+.ai-status-marker {
+  flex-shrink: 0;
+}
+
+.ai-status-marker.running {
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--color-primary);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: ai-tab-spin 0.8s linear infinite;
+}
+
+.ai-status-marker.approval {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  color: white;
+  background: var(--color-warning);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+@keyframes ai-tab-spin {
+  to { transform: rotate(360deg); }
 }
 
 .tab-close-btn {

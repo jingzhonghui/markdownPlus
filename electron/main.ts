@@ -8,6 +8,7 @@ import { registerMdxHandlers, cleanupAll, isCloseConfirmed, setCloseConfirmed, a
 import { registerPdfHandlers } from './ipc/pdf-handlers'
 import { hadAbnormalExit, markAppRunning, readRecoverySnapshot, writeRecoverySnapshot, clearRecoverySnapshot } from './recovery'
 import { openUserGuide } from './user-guide'
+import { registerAiHandlers, disposeAiServices } from './ai/ipc-handlers'
 import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater'
 
 let mainWindow: BrowserWindow | null = null
@@ -143,6 +144,9 @@ app.whenReady().then(() => {
   // 注册 PDF 导出 handlers
   registerPdfHandlers()
 
+  // 注册 AI 助手 handlers
+  registerAiHandlers(() => mainWindow)
+
   createWindow()
 
   // 初始化自动更新，并在启动后延迟静默检查一次
@@ -161,6 +165,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   // 清理临时资源
   cleanupAll()
+  disposeAiServices()
 
   if (process.platform !== 'darwin') {
     app.quit()
@@ -170,4 +175,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // 应用退出前清理临时资源
   cleanupAll()
+  disposeAiServices()
 })

@@ -230,6 +230,7 @@ export function registerFileHandlers(): void {
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name)
         if (entry.isDirectory()) {
+          if (entry.name.startsWith('.')) continue
           items.push({ name: entry.name, path: fullPath, isDirectory: true })
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase()

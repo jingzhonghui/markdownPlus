@@ -30,4 +30,17 @@ export interface TabInfo {
   fileInfo: FileInfo | null
   document: MdxDocument | null
   content: string
+  revision: number
+}
+
+/**
+ * 归一化的编辑器选区快照（Markdown 偏移）。
+ * 由 SourceEditor（CodeMirror 直接偏移）与 IrEditor（ProseMirror 映射后校验）发布。
+ */
+export interface EditorSelectionSnapshot {
+  tabId: string
+  from: number
+  to: number
+  cursor: number
+  text: string
 }

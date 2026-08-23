@@ -98,11 +98,10 @@ async function main() {
     await download(`${baseUrl}/${info.asset}`, archivePath)
 
     const archiveHash = await sha256(archivePath)
-    const sumsResponse = await fetch(`${baseUrl}/SHA256SUMS`)
-    if (!sumsResponse.ok) throw new Error(`无法下载 SHA256SUMS：HTTP ${sumsResponse.status}`)
+    const sumsResponse = await fetch(`${baseUrl}/${info.asset}.sha256`)
+    if (!sumsResponse.ok) throw new Error(`无法下载校验文件：HTTP ${sumsResponse.status}`)
     const sums = await sumsResponse.text()
-    const line = sums.split(/\r?\n/).find((item) => item.trim().endsWith(` ${info.asset}`) || item.trim().endsWith(` *${info.asset}`))
-    const expectedArchiveHash = line?.trim().split(/\s+/)[0]?.toUpperCase()
+    const expectedArchiveHash = sums.trim().split(/\s+/)[0]?.toUpperCase()
     if (!expectedArchiveHash || archiveHash !== expectedArchiveHash) {
       throw new Error(`rg 归档校验失败：期望 ${expectedArchiveHash ?? '未知'}，实际 ${archiveHash}`)
     }

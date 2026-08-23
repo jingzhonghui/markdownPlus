@@ -4,16 +4,18 @@
  * 把 Pinia 的 fileStore 与共享的 AI DTO 相互转换：
  * - createExecutionSnapshot：读取当前活动 tab 及其选区，产出 AiExecutionSnapshot。
  * - applyDocumentOperation：把已批准的文档操作应用到 fileStore（含 revision/hash 双重校验）。
+ *
+ * 工作区文件搜索不再依赖发送消息时的文件快照，而是由模型在主进程调用
+ * search_workspace / read_workspace_file 等实时工具完成；快照只携带授权根目录。
  */
 import type {
   AiExecutionSnapshot,
   AiSelectionSnapshot,
   ApprovedDocumentOperation,
-  ToolExecutionResult,
-  WorkspaceFileEntry
+  ToolExecutionResult
 } from '../../../shared/ai/types'
 import { hashDocumentContent } from './document-revision'
-import { useFileStore, type FileTreeNode } from '../../stores/file'
+import { useFileStore } from '../../stores/file'
 
 type FileStore = ReturnType<typeof useFileStore>
 
@@ -24,85 +26,8 @@ function toAiSelection(sel: { from: number; to: number; cursor: number; text: st
   return { text: sel.text, from: sel.from, to: sel.to, cursor: sel.cursor }
 }
 
-const PATH_SEP = '/'
-
-function normalizePath(p: string): string {
-  return p.replace(/\\/g, PATH_SEP)
-}
-
-/**
- * 收集当前工作区可见的文件（已打开标签 + 资源管理器文件树）。
- * 同路径去重，标签页优先标记 isOpen=true。
- * 每个条目携带从工作区根到该文件的父级目录链 (parentDirs)。
- */
-function collectWorkspaceFiles(fileStore: FileStore): WorkspaceFileEntry[] {
-  const files = new Map<string, WorkspaceFileEntry>()
-  const rootPath = fileStore.openedFolderPath
-
-  function makeEntry(name: string, filePath: string, isOpen: boolean): WorkspaceFileEntry {
-    const normalizedFile = normalizePath(filePath)
-    const lastSep = normalizedFile.lastIndexOf(PATH_SEP)
-    const dir = lastSep >= 0 ? normalizedFile.slice(0, lastSep) : ''
-    const chain: string[] = []
-    if (rootPath) {
-      const normalizedRoot = normalizePath(rootPath).replace(/\/$/, '')
-      const prefix = normalizedRoot + PATH_SEP
-      if (dir.toLowerCase().startsWith(prefix.toLowerCase())) {
-        const relative = dir.slice(prefix.length)
-        if (relative) {
-          chain.push(...relative.split(PATH_SEP).filter((p) => p.length > 0))
-        }
-      }
-    }
-    return { name, path: filePath, isOpen, parentDirs: chain }
-  }
-
-  for (const tab of fileStore.tabs) {
-    const fileInfo = tab.fileInfo
-    if (!fileInfo || !fileInfo.path) continue
-    const name = fileInfo.name || fileInfo.path
-    if (!files.has(fileInfo.path)) {
-      files.set(fileInfo.path, makeEntry(name, fileInfo.path, true))
-    } else {
-      files.get(fileInfo.path)!.isOpen = true
-    }
-  }
-
-  function visit(nodes: FileTreeNode[], ancestors: string[]): void {
-    for (const node of nodes) {
-      if (node.isDirectory) {
-        // 记录目录节点本身，让 list_workspace_root 能直接列出
-        if (!files.has(node.path)) {
-          files.set(node.path, {
-            name: node.name,
-            path: node.path,
-            isOpen: false,
-            isDirectory: true,
-            parentDirs: [...ancestors]
-          })
-        }
-        visit(node.children, [...ancestors, node.name])
-        continue
-      }
-      if (!files.has(node.path)) {
-        files.set(node.path, { name: node.name, path: node.path, isOpen: false, parentDirs: [...ancestors] })
-      } else if (ancestors.length > 0) {
-        files.get(node.path)!.parentDirs = [...ancestors]
-      }
-    }
-  }
-  visit(fileStore.fileTree, [])
-
-  return [...files.values()].slice(0, 500)
-}
-
-export function createExecutionSnapshot(
-  fileStore: FileStore,
-  injectedWorkspaceFiles?: WorkspaceFileEntry[]
-): AiExecutionSnapshot {
+export function createExecutionSnapshot(fileStore: FileStore): AiExecutionSnapshot {
   const tab = fileStore.tabs.find((t) => t.id === fileStore.activeTabId) ?? null
-
-  const workspaceFiles = injectedWorkspaceFiles ?? collectWorkspaceFiles(fileStore)
 
   if (!tab) {
     return {
@@ -110,7 +35,7 @@ export function createExecutionSnapshot(
       activeDocument: null,
       selection: null,
       cursor: null,
-      workspaceFiles
+      workspaceRoot: fileStore.openedFolderPath ?? null
     }
   }
 
@@ -141,7 +66,7 @@ export function createExecutionSnapshot(
     },
     selection: validSelection ? toAiSelection(sel) : null,
     cursor: validSelection ? sel.cursor : null,
-    workspaceFiles
+    workspaceRoot: fileStore.openedFolderPath ?? null
   }
 }
 

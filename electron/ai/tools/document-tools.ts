@@ -1,49 +1,36 @@
-import * as path from 'node:path'
 import { z } from 'zod'
-import type { AiDocumentSnapshot, AiSelectionSnapshot, LocalFileReadResult } from '../../../shared/ai/types'
-import type { SourceAccessService } from '../source-access-service'
+import type { AiDocumentSnapshot, LocalFileReadResult } from '../../../shared/ai/types'
+import type { WorkspaceSearchService } from '../../workspace/workspace-search-service'
 import { defineTool, type ToolDefinition } from '../tool-registry'
+import type { WorkspaceSearchError } from '../../workspace/workspace-search-service'
 
-function applyInsert(
-  base: string,
-  text: string,
-  position: 'selection' | 'cursor' | 'start' | 'end',
-  selection: AiSelectionSnapshot | null,
-  cursor: number | null
-): string {
-  switch (position) {
-    case 'start':
-      return text + base
-    case 'end':
-      return base + text
-    case 'selection':
-      if (!selection) return base + text
-      return base.slice(0, selection.from) + text + base.slice(selection.to)
-    case 'cursor': {
-      const at = cursor ?? base.length
-      return base.slice(0, at) + text + base.slice(at)
-    }
+function requireWorkspaceRoot(context: {
+  snapshot: { workspaceRoot: string | null }
+}): string {
+  if (!context.snapshot.workspaceRoot) {
+    throw new Error('当前没有打开工作区，无法访问工作区文件')
   }
+  return context.snapshot.workspaceRoot
 }
 
-function describeTarget(doc: AiDocumentSnapshot | null): AiDocumentSnapshot {
-  if (!doc) {
-    throw new Error('当前没有活动文档')
+function requireSignal(context: { abortSignal?: AbortSignal }): AbortSignal {
+  const signal = context.abortSignal
+  if (!signal) throw new Error('工作区操作缺少中止信号')
+  if (signal.aborted) throw new Error('工作区操作已中止')
+  return signal
+}
+
+function wrapSearchError(error: unknown): never {
+  if (error instanceof Error && error.name === 'WorkspaceSearchError') {
+    const code = (error as WorkspaceSearchError).code
+    if (code === 'RG_UNAVAILABLE') throw new Error('搜索组件不可用，请检查应用安装完整性')
+    throw error
   }
-  return doc
+  throw error
 }
-
-function isSameWorkspacePath(left: string, right: string): boolean {
-  const normalize = (value: string): string => path.resolve(value).replace(/[\\/]+$/, '')
-  return process.platform === 'win32'
-    ? normalize(left).toLowerCase() === normalize(right).toLowerCase()
-    : normalize(left) === normalize(right)
-}
-
-const SEARCH_RESULT_LIMIT = 50
 
 export interface DocumentToolRegistry {
-  searchWorkspaceFiles: ToolDefinition<{ query: string }, unknown>
+  searchWorkspace: ToolDefinition<unknown, unknown>
   listWorkspaceRoot: ToolDefinition<Record<string, never>, unknown>
   readWorkspaceDirectory: ToolDefinition<{ path: string }, unknown>
   readWorkspaceFile: ToolDefinition<{ path: string }, LocalFileReadResult>
@@ -53,11 +40,23 @@ export interface DocumentToolRegistry {
   createDocument: ToolDefinition<unknown, unknown>
 }
 
-export function createDocumentTools(sourceAccessService: SourceAccessService): DocumentToolRegistry {
-  const searchWorkspaceFiles = defineTool<{ query: string }, unknown>({
-    name: 'search_workspace_files',
-    description: '按关键词搜索当前工作区中的文件和文件夹。搜索范围包括文件名和所属目录名（例如搜索"工作"可匹配"工作"文件夹下的所有文件，即使文件名不含"工作"）。返回匹配的文件列表及其目录链，未匹配时返回空列表。',
-    inputSchema: z.object({ query: z.string().trim().min(1) }),
+export function createDocumentTools(searchService: WorkspaceSearchService): DocumentToolRegistry {
+  const searchWorkspace = defineTool({
+    name: 'search_workspace',
+    description:
+      '在当前工作区中实时搜索。文件名模式匹配文件名和相对路径；内容模式匹配文件正文（普通文本与 MDX）。遵循 .gitignore 并固定排除 .git、node_modules、.markdownPlus。搜索结果返回相对路径，可配合 read_workspace_file 读取正文。',
+    inputSchema: z
+      .object({
+        query: z.string().trim().min(1).max(500),
+        mode: z.enum(['filename', 'content']),
+        match: z.enum(['literal', 'regex']).optional(),
+        scope: z.string().trim().optional(),
+        extensions: z.array(z.string().regex(/^[a-zA-Z0-9]+$/)).max(20).optional(),
+        caseSensitive: z.boolean().optional(),
+        contextLines: z.number().int().min(0).max(3).optional(),
+        maxResults: z.number().int().min(1).max(100).optional()
+      })
+      .strict(),
     policy: {
       effect: 'read',
       approval: 'never',
@@ -66,27 +65,33 @@ export function createDocumentTools(sourceAccessService: SourceAccessService): D
     },
     execution: 'main',
     execute: async (input, context) => {
-      const files = context.snapshot.workspaceFiles ?? []
-      const query = input.query.toLowerCase()
-      const matches = files
-        .filter((file) => {
-          if (file.isDirectory) return false
-          if (file.name.toLowerCase().includes(query)) return true
-          if (file.parentDirs.some((dir) => dir.toLowerCase().includes(query))) return true
-          return false
-        })
-        .slice(0, SEARCH_RESULT_LIMIT)
-      const matchedDirs = [...new Set(matches.flatMap((f) => f.parentDirs))].filter((dir) =>
-        dir.toLowerCase().includes(query)
-      )
-      return { query: input.query, matches, total: matches.length, matchedDirs }
+      const root = requireWorkspaceRoot(context)
+      const signal = requireSignal(context)
+      try {
+        return await searchService.search(
+          input as {
+            query: string
+            mode: 'filename' | 'content'
+            match?: 'literal' | 'regex'
+            scope?: string
+            extensions?: string[]
+            caseSensitive?: boolean
+            contextLines?: number
+            maxResults?: number
+          },
+          root,
+          signal
+        )
+      } catch (error) {
+        wrapSearchError(error)
+      }
     }
   })
 
   const listWorkspaceRoot = defineTool({
     name: 'list_workspace_root',
     description:
-      '列出当前工作区根目录下的所有顶级文件和文件夹。用于了解工作区的整体结构，然后可调用 read_workspace_directory 深入浏览目录、调用 read_workspace_file 读取具体文件内容。',
+      '实时列出当前工作区根目录下的直接文件和文件夹。用于了解工作区顶层结构，然后可调用 read_workspace_directory 深入浏览目录、调用 read_workspace_file 读取文件。',
     inputSchema: z.object({}),
     policy: {
       effect: 'read',
@@ -96,83 +101,20 @@ export function createDocumentTools(sourceAccessService: SourceAccessService): D
     },
     execution: 'main',
     execute: async (_input, context) => {
-      const files = context.snapshot.workspaceFiles ?? []
-      if (files.length === 0) {
-        return { isEmpty: true, topLevelFiles: [], topLevelDirectories: [] }
-      }
-
-      const normalizedFilePaths = files.map((f) => ({
-        ...f,
-        normalized: f.path.replace(/\\/g, '/')
-      }))
-
-      // 找到公共根路径（所有条目的最长公共前缀目录）
-      const firstPath = normalizedFilePaths[0].normalized
-      const firstEntry = normalizedFilePaths[0]
-      const firstDir = firstEntry.isDirectory
-        ? firstPath
-        : (firstPath.lastIndexOf('/') >= 0 ? firstPath.slice(0, firstPath.lastIndexOf('/')) : '')
-      let commonRoot = firstDir ? '' : ''
-
-      if (firstDir) {
-        const parts = firstDir.split('/')
-        for (let i = 0; i < parts.length; i++) {
-          const candidate = parts.slice(0, i + 1).join('/')
-          if (normalizedFilePaths.every((f) => f.normalized.startsWith(candidate + '/'))) {
-            commonRoot = candidate
-          } else {
-            break
-          }
-        }
-      }
-
-      // 分类顶级文件和目录
-      const prefix = commonRoot ? commonRoot + '/' : ''
-      const topLevelFiles: { name: string; path: string; isOpen: boolean }[] = []
-      const dirSet = new Map<
-        string,
-        { name: string; fileCount: number; samplePath: string }
-      >()
-
-      for (const file of normalizedFilePaths) {
-        // 目录条目直接按名称归入目录集
-        if (file.isDirectory) {
-          const relative = commonRoot
-            ? file.normalized.slice(prefix.length)
-            : file.normalized
-          if (!relative.includes('/') && !dirSet.has(file.name)) {
-            dirSet.set(file.name, { name: file.name, fileCount: 0, samplePath: file.path })
-          }
-          continue
-        }
-
-        const relative = commonRoot
-          ? file.normalized.slice(prefix.length)
-          : file.normalized
-        const firstSlash = relative.indexOf('/')
-        if (firstSlash < 0) {
-          topLevelFiles.push({ name: file.name, path: file.path, isOpen: file.isOpen })
-        } else {
-          const dirName = relative.slice(0, firstSlash)
-          if (!dirSet.has(dirName)) {
-            dirSet.set(dirName, { name: dirName, fileCount: 0, samplePath: commonRoot + '/' + dirName })
-          }
-          dirSet.get(dirName)!.fileCount += 1
-        }
-      }
-
-      return {
-        rootPath: commonRoot || null,
-        topLevelFiles,
-        topLevelDirectories: [...dirSet.values()],
-        totalFiles: normalizedFilePaths.filter((f) => !f.isDirectory).length
+      const root = requireWorkspaceRoot(context)
+      const signal = requireSignal(context)
+      try {
+        return await searchService.listRoot(root, signal)
+      } catch (error) {
+        wrapSearchError(error)
       }
     }
   })
 
   const readWorkspaceFile = defineTool<{ path: string }, LocalFileReadResult>({
     name: 'read_workspace_file',
-    description: '读取工作区中指定路径的文件内容（支持 Markdown、MDX、文本），路径需来自 search_workspace_files 或 read_workspace_directory 的结果。',
+    description:
+      '读取工作区中指定相对路径的文件内容（支持 Markdown、MDX、TXT 及 UTF-8 文本文件），路径需来自 search_workspace、list_workspace_root 或 read_workspace_directory 的结果。',
     inputSchema: z.object({ path: z.string().trim().min(1) }),
     policy: {
       effect: 'read',
@@ -182,22 +124,33 @@ export function createDocumentTools(sourceAccessService: SourceAccessService): D
     },
     execution: 'main',
     execute: async (input, context) => {
-      const files = context.snapshot.workspaceFiles ?? []
-      const target = files.find((file) => !file.isDirectory && isSameWorkspacePath(file.path, input.path))
-      if (!target) {
-        throw new Error('文件不在当前工作区中，请先调用 search_workspace_files 获取可用文件')
+      const root = requireWorkspaceRoot(context)
+      const signal = requireSignal(context)
+      try {
+        const content = await searchService.readFile(root, input.path, signal)
+        const type: LocalFileReadResult['fileType'] = input.path.toLowerCase().endsWith('.mdx')
+          ? 'mdx'
+          : input.path.toLowerCase().endsWith('.md')
+            ? 'markdown'
+            : 'text'
+        return {
+          requestedPath: input.path,
+          normalizedPath: input.path,
+          fileType: type,
+          content,
+          chunks: [],
+          truncated: false
+        } as LocalFileReadResult
+      } catch (error) {
+        wrapSearchError(error)
       }
-      const signal = context.abortSignal
-      if (!signal) throw new Error('工作区文件读取缺少中止信号')
-      if (signal.aborted) throw new Error('工作区文件读取已中止')
-      return sourceAccessService.readLocalFile(target.path, signal)
     }
   })
 
   const readWorkspaceDirectory = defineTool<{ path: string }, unknown>({
     name: 'read_workspace_directory',
     description:
-      '列出工作区中指定目录下的直接子文件和子文件夹。path 参数为目录的完整路径（可从 search_workspace_files 返回的文件路径中提取其所在目录）。用于逐层展开目录结构。',
+      '实时列出工作区中指定目录下的直接子文件和子文件夹。path 参数为工作区内的相对目录路径（可用 "." 表示根目录）。用于逐层展开目录结构。',
     inputSchema: z.object({ path: z.string().trim().min(1) }),
     policy: {
       effect: 'read',
@@ -207,50 +160,12 @@ export function createDocumentTools(sourceAccessService: SourceAccessService): D
     },
     execution: 'main',
     execute: async (input, context) => {
-      const files = context.snapshot.workspaceFiles ?? []
-      const dirPath = input.path.replace(/\\/g, '/').replace(/\/$/, '')
-      const prefix = dirPath + '/'
-
-      const children = files.filter((file) => {
-        const normalized = file.path.replace(/\\/g, '/')
-        return normalized.toLowerCase().startsWith(prefix.toLowerCase())
-      })
-
-      const directFiles = children
-        .filter((file) => {
-          if (file.isDirectory) return false
-          const normalized = file.path.replace(/\\/g, '/')
-          const relative = normalized.slice(prefix.length)
-          return !relative.includes('/')
-        })
-        .map((file) => ({ name: file.name, path: file.path, isOpen: file.isOpen }))
-
-      // 目录条目直接作为子目录
-      const directDirsFromEntries = children
-        .filter((file) => file.isDirectory)
-        .map((file) => file.name)
-
-      const subDirs = [
-        ...new Set([
-          ...directDirsFromEntries,
-          ...children
-            .filter((file) => !file.isDirectory)
-            .map((file) => {
-              const normalized = file.path.replace(/\\/g, '/')
-              const relative = normalized.slice(prefix.length)
-              const slashIndex = relative.indexOf('/')
-              return slashIndex > 0 ? relative.slice(0, slashIndex) : null
-            })
-            .filter((d): d is string => d !== null)
-        ])
-      ]
-
-      return {
-        path: dirPath,
-        files: directFiles,
-        subDirectories: subDirs,
-        totalFiles: directFiles.length,
-        isEmpty: children.length === 0
+      const root = requireWorkspaceRoot(context)
+      const signal = requireSignal(context)
+      try {
+        return await searchService.readDirectory(root, input.path, signal)
+      } catch (error) {
+        wrapSearchError(error)
       }
     }
   })
@@ -405,7 +320,7 @@ export function createDocumentTools(sourceAccessService: SourceAccessService): D
   })
 
   return {
-    searchWorkspaceFiles,
+    searchWorkspace,
     listWorkspaceRoot,
     readWorkspaceDirectory,
     readWorkspaceFile,
@@ -414,4 +329,33 @@ export function createDocumentTools(sourceAccessService: SourceAccessService): D
     insertIntoCurrentDocument,
     createDocument
   }
+}
+
+function applyInsert(
+  base: string,
+  text: string,
+  position: 'selection' | 'cursor' | 'start' | 'end',
+  selection: { from: number; to: number } | null,
+  cursor: number | null
+): string {
+  switch (position) {
+    case 'start':
+      return text + base
+    case 'end':
+      return base + text
+    case 'selection':
+      if (!selection) return base + text
+      return base.slice(0, selection.from) + text + base.slice(selection.to)
+    case 'cursor': {
+      const at = cursor ?? base.length
+      return base.slice(0, at) + text + base.slice(at)
+    }
+  }
+}
+
+function describeTarget(doc: AiDocumentSnapshot | null): AiDocumentSnapshot {
+  if (!doc) {
+    throw new Error('当前没有活动文档')
+  }
+  return doc
 }

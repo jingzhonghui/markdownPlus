@@ -35,22 +35,11 @@ const selectionSnapshotSchema = z
   })
   .strict()
 
-const workspaceFileSchema = z
-  .object({
-    name: nonEmptyString,
-    path: nonEmptyString,
-    isOpen: z.boolean(),
-    isDirectory: z.boolean().optional(),
-    parentDirs: z.array(z.string())
-  })
-  .strict()
-
 export const aiRunInputSchema = z
   .object({
     conversationId: nonEmptyString,
     message: nonEmptyString,
     history: z.array(conversationMessageSchema),
-    workspaceSummary: z.string().optional(),
     snapshot: z
       .object({
         runId: nonEmptyString.optional(),
@@ -58,7 +47,7 @@ export const aiRunInputSchema = z
         activeDocument: documentSnapshotSchema.nullable(),
         selection: selectionSnapshotSchema.nullable(),
         cursor: z.number().int().nonnegative().nullable(),
-        workspaceFiles: z.array(workspaceFileSchema).optional()
+        workspaceRoot: z.string().nullable()
       })
       .strict()
   })

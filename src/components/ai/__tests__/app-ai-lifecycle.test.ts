@@ -12,7 +12,6 @@ const electronAPI = {
   setAiConfig: vi.fn(),
   testAiConfig: vi.fn(),
   onAiRunEvent: vi.fn(() => () => undefined),
-  onWorkspaceSummaryGenerating: vi.fn(() => () => undefined),
   onUpdateAvailable: vi.fn(() => () => undefined),
   onUpdateNotAvailable: vi.fn(() => () => undefined),
   onUpdateProgress: vi.fn(() => () => undefined),

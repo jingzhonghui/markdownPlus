@@ -114,13 +114,10 @@ export interface AiDocumentSnapshot {
   modified: boolean
 }
 
-export interface WorkspaceFileEntry {
+export interface DirectoryEntry {
   name: string
   path: string
-  isOpen: boolean
-  isDirectory?: boolean
-  /** 从工作区根目录到该文件所在目录的所有父级目录名（不含文件名），越靠近文件越靠后 */
-  parentDirs: string[]
+  isDirectory: boolean
 }
 
 export interface AiSelectionSnapshot {
@@ -136,7 +133,8 @@ export interface AiExecutionSnapshot {
   activeDocument: AiDocumentSnapshot | null
   selection: AiSelectionSnapshot | null
   cursor: number | null
-  workspaceFiles?: WorkspaceFileEntry[]
+  /** 当前获授权的工作区根目录（由主进程维护），未打开工作区时为 null */
+  workspaceRoot: string | null
 }
 
 export type ApprovedDocumentOperation =
@@ -213,8 +211,6 @@ export interface AiRunInput {
   message: string
   history: AiConversationMessage[]
   snapshot: AiExecutionSnapshot
-  /** 当前工作区内容概要（可选），LLM 据此判断问题与工作区内容的相关性。 */
-  workspaceSummary?: string
 }
 
 export type AiRunEvent =
@@ -251,4 +247,59 @@ export interface ConversationRecord extends ConversationMeta {
   version: 1
   messages: AiConversationMessage[]
   toolSummaries: ConversationToolSummary[]
+}
+
+export type SearchTruncationReason =
+  | 'timeout'
+  | 'result-limit'
+  | 'output-limit'
+  | 'mdx-byte-limit'
+
+export interface SearchWorkspaceInput {
+  query: string
+  mode: 'filename' | 'content'
+  match?: 'literal' | 'regex'
+  /** 工作区内的相对目录，默认 "."；拒绝绝对路径、.. 逃逸与符号链接逃逸 */
+  scope?: string
+  /** 扩展名白名单（不带点，字母数字），如 ["md","mdx","ts"]，最多 20 项 */
+  extensions?: string[]
+  caseSensitive?: boolean
+  contextLines?: number
+  maxResults?: number
+}
+
+export interface FilenameSearchMatch {
+  type: 'filename'
+  path: string
+  extension: string
+}
+
+export interface ContentSearchMatch {
+  type: 'content'
+  path: string
+  source: 'text' | 'mdx'
+  line: number
+  column: number
+  preview: string
+}
+
+export type WorkspaceSearchMatch = FilenameSearchMatch | ContentSearchMatch
+
+export interface SearchWorkspaceResult {
+  status: 'completed'
+  mode: 'filename' | 'content'
+  query: string
+  matches: WorkspaceSearchMatch[]
+  truncated: boolean
+  truncationReason?: SearchTruncationReason
+  elapsedMs: number
+  warnings?: string[]
+}
+
+export interface WorkspaceDirectoryResult {
+  path: string
+  files: DirectoryEntry[]
+  subDirectories: string[]
+  totalFiles: number
+  isEmpty: boolean
 }

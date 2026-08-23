@@ -12,8 +12,7 @@ import type {
   ApprovalDecision,
   ConversationMeta,
   ConversationRecord,
-  ToolExecutionResult,
-  WorkspaceFileEntry
+  ToolExecutionResult
 } from '../shared/ai/types'
 
 export type { UpdateInfoPayload, UpdateProgressPayload }
@@ -177,8 +176,7 @@ export interface ElectronAPI {
   saveAiConversation: (root: string | null, record: ConversationRecord) => Promise<{ success: boolean; error?: string }>
   deleteAiConversation: (root: string | null, id: string) => Promise<{ success: boolean; error?: string }>
   summarizeAiConversation: (text: string) => Promise<{ success: boolean; data?: { title: string }; error?: string }>
-  ensureWorkspaceSummary: (root: string) => Promise<{ success: boolean; data?: { summary: string | null; status: 'ok' | 'skipped'; generated: boolean; files: WorkspaceFileEntry[] | null }; error?: string }>
-  onWorkspaceSummaryGenerating: (callback: () => void) => () => void
+  authorizeWorkspaceRoot: (root: string | null) => Promise<{ success: boolean; error?: string }>
 }
 
 // 通过 contextBridge 暴露安全的 API
@@ -312,12 +310,7 @@ const api: ElectronAPI = {
   saveAiConversation: (root, record) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONVERSATION.SAVE, root, record),
   deleteAiConversation: (root, id) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONVERSATION.DELETE, root, id),
   summarizeAiConversation: (text) => ipcRenderer.invoke(IPC_CHANNELS.AI.CONVERSATION.SUMMARIZE, text),
-  ensureWorkspaceSummary: (root) => ipcRenderer.invoke(IPC_CHANNELS.AI.WORKSPACE.ENSURE_SUMMARY, root),
-  onWorkspaceSummaryGenerating: (callback) => {
-    const handler = (): void => callback()
-    ipcRenderer.on(IPC_CHANNELS.AI.WORKSPACE.SUMMARY_GENERATING, handler)
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.AI.WORKSPACE.SUMMARY_GENERATING, handler)
-  },
+  authorizeWorkspaceRoot: (root) => ipcRenderer.invoke(IPC_CHANNELS.AI.WORKSPACE.AUTHORIZE, root),
   onAiRunEvent: (callback) => {
     const handler = (_event: unknown, payload: AiRunEvent): void => callback(payload)
     ipcRenderer.on(IPC_CHANNELS.AI.EVENT, handler)

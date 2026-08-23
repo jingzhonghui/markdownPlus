@@ -1,13 +1,20 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useAiStore } from '../../stores/ai'
 import AiComposer from './AiComposer.vue'
 import AiMessageList from './AiMessageList.vue'
 import AiConversationSidebar from './AiConversationSidebar.vue'
-import AiSummaryStatusCard from './AiSummaryStatusCard.vue'
 
 const store = useAiStore()
 const props = defineProps<{ ready: boolean }>()
 const emit = defineEmits<{ openSettings: [] }>()
+
+const composerRef = ref<InstanceType<typeof AiComposer> | null>(null)
+
+function handleRecall(messageId: string): void {
+  const content = store.recallMessage(messageId)
+  if (content !== null) composerRef.value?.setText(content)
+}
 </script>
 
 <template>
@@ -33,8 +40,8 @@ const emit = defineEmits<{ openSettings: [] }>()
         :messages="store.messages"
         :tool-calls="store.toolCalls"
         :running="store.running"
+        @recall="handleRecall"
       />
-      <AiSummaryStatusCard />
       <p
         v-if="store.error"
         class="error"
@@ -44,6 +51,7 @@ const emit = defineEmits<{ openSettings: [] }>()
       </p>
       <div class="composer-wrap">
         <AiComposer
+          ref="composerRef"
           :running="store.running"
           :ready="props.ready"
           @send="store.sendMessage"

@@ -11,6 +11,9 @@ export default [
     languageOptions: {
       parserOptions: {
         parser: '@typescript-eslint/parser'
+      },
+      globals: {
+        process: 'readonly'
       }
     },
     rules: {

@@ -1,0 +1,10 @@
+{
+  "version": "14.1.1",
+  "source": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-pc-windows-msvc.zip",
+  "binaries": {
+    "win32-x64": {
+      "file": "rg.exe",
+      "sha256": "F162B54DE2ADFC72D78ADB1DBADA2DEDDA111AE0A5E2F6E9500F4F909664C5D2"
+    }
+  }
+}

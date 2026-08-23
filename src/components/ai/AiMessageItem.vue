@@ -10,7 +10,10 @@ const props = defineProps<{
   message: AiConversationMessage
   streaming?: boolean
   toolCalls?: { toolCallId: string; toolName: string; status: 'running' | 'completed' | 'failed'; result?: ToolExecutionResult }[]
+  canRecall?: boolean
 }>()
+
+const emit = defineEmits<{ recall: [messageId: string] }>()
 
 const parsed = computed(() => {
   if (props.message.role !== 'assistant') return { analysis: '', answer: props.message.content }
@@ -30,6 +33,7 @@ const showAnalysisCard = computed(() => {
   return parsed.value.analysis.length > 0 || (props.streaming && props.message.content.length > 0)
 })
 const hasToolCalls = computed(() => (props.toolCalls?.length ?? 0) > 0)
+const showRecall = computed(() => props.canRecall && props.message.role === 'user')
 </script>
 
 <template>
@@ -43,6 +47,26 @@ const hasToolCalls = computed(() => (props.toolCalls?.length ?? 0) > 0)
         class="message-body"
         v-html="answerHtml"
       />
+      <button
+        v-if="showRecall"
+        type="button"
+        class="recall-btn"
+        data-testid="ai-recall"
+        title="撤回"
+        aria-label="撤回"
+        @click="emit('recall', message.id)"
+      >
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 5 5v0a5 5 0 0 1-5 5H9" /></svg>
+      </button>
     </template>
     <template v-else>
       <AiAnalysisCard
@@ -80,4 +104,7 @@ const hasToolCalls = computed(() => (props.toolCalls?.length ?? 0) > 0)
 .stream-caret { display: inline-block; width: 2px; height: 1em; margin-left: 3px; background: var(--color-primary); animation: blink 1s steps(1) infinite; vertical-align: text-bottom; }
 @keyframes blink { 50% { opacity: .15; } }
 @media (prefers-reduced-motion: reduce) { .stream-caret { animation: none; } }
+.recall-btn { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: var(--color-bg-secondary); color: var(--color-text-tertiary); cursor: pointer; opacity: 0; transition: opacity .12s, color .12s, background .12s; }
+.message:hover .recall-btn { opacity: 1; }
+.recall-btn:hover { background: var(--color-primary); color: #fff; }
 </style>

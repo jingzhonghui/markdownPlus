@@ -19,6 +19,7 @@ import { evaluateToolPolicy } from './policy-engine'
 import { ApprovalManager } from './approval-manager'
 import { ToolRegistry, type ToolExecutionContext, type ToolDefinition } from './tool-registry'
 import type { SourceAccessService } from './source-access-service'
+import type { WorkspaceSearchService } from '../workspace/workspace-search-service'
 import { createSourceAuthorizationContext } from './source-authorization'
 import { createDocumentTools } from './tools/document-tools'
 import { createSourceAccessTools } from './tools/source-access-tools'
@@ -32,6 +33,7 @@ export interface AiRuntimeDeps {
   registry: ToolRegistry
   approvalManager: ApprovalManager
   sourceAccessService: SourceAccessService
+  searchService: WorkspaceSearchService
   config: AiRuntimeConfig
   maxSteps?: number
   toolTimeoutMs?: number
@@ -70,16 +72,19 @@ export class AiRuntime {
     this.toolTimeoutMs = deps.toolTimeoutMs ?? 60_000
     this.approvalTimeoutMs = deps.approvalTimeoutMs ?? 300_000
 
-    this.registerTools(deps.sourceAccessService)
+    this.registerTools(deps.sourceAccessService, deps.searchService)
   }
 
-  private registerTools(sourceAccessService: SourceAccessService): void {
-    const docTools = createDocumentTools(sourceAccessService)
+  private registerTools(
+    sourceAccessService: SourceAccessService,
+    searchService: WorkspaceSearchService
+  ): void {
+    const docTools = createDocumentTools(searchService)
     const sourceTools = createSourceAccessTools(sourceAccessService)
     const timeTools = createTimeTools()
     const all: AnyToolDefinition[] = [
+      docTools.searchWorkspace,
       docTools.listWorkspaceRoot,
-      docTools.searchWorkspaceFiles,
       docTools.readWorkspaceDirectory,
       docTools.readWorkspaceFile,
       docTools.readSelectedText,
@@ -111,13 +116,6 @@ export class AiRuntime {
       sourceAuthorization
     })
     const messages: AiConversationMessage[] = [
-      ...(input.workspaceSummary
-        ? [{
-            id: randomUUID(),
-            role: 'user' as const,
-            content: `以下是当前工作区内容概要。请先据此判断用户问题是否与工作区内容相关，再决定是否调用工作区搜索工具。\n\n${input.workspaceSummary}`
-          }]
-        : []),
       ...input.history,
       { id: randomUUID(), role: 'user', content: input.message }
     ]

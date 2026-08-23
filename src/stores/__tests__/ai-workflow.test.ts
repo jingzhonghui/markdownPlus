@@ -12,7 +12,6 @@ describe('renderer AI workflow', () => {
   let emit: (event: AiRunEvent) => void
   const electronAPI = {
     onAiRunEvent: vi.fn(),
-    onWorkspaceSummaryGenerating: vi.fn(() => vi.fn()),
     cancelAiRun: vi.fn(),
     claimAiApproval: vi.fn().mockResolvedValue({ success: true }),
     resolveAiApproval: vi.fn(),

@@ -9,7 +9,8 @@ const snapshot: AiExecutionSnapshot = {
   conversationId: 'conv-1',
   activeDocument: null,
   selection: null,
-  cursor: null
+  cursor: null,
+  workspaceRoot: null
 }
 
 function context(message: string, signal: AbortSignal = new AbortController().signal): ToolExecutionContext {

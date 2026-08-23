@@ -8,8 +8,7 @@ import type {
   ConversationMeta,
   ConversationRecord,
   ToolApprovalRequest,
-  ToolExecutionResult,
-  WorkspaceFileEntry
+  ToolExecutionResult
 } from '../../shared/ai/types'
 import { applyDocumentOperation, createExecutionSnapshot } from '../utils/ai/workspace-context'
 import { ANALYSIS_END_RE, ANALYSIS_START_RE, findIndex } from '../utils/ai/analysis-block'
@@ -56,11 +55,9 @@ export const useAiStore = defineStore('ai', () => {
   const conversationCreatedAt = ref(0)
   const titleSource = ref<'truncated' | 'llm' | 'custom'>('truncated')
   const error = ref<string | null>(null)
-  const summaryStatus = ref<'idle' | 'generating' | 'failed'>('idle')
 
   // ===== 内部状态 =====
   let unsubscribe: (() => void) | null = null
-  let unsubscribeSummary: (() => void) | null = null
   let initialized = false
   let idCounter = 0
   let pendingTitleGeneration = false
@@ -94,16 +91,6 @@ export const useAiStore = defineStore('ai', () => {
       }
     }
     idCounter = maxNum
-  }
-
-  let summaryResetTimer: ReturnType<typeof setTimeout> | null = null
-
-  function scheduleSummaryStatusReset(): void {
-    if (summaryResetTimer) clearTimeout(summaryResetTimer)
-    summaryResetTimer = setTimeout(() => {
-      summaryStatus.value = 'idle'
-      summaryResetTimer = null
-    }, 3000)
   }
 
   function finalizeStreamingAssistantMessage(): void {
@@ -402,21 +389,12 @@ export const useAiStore = defineStore('ai', () => {
     if (initialized) return
     initialized = true
     unsubscribe = window.electronAPI.onAiRunEvent((event) => handleRunEvent(event))
-    if (typeof window.electronAPI.onWorkspaceSummaryGenerating === 'function') {
-      unsubscribeSummary = window.electronAPI.onWorkspaceSummaryGenerating(() => {
-        summaryStatus.value = 'generating'
-      })
-    }
   }
 
   function dispose(): void {
     if (unsubscribe) {
       unsubscribe()
       unsubscribe = null
-    }
-    if (unsubscribeSummary) {
-      unsubscribeSummary()
-      unsubscribeSummary = null
     }
     initialized = false
   }
@@ -539,38 +517,13 @@ export const useAiStore = defineStore('ai', () => {
     // 深拷贝去除 Vue 响应式代理，避免 IPC 结构化克隆失败
     const history = JSON.parse(JSON.stringify(messages.value.slice(0, -1))) as AiConversationMessage[]
 
-    // 懒确保工作区概要 + 完整文件索引：仅在打开工作区时触发；失败不阻塞提问。
-    // "正在生成概要"状态由主进程推送的 SUMMARY_GENERATING 事件驱动，缓存命中时不会出现。
-    let workspaceSummary: string | undefined
-    let injectedWorkspaceFiles: WorkspaceFileEntry[] | undefined
-    const workspaceRoot = fileStore.openedFolderPath
-    if (workspaceRoot) {
-      try {
-        const summaryRes = await window.electronAPI.ensureWorkspaceSummary(workspaceRoot)
-        if (summaryRes.success && summaryRes.data?.status === 'ok' && summaryRes.data.summary) {
-          workspaceSummary = summaryRes.data.summary
-          summaryStatus.value = 'idle'
-        } else {
-          summaryStatus.value = 'failed'
-          scheduleSummaryStatusReset()
-        }
-        if (summaryRes.success && summaryRes.data?.files) {
-          injectedWorkspaceFiles = summaryRes.data.files
-        }
-      } catch {
-        summaryStatus.value = 'failed'
-        scheduleSummaryStatusReset()
-      }
-    }
-
-    const snapshot = createExecutionSnapshot(fileStore, injectedWorkspaceFiles)
+    const snapshot = createExecutionSnapshot(fileStore)
 
     const input: AiRunInput = {
       conversationId: activeConversationId.value!,
       message: text,
       history,
-      snapshot: { ...snapshot, conversationId: activeConversationId.value! },
-      ...(workspaceSummary ? { workspaceSummary } : {})
+      snapshot: { ...snapshot, conversationId: activeConversationId.value! }
     }
 
     persistConversation()
@@ -609,6 +562,29 @@ export const useAiStore = defineStore('ai', () => {
     }
     pendingStartPromise = startOperation()
     await pendingStartPromise
+  }
+
+  // ===== 消息撤回 =====
+
+  /**
+   * 撤回一条用户消息：删除该消息及其后所有消息（含 assistant 回复、工具调用、待审批），
+   * 把原文回填到输入框供用户修改后重发。运行中或存在待审批时不允许撤回。
+   * 返回被撤回消息的 content；不可撤回时返回 null。
+   */
+  function recallMessage(messageId: string): string | null {
+    if (running.value || pendingStartPromise || pendingApprovals.value.length > 0) return null
+
+    const index = messages.value.findIndex((m) => m.id === messageId && m.role === 'user')
+    if (index === -1) return null
+
+    const recalled = messages.value[index]
+    const removedIds = new Set(messages.value.slice(index).map((m) => m.id))
+    messages.value = messages.value.slice(0, index)
+    toolCalls.value = toolCalls.value.filter((c) => !c.messageId || !removedIds.has(c.messageId))
+    discardAllApprovals()
+    syncIdCounterFromMessages()
+    persistConversation()
+    return recalled.content
   }
 
   // ===== 审批解析 =====
@@ -710,7 +686,6 @@ export const useAiStore = defineStore('ai', () => {
     conversationCreatedAt,
     titleSource,
     error,
-    summaryStatus,
     // actions
     openPanel,
     activatePanel,
@@ -724,6 +699,7 @@ export const useAiStore = defineStore('ai', () => {
     persistConversation,
     sendMessage,
     cancelRun,
+    recallMessage,
     resolveApproval,
     init,
     dispose

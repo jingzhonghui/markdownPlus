@@ -36,7 +36,7 @@ describe('workspace context', () => {
         'conversationId',
         'cursor',
         'selection',
-        'workspaceFiles'
+        'workspaceRoot'
       ])
       expect(snap.selection).toBeNull()
       expect(snap.cursor).toBeNull()
@@ -51,108 +51,21 @@ describe('workspace context', () => {
       expect(snap.cursor).toBeNull()
     })
 
-    it('collects workspace files from opened tabs and the file tree', () => {
+    it('carries the opened workspace root into the snapshot', () => {
       const store = useFileStore()
-      // opened tab with a real path
-      store.tabs.push({
-        id: 'tab-a',
-        fileInfo: { path: '/docs/notes.md', name: 'notes.md', modified: false, format: 'markdown' },
-        document: null,
-        content: '',
-        revision: 0
-      })
-      // file tree entry
-      store.fileTree = [
-        {
-          name: 'docs',
-          path: '/docs',
-          isDirectory: true,
-          isExpanded: true,
-          isLoading: false,
-          children: [
-            { name: 'report.md', path: '/docs/report.md', isDirectory: false, isExpanded: false, isLoading: false, children: [] },
-            { name: 'draft.mdx', path: '/docs/draft.mdx', isDirectory: false, isExpanded: false, isLoading: false, children: [] }
-          ]
-        }
-      ]
+      store.openedFolderPath = 'C:\\ws'
 
       const snap = createExecutionSnapshot(store)
 
-      expect(snap.workspaceFiles).toEqual([
-        { name: 'notes.md', path: '/docs/notes.md', isOpen: true, parentDirs: [] },
-        { name: 'docs', path: '/docs', isOpen: false, isDirectory: true, parentDirs: [] },
-        { name: 'report.md', path: '/docs/report.md', isOpen: false, parentDirs: ['docs'] },
-        { name: 'draft.mdx', path: '/docs/draft.mdx', isOpen: false, parentDirs: ['docs'] }
-      ])
+      expect(snap.workspaceRoot).toBe('C:\\ws')
     })
 
-    it('marks a tab file as open when it also appears in the file tree', () => {
+    it('keeps workspaceRoot null when no workspace folder is open', () => {
       const store = useFileStore()
-      store.tabs.push({
-        id: 'tab-a',
-        fileInfo: { path: '/docs/notes.md', name: 'notes.md', modified: false, format: 'markdown' },
-        document: null,
-        content: '',
-        revision: 0
-      })
-      store.fileTree = [
-        { name: 'notes.md', path: '/docs/notes.md', isDirectory: false, isExpanded: false, isLoading: false, children: [] }
-      ]
 
       const snap = createExecutionSnapshot(store)
 
-      expect(snap.workspaceFiles).toHaveLength(1)
-      expect(snap.workspaceFiles![0].isOpen).toBe(true)
-    })
-
-    it('skips tabs without a file path', () => {
-      const store = useFileStore()
-      store.tabs.push({
-        id: 'tab-unsaved',
-        fileInfo: { path: '', name: '未命名.mdx', modified: true, format: 'mdx' },
-        document: null,
-        content: '',
-        revision: 0
-      })
-
-      const snap = createExecutionSnapshot(store)
-
-      expect(snap.workspaceFiles).toEqual([])
-    })
-
-    it('uses the injected complete file index when provided', () => {
-      const store = useFileStore()
-      store.fileTree = []
-      const injected = [
-        { name: 'newben-guide.mdx', path: 'D:/ws/云/newben-guide.mdx', isOpen: false, parentDirs: ['云'] },
-        { name: 'k8s.md', path: 'D:/ws/docs/k8s.md', isOpen: false, parentDirs: ['docs'] }
-      ]
-
-      const snap = createExecutionSnapshot(store, injected)
-
-      expect(snap.workspaceFiles).toEqual(injected)
-    })
-
-    it('falls back to the file tree when no index is injected', () => {
-      const store = useFileStore()
-      store.fileTree = [
-        {
-          name: 'docs',
-          path: '/docs',
-          isDirectory: true,
-          isExpanded: true,
-          isLoading: false,
-          children: [
-            { name: 'report.md', path: '/docs/report.md', isDirectory: false, isExpanded: false, isLoading: false, children: [] }
-          ]
-        }
-      ]
-
-      const snap = createExecutionSnapshot(store)
-
-      expect(snap.workspaceFiles).toHaveLength(2)
-      expect(snap.workspaceFiles![0].name).toBe('docs')
-      expect(snap.workspaceFiles![1].name).toBe('report.md')
+      expect(snap.workspaceRoot).toBeNull()
     })
 
     it('maps the editor selection to markdown offsets and text', () => {

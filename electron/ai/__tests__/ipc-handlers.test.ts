@@ -161,30 +161,17 @@ vi.mock('../conversation-title', () => ({
 }))
 
 const summaryMocks = vi.hoisted(() => ({
-  ensureSummary: vi.fn(
-    async (_root?: string, _options?: { onGenerating?: () => void }): Promise<{
-      summary: string | null
-      status: 'ok' | 'skipped'
-      generated: boolean
-      files: { name: string; path: string; isOpen: boolean; parentDirs: string[] }[] | null
-    }> => ({
-      summary: '工作区概要',
-      status: 'ok',
-      generated: false,
-      files: null
-    })
-  ),
-  capturedDeps: [] as { summarize?: (fileList: string) => Promise<string> }[]
+  authorize: vi.fn((_senderId: number, root: string | null) => {
+    void root
+  }),
+  getRoot: vi.fn((_senderId: number): string | null => null)
 }))
 
-vi.mock('../../workspace/workspace-summary', () => ({
-  WorkspaceSummaryService: class {
-    constructor(deps: { summarize?: (fileList: string) => Promise<string> }) {
-      summaryMocks.capturedDeps.push(deps)
-    }
-
-    ensureSummary = summaryMocks.ensureSummary
-  }
+vi.mock('../../workspace/workspace-authorization', () => ({
+  authorizeWorkspaceRoot: summaryMocks.authorize,
+  getAuthorizedWorkspaceRoot: summaryMocks.getRoot,
+  revokeSenderWorkspace: vi.fn(),
+  isPathWithinRoot: vi.fn(() => true)
 }))
 
 import { registerAiHandlers, disposeAiServices } from '../ipc-handlers'
@@ -212,7 +199,8 @@ function makeRunInput(): Record<string, unknown> {
       conversationId: 'conv-1',
       activeDocument: null,
       selection: null,
-      cursor: null
+      cursor: null,
+      workspaceRoot: null
     }
   }
 }
@@ -248,7 +236,7 @@ describe('registerAiHandlers', () => {
         AI.CONVERSATION.SAVE,
         AI.CONVERSATION.DELETE,
         AI.CONVERSATION.SUMMARIZE,
-        AI.WORKSPACE.ENSURE_SUMMARY
+        AI.WORKSPACE.AUTHORIZE
       ].sort()
     )
     expect(Array.from(electronMocks.handlers.keys())).not.toContainEqual(
@@ -652,76 +640,25 @@ describe('conversation handlers', () => {
     expect(result.data?.title).toBe('生成标题')
   })
 
-  it('ensures a workspace summary and returns it', async () => {
-    summaryMocks.ensureSummary.mockResolvedValueOnce({ summary: '云原生运维知识库', status: 'ok', generated: false, files: null })
-    const result = (await invoke(IPC_CHANNELS.AI.WORKSPACE.ENSURE_SUMMARY, 'C:\\ws')) as {
-      success: boolean
-      data?: { summary: string; status: string }
-    }
-    expect(result.success).toBe(true)
-    expect(result.data?.summary).toBe('云原生运维知识库')
-    expect(result.data?.status).toBe('ok')
-    expect(summaryMocks.ensureSummary).toHaveBeenCalledWith('C:\\ws', expect.objectContaining({ onGenerating: expect.any(Function) }))
-  })
-
-  it('returns skipped for a missing workspace root without calling the service', async () => {
-    summaryMocks.ensureSummary.mockClear()
-    const result = (await invoke(IPC_CHANNELS.AI.WORKSPACE.ENSURE_SUMMARY, null)) as {
-      success: boolean
-      data?: { summary: string | null; status: string; generated: boolean; files: unknown }
-    }
-    expect(result.success).toBe(true)
-    expect(result.data).toEqual({ summary: null, status: 'skipped', generated: false, files: null })
-    expect(summaryMocks.ensureSummary).not.toHaveBeenCalled()
-  })
-
-  it('wires a working summarize callback into the summary service', async () => {
-    summaryMocks.capturedDeps.length = 0
-    summaryMocks.ensureSummary.mockImplementation(async () => {
-      const summarize = summaryMocks.capturedDeps.at(-1)?.summarize
-      if (!summarize) return { summary: null, status: 'skipped', generated: false, files: null }
-      return { summary: await summarize('docs/k8s.md\nREADME.md'), status: 'ok', generated: true, files: null }
-    })
-    providerMocks.generateTextCalled.mockClear()
-    providerMocks.generateTextResult = '该工作区是云原生运维知识库，包含 k8s 文档。'
-
-    const setResult = invoke(IPC_CHANNELS.AI.CONFIG.SET, makeConfigInput()) as { success: boolean }
-    expect(setResult.success).toBe(true)
-
-    const result = (await invoke(IPC_CHANNELS.AI.WORKSPACE.ENSURE_SUMMARY, 'C:\\ws')) as {
-      success: boolean
-      data?: { summary: string | null; status: string }
-    }
-
-    expect(result.success).toBe(true)
-    expect(result.data?.summary).toBe('该工作区是云原生运维知识库，包含 k8s 文档。')
-    expect(providerMocks.generateTextCalled).toHaveBeenCalledTimes(1)
-  })
-
-  it('pushes a summary-generating event to the sender before rebuilding', async () => {
-    summaryMocks.ensureSummary.mockImplementation(async (_root, options) => {
-      options?.onGenerating?.()
-      return { summary: '新概要', status: 'ok', generated: true, files: null }
-    })
+  it('authorizes a workspace root for the sender', async () => {
+    summaryMocks.authorize.mockClear()
     const snd = sender(77)
-    const handler = electronMocks.handlers.get(IPC_CHANNELS.AI.WORKSPACE.ENSURE_SUMMARY)!
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.AI.WORKSPACE.AUTHORIZE)!
 
     const result = (await handler({ sender: snd }, 'C:\\ws')) as { success: boolean }
 
     expect(result.success).toBe(true)
-    expect(snd.send).toHaveBeenCalledWith(IPC_CHANNELS.AI.WORKSPACE.SUMMARY_GENERATING)
+    expect(summaryMocks.authorize).toHaveBeenCalledWith(77, 'C:\\ws')
   })
 
-  it('does not push a generating event when the cache is used', async () => {
-    summaryMocks.ensureSummary.mockImplementation(async () => {
-      return { summary: '缓存概要', status: 'ok', generated: false, files: null }
-    })
+  it('authorize with null revokes the sender workspace', async () => {
+    summaryMocks.authorize.mockClear()
     const snd = sender(78)
-    const handler = electronMocks.handlers.get(IPC_CHANNELS.AI.WORKSPACE.ENSURE_SUMMARY)!
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.AI.WORKSPACE.AUTHORIZE)!
 
-    const result = (await handler({ sender: snd }, 'C:\\ws')) as { success: boolean }
+    const result = (await handler({ sender: snd }, null)) as { success: boolean }
 
     expect(result.success).toBe(true)
-    expect(snd.send).not.toHaveBeenCalled()
+    expect(summaryMocks.authorize).toHaveBeenCalledWith(78, null)
   })
 })

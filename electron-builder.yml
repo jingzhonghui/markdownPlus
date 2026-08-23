@@ -24,6 +24,10 @@ asar: true
 extraResources:
   - from: resources/Markdown+ 使用教程.pdf
     to: user-guide/Markdown+ 使用教程.pdf
+  - from: resources/rg
+    to: rg
+    filter:
+      - '**/*'
 win:
   target:
     - target: nsis

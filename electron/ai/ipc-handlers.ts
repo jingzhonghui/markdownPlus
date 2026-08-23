@@ -1,6 +1,6 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { IPC_CHANNELS } from '../ipc/channels'
-import { AiConfigError, AiConfigService, normalizeAiBaseUrl } from './config'
+import { AiConfigService, normalizeAiBaseUrl } from './config'
 import { AiRuntime } from './runtime'
 import { SourceAccessService } from './source-access-service'
 import { VercelAiSdkProvider, mapProviderError } from './provider'
@@ -8,8 +8,12 @@ import { ToolRegistry } from './tool-registry'
 import { ApprovalManager } from './approval-manager'
 import { ConversationStore } from './conversation-store'
 import { generateConversationTitle } from './conversation-title'
-import { WorkspaceSummaryService } from '../workspace/workspace-summary'
-import { WORKSPACE_SUMMARY_SYSTEM_PROMPT } from './prompts'
+import {
+  authorizeWorkspaceRoot,
+  getAuthorizedWorkspaceRoot,
+  revokeSenderWorkspace
+} from '../workspace/workspace-authorization'
+import { WorkspaceSearchService } from '../workspace/workspace-search-service'
 import type {
   AiConfigInput,
   AiRunInput,
@@ -37,6 +41,7 @@ let configService: AiConfigService | null = null
 let runtime: AiRuntime | null = null
 let runtimeConfigSnapshot: AiRuntimeConfig | null = null
 const sourceAccessService = new SourceAccessService()
+const searchService = new WorkspaceSearchService()
 const conversationStore = new ConversationStore()
 const runOwners = new Map<string, number>()
 const approvalOwners = new Map<string, number>()
@@ -56,6 +61,7 @@ function revokeSender(senderId: number): void {
       void runtime?.cancel(runId)
     }
   }
+  revokeSenderWorkspace(senderId)
   observedSenders.delete(senderId)
 }
 
@@ -100,6 +106,7 @@ function createRuntime(config: AiRuntimeConfig): AiRuntime {
     registry,
     approvalManager,
     sourceAccessService,
+    searchService,
     config,
     maxSteps: config.maxSteps
   })
@@ -139,7 +146,7 @@ export function registerAiHandlers(_getWindow: () => BrowserWindow | null): () =
     AI.CONVERSATION.SAVE,
     AI.CONVERSATION.DELETE,
     AI.CONVERSATION.SUMMARIZE,
-    AI.WORKSPACE.ENSURE_SUMMARY
+    AI.WORKSPACE.AUTHORIZE
   ]
 
   ipcMain.handle(AI.CONFIG.GET, () => {
@@ -190,6 +197,8 @@ export function registerAiHandlers(_getWindow: () => BrowserWindow | null): () =
     try {
       const parsed = aiRunInputSchema.parse(input)
       observeSender(event.sender)
+      // 工作区根目录只信任主进程授权状态，不信任运行参数携带的绝对路径。
+      parsed.snapshot.workspaceRoot = getAuthorizedWorkspaceRoot(event.sender.id) ?? null
       const rt = ensureRuntime()
       const sender = event.sender
       const { runId } = await rt.start(parsed, (aiEvent) => {
@@ -316,26 +325,13 @@ export function registerAiHandlers(_getWindow: () => BrowserWindow | null): () =
     }
   })
 
-  ipcMain.handle(AI.WORKSPACE.ENSURE_SUMMARY, async (event, root: string | null) => {
+  ipcMain.handle(AI.WORKSPACE.AUTHORIZE, (event, root: string | null) => {
     try {
-      if (!root) return toResult({ summary: null, status: 'skipped', generated: false, files: null })
-      const config = getConfigService().getRuntimeConfig()
-      const provider = new VercelAiSdkProvider()
-      const service = new WorkspaceSummaryService({
-        summarize: (fileList) => provider.generateText(config, WORKSPACE_SUMMARY_SYSTEM_PROMPT, fileList, 1200)
-      })
-      const result = await service.ensureSummary(root, {
-        onGenerating: () => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send(AI.WORKSPACE.SUMMARY_GENERATING)
-          }
-        }
-      })
-      return toResult(result)
+      const parsedRoot = root && typeof root === 'string' && root.length > 0 ? root : null
+      observeSender(event.sender)
+      authorizeWorkspaceRoot(event.sender.id, parsedRoot)
+      return { success: true }
     } catch (error) {
-      if (error instanceof AiConfigError) {
-        return toResult({ summary: null, status: 'skipped', generated: false, files: null })
-      }
       return { success: false, error: errorMessage(error) }
     }
   })

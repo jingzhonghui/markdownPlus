@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 
 const props = defineProps<{ running: boolean; ready: boolean }>()
 const emit = defineEmits<{ send: [text: string]; stop: [] }>()
 const text = ref('')
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const disabled = computed(() => !text.value.trim() || !props.ready || props.running)
 
 function submit(): void { if (!disabled.value) { emit('send', text.value); text.value = '' } }
@@ -13,6 +14,16 @@ function keydown(event: KeyboardEvent): void {
     submit()
   }
 }
+
+function setText(value: string): void {
+  text.value = value
+  void nextTick(() => {
+    textareaRef.value?.focus()
+    textareaRef.value?.setSelectionRange(value.length, value.length)
+  })
+}
+
+defineExpose({ setText })
 </script>
 
 <template>
@@ -21,6 +32,7 @@ function keydown(event: KeyboardEvent): void {
     @submit.prevent="submit"
   >
     <textarea
+      ref="textareaRef"
       v-model="text"
       data-testid="ai-input"
       rows="2"

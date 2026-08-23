@@ -6,12 +6,14 @@ import { AiRuntime } from '../runtime'
 import { ToolRegistry } from '../tool-registry'
 import { ApprovalManager } from '../approval-manager'
 import { SourceAccessService } from '../source-access-service'
+import { WorkspaceSearchService } from '../../workspace/workspace-search-service'
 import type {
   AiDocumentSnapshot,
   AiExecutionSnapshot,
   AiRunEvent,
   AiRunInput,
-  AiRuntimeConfig
+  AiRuntimeConfig,
+  SearchWorkspaceResult
 } from '../../../shared/ai/types'
 
 const DOCUMENT_BODY = '# Release notes\n\nPrivate roadmap details'
@@ -38,10 +40,7 @@ function makeSnapshot(doc: AiDocumentSnapshot | null = makeDoc()): AiExecutionSn
     activeDocument: doc,
     selection: null,
     cursor: null,
-    workspaceFiles: [
-      { name: 'release-notes.md', path: '/docs/release-notes.md', isOpen: true, parentDirs: ['docs'] },
-      { name: 'plan.md', path: '/docs/plan.md', isOpen: false, parentDirs: ['docs'] }
-    ]
+    workspaceRoot: 'C:\\ws'
   }
 }
 
@@ -58,13 +57,32 @@ function makeConfig(baseUrl: string): AiRuntimeConfig {
   return { baseUrl, model: 'e2e-model', apiKey: API_KEY, temperature: 0 }
 }
 
-function makeRuntime(baseUrl: string): AiRuntime {
+function makeFakeSearchService(): WorkspaceSearchService {
+  return {
+    search: vi.fn(async (input): Promise<SearchWorkspaceResult> => ({
+      status: 'completed',
+      mode: input.mode,
+      query: input.query,
+      matches: [
+        { type: 'filename', path: 'docs/release-notes.md', extension: 'md' }
+      ],
+      truncated: false,
+      elapsedMs: 1
+    })),
+    listRoot: vi.fn(),
+    readDirectory: vi.fn(),
+    readFile: vi.fn(async () => DOCUMENT_BODY)
+  } as unknown as WorkspaceSearchService
+}
+
+function makeRuntime(baseUrl: string, searchService: WorkspaceSearchService = makeFakeSearchService()): AiRuntime {
   const provider = new VercelAiSdkProvider({ maxRetries: 0 })
   return new AiRuntime({
     provider,
     registry: new ToolRegistry(),
     approvalManager: new ApprovalManager(),
     sourceAccessService: new SourceAccessService(),
+    searchService,
     config: makeConfig(baseUrl),
     maxSteps: 8
   })
@@ -113,14 +131,14 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
     expect(server.requestCount).toBe(1)
   })
 
-  it('E2 工具调用闭环：search_workspace_files 结果回传后模型继续输出', async () => {
+  it('E2 工具调用闭环：search_workspace 结果回传后模型继续输出', async () => {
     server = new MockOpenAiServer()
     const baseUrl = await server.start({
       handler: (_req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' })
         if (server!.requestCount === 1) {
           res.write(
-            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_search_1","type":"function","function":{"name":"search_workspace_files","arguments":"{\\"query\\":\\"release\\"}"}}]}}]}\n\n'
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_search_1","type":"function","function":{"name":"search_workspace","arguments":"{\\"query\\":\\"release\\",\\"mode\\":\\"filename\\"}"}}]}}]}\n\n'
           )
           res.write('data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n')
         } else {
@@ -137,7 +155,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
     await waitForEvent(events, 'run-completed')
 
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'tool-call-started', runId, toolName: 'search_workspace_files' })
+      expect.objectContaining({ type: 'tool-call-started', runId, toolName: 'search_workspace' })
     )
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -145,7 +163,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
         runId,
         result: expect.objectContaining({
           status: 'completed',
-          data: expect.objectContaining({ total: 1 })
+          data: expect.objectContaining({ matches: expect.any(Array) })
         })
       })
     )
@@ -163,7 +181,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
         res.writeHead(200, { 'Content-Type': 'text/event-stream' })
         if (server!.requestCount === 1) {
           res.write(
-            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_read_1","type":"function","function":{"name":"read_workspace_file","arguments":"{\\"path\\":\\"/docs/release-notes.md\\"}"}}]}}]}\n\n'
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_read_1","type":"function","function":{"name":"read_workspace_file","arguments":"{\\"path\\":\\"docs/release-notes.md\\"}"}}]}}]}\n\n'
           )
           res.write('data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n')
         } else {
@@ -174,26 +192,11 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
       }
     })
     const events: AiRunEvent[] = []
-    // 文件不在真实磁盘，mock 读取服务
-    const service = new SourceAccessService()
-    vi.spyOn(service, 'readLocalFile').mockResolvedValue({
-      requestedPath: '/docs/release-notes.md',
-      normalizedPath: '/docs/release-notes.md',
-      fileType: 'markdown',
-      size: DOCUMENT_BODY.length,
-      content: DOCUMENT_BODY,
-      chunks: [],
-      truncated: false
-    })
-    const provider = new VercelAiSdkProvider({ maxRetries: 0 })
-    const runtime = new AiRuntime({
-      provider,
-      registry: new ToolRegistry(),
-      approvalManager: new ApprovalManager(),
-      sourceAccessService: service,
-      config: makeConfig(baseUrl),
-      maxSteps: 8
-    })
+    // 文件不在真实磁盘，mock 搜索服务的读取
+    const readFile = vi.fn(async () => DOCUMENT_BODY)
+    const searchService = makeFakeSearchService()
+    searchService.readFile = readFile
+    const runtime = makeRuntime(baseUrl, searchService)
 
     const { runId } = await runtime.start(makeRunInput(), (event) => events.push(event))
     await waitForEvent(events, 'run-completed')
@@ -205,7 +208,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
     if (completed?.type === 'tool-call-completed') {
       expect(completed.result).toMatchObject({ status: 'completed' })
       const data = completed.result.status === 'completed' ? completed.result.data : null
-      expect(data).toMatchObject({ normalizedPath: '/docs/release-notes.md', content: DOCUMENT_BODY })
+      expect(data).toMatchObject({ content: DOCUMENT_BODY })
     }
     void runId
   })
@@ -331,6 +334,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
       registry: new ToolRegistry(),
       approvalManager: new ApprovalManager(),
       sourceAccessService: service,
+      searchService: makeFakeSearchService(),
       config: makeConfig(baseUrl),
       maxSteps: 8
     })
@@ -407,6 +411,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
       registry: new ToolRegistry(),
       approvalManager: new ApprovalManager(),
       sourceAccessService: service,
+      searchService: makeFakeSearchService(),
       config: makeConfig(baseUrl),
       maxSteps: 8
     })
@@ -476,7 +481,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
         res.writeHead(200, { 'Content-Type': 'text/event-stream' })
         if (server!.requestCount === 1) {
           res.write(
-            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_bad_1","type":"function","function":{"name":"search_workspace_files","arguments":"{}"}}]}}]}\n\n'
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_bad_1","type":"function","function":{"name":"search_workspace","arguments":"{}"}}]}}]}\n\n'
           )
           res.write('data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n')
         } else {
@@ -496,7 +501,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
     // 不进入 AiRuntime 的 execute（不会产生 status:'failed' 的 tool-call-completed）。
     // 运行应正常完成，模型可读取错误后继续输出。
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'tool-call-started', runId, toolName: 'search_workspace_files' })
+      expect.objectContaining({ type: 'tool-call-started', runId, toolName: 'search_workspace' })
     )
     expect(events).not.toContainEqual(expect.objectContaining({ type: 'run-failed' }))
     expect(events).toContainEqual(expect.objectContaining({ type: 'run-completed', runId }))
@@ -509,7 +514,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
       handler: (_req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' })
         res.write(
-          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_loop_1","type":"function","function":{"name":"search_workspace_files","arguments":"{\\"query\\":\\"x\\"}"}}]}}]}\n\n'
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_loop_1","type":"function","function":{"name":"search_workspace","arguments":"{\\"query\\":\\"x\\",\\"mode\\":\\"filename\\"}"}}]}}]}\n\n'
         )
         res.write('data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n')
         res.write('data: [DONE]\n\n')
@@ -523,6 +528,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
       registry: new ToolRegistry(),
       approvalManager: new ApprovalManager(),
       sourceAccessService: new SourceAccessService(),
+      searchService: makeFakeSearchService(),
       config: makeConfig(baseUrl),
       maxSteps: 2
     })
@@ -585,7 +591,7 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
         res.writeHead(200, { 'Content-Type': 'text/event-stream' })
         if (server!.requestCount === 1) {
           res.write(
-            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_read_14","type":"function","function":{"name":"search_workspace_files","arguments":"{\\"query\\":\\"release\\"}"}}]}}]}\n\n'
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_read_14","type":"function","function":{"name":"search_workspace","arguments":"{\\"query\\":\\"release\\",\\"mode\\":\\"filename\\"}"}}]}}]}\n\n'
           )
           res.write('data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n')
         } else {
@@ -603,33 +609,6 @@ describe('AI 主进程端到端链路（真实 HTTP + 真实 Provider + Runtime 
 
     const firstRequest = server.requests[0]
     expect(JSON.stringify(firstRequest.body)).not.toContain(DOCUMENT_BODY)
-    void runId
-  })
-
-  it('E16 工作区概要注入：提供概要时首条消息为隐藏概要上下文', async () => {
-    server = new MockOpenAiServer()
-    const baseUrl = await server.start({
-      sseEvents: [
-        '{"choices":[{"delta":{"content":"基于概要回答。"}}]}',
-        '{"choices":[{"delta":{},"finish_reason":"stop"}]}'
-      ]
-    })
-    const events: AiRunEvent[] = []
-    const runtime = makeRuntime(baseUrl)
-    const input = makeRunInput()
-    input.workspaceSummary = '该工作区包含发布说明文档。'
-
-    const { runId } = await runtime.start(input, (event) => events.push(event))
-    await waitForEvent(events, 'run-completed')
-
-    const requestBody = server.requests[0].body as {
-      messages?: Array<{ role: string; content: string }>
-    }
-    const messages = requestBody.messages ?? []
-    // system 提示词位于 messages 首位（由 AI SDK 注入），隐藏概要作为第一条 user 消息
-    const summaryMessage = messages.find((m) => m.role === 'user' && m.content.includes('工作区内容概要'))
-    expect(summaryMessage).toBeDefined()
-    expect(summaryMessage!.content).toContain('该工作区包含发布说明文档。')
     void runId
   })
 })

@@ -226,35 +226,6 @@ describe('AI panel', () => {
     expect(wrapper.get('.workbench').exists()).toBe(true)
   })
 
-  it('shows a generating card while the workspace summary is being built', async () => {
-    const store = useAiStore()
-    store.summaryStatus = 'generating'
-    const wrapper = mountPanel()
-    await nextTick()
-
-    const card = wrapper.get('[data-testid="ai-summary-status"]')
-    expect(card.text()).toContain('正在生成工作区概要')
-  })
-
-  it('shows a failure hint when the summary generation fails', async () => {
-    const store = useAiStore()
-    store.summaryStatus = 'failed'
-    const wrapper = mountPanel()
-    await nextTick()
-
-    const card = wrapper.get('[data-testid="ai-summary-status"]')
-    expect(card.text()).toContain('概要生成失败')
-  })
-
-  it('hides the card when the summary status is idle', async () => {
-    const store = useAiStore()
-    store.summaryStatus = 'idle'
-    const wrapper = mountPanel()
-    await nextTick()
-
-    expect(wrapper.find('[data-testid="ai-summary-status"]').exists()).toBe(false)
-  })
-
   it('auto-scrolls the message list to the bottom when messages change', async () => {
     const store = useAiStore()
     store.messages.push({ id: 'm1', role: 'user', content: '提问' })

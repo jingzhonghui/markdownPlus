@@ -32,6 +32,9 @@ export function useFolder(deps: FolderDeps) {
       if (result.success && result.data) {
         openedFolderPath.value = dirPath
         folderItems.value = result.data
+        if (typeof window.electronAPI.authorizeWorkspaceRoot === 'function') {
+          await window.electronAPI.authorizeWorkspaceRoot(dirPath)
+        }
 
         // 同步更新 fileTree 根节点的子节点，使侧边栏文件树即时刷新
         if (fileTree.value.length > 0 && fileTree.value[0].path === dirPath) {
@@ -159,6 +162,9 @@ export function useFolder(deps: FolderDeps) {
     folderItems.value = []
     folderHistory.value = []
     fileTree.value = []
+    if (typeof window.electronAPI?.authorizeWorkspaceRoot === 'function') {
+      void window.electronAPI.authorizeWorkspaceRoot(null).catch(() => {})
+    }
     deps.persistSession()
     void useAiStore().loadConversations(null)
   }

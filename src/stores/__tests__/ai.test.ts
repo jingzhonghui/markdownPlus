@@ -34,7 +34,6 @@ describe('ai store', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let electronApi: Record<string, any>
   let eventHandler: ((event: AiRunEvent) => void) | null
-  let summaryHandler: (() => void) | null
 
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -45,7 +44,6 @@ describe('ai store', () => {
     })
 
     eventHandler = null
-    summaryHandler = null
     electronApi = {
       getAiConfig: vi.fn(),
       setAiConfig: vi.fn(),
@@ -63,12 +61,6 @@ describe('ai store', () => {
         eventHandler = cb
         return () => {
           eventHandler = null
-        }
-      }),
-      onWorkspaceSummaryGenerating: vi.fn((cb: () => void) => {
-        summaryHandler = cb
-        return () => {
-          summaryHandler = null
         }
       })
     }
@@ -429,143 +421,31 @@ describe('ai store', () => {
       expect(store.running).toBe(true)
     })
 
-    it('ensures the workspace summary and passes it to the run when a folder is open', async () => {
+    it('carries the opened workspace root into the snapshot without fetching a summary', async () => {
       const store = useAiStore()
       store.init()
       const fileStore = useFileStore()
       fileStore.openedFolderPath = 'C:\\ws'
-      electronApi.ensureWorkspaceSummary = vi.fn(async () => ({
-        success: true,
-        data: { summary: '云原生运维知识库', status: 'ok' }
-      }))
       electronApi.startAiRun.mockResolvedValue({ success: true, data: { runId: 'r1' } })
 
       await store.sendMessage('k8s 如何安装')
 
-      expect(electronApi.ensureWorkspaceSummary).toHaveBeenCalledWith('C:\\ws')
+      expect(electronApi.ensureWorkspaceSummary).toBeUndefined()
       const input = electronApi.startAiRun.mock.calls[0][0]
-      expect(input.workspaceSummary).toContain('云原生运维')
-      expect(store.summaryStatus).toBe('idle')
+      expect(input.snapshot.workspaceRoot).toBe('C:\\ws')
+      expect(input.workspaceSummary).toBeUndefined()
     })
 
-    it('uses the complete file index from the summary as the snapshot workspace files', async () => {
+    it('keeps workspaceRoot null when no workspace folder is open', async () => {
       const store = useAiStore()
       store.init()
-      const fileStore = useFileStore()
-      fileStore.openedFolderPath = 'C:\\ws'
-      // 模拟懒加载的 fileTree：深层目录为空，即使有标签也不覆盖注入索引
-      fileStore.fileTree = [
-        {
-          name: 'notemdx',
-          path: 'C:\\ws',
-          isDirectory: true,
-          isExpanded: true,
-          isLoading: false,
-          children: [
-            { name: '云', path: 'C:\\ws\\云', isDirectory: true, isExpanded: false, isLoading: false, children: [] }
-          ]
-        }
-      ]
-      electronApi.ensureWorkspaceSummary = vi.fn(async () => ({
-        success: true,
-        data: {
-          summary: '云原生运维知识库',
-          status: 'ok',
-          files: [
-            { name: 'newben-guide.mdx', path: 'C:/ws/云/newben-guide.mdx', isOpen: false, parentDirs: ['云'] },
-            { name: 'k8s.md', path: 'C:/ws/docs/k8s.md', isOpen: false, parentDirs: ['docs'] }
-          ]
-        }
-      }))
-      electronApi.startAiRun.mockResolvedValue({ success: true, data: { runId: 'r1' } })
-
-      await store.sendMessage('newben 怎么安装')
-
-      const input = electronApi.startAiRun.mock.calls[0][0]
-      expect(input.snapshot.workspaceFiles).toEqual([
-        { name: 'newben-guide.mdx', path: 'C:/ws/云/newben-guide.mdx', isOpen: false, parentDirs: ['云'] },
-        { name: 'k8s.md', path: 'C:/ws/docs/k8s.md', isOpen: false, parentDirs: ['docs'] }
-      ])
-    })
-
-    it('sets summaryStatus to generating when the main process pushes the generating event', async () => {
-      const store = useAiStore()
-      store.init()
-      const fileStore = useFileStore()
-      fileStore.openedFolderPath = 'C:\\ws'
-      let resolveSummary!: (value: unknown) => void
-      electronApi.ensureWorkspaceSummary = vi.fn(
-        () => new Promise((resolve) => {
-          resolveSummary = resolve
-        })
-      )
-      electronApi.startAiRun.mockResolvedValue({ success: true, data: { runId: 'r1' } })
-
-      const sendPromise = store.sendMessage('newben 怎么安装')
-      await Promise.resolve()
-
-      expect(store.summaryStatus).toBe('idle')
-      summaryHandler!()
-      expect(store.summaryStatus).toBe('generating')
-
-      resolveSummary({ success: true, data: { summary: '概要', status: 'ok', generated: true, files: null } })
-      await sendPromise
-      expect(store.summaryStatus).toBe('idle')
-    })
-
-    it('does not show generating when the summary cache is used', async () => {
-      const store = useAiStore()
-      store.init()
-      const fileStore = useFileStore()
-      fileStore.openedFolderPath = 'C:\\ws'
-      electronApi.ensureWorkspaceSummary = vi.fn(async () => ({
-        success: true,
-        data: { summary: '缓存概要', status: 'ok', generated: false, files: null }
-      }))
       electronApi.startAiRun.mockResolvedValue({ success: true, data: { runId: 'r1' } })
 
       await store.sendMessage('hello')
 
-      expect(store.summaryStatus).toBe('idle')
-      // 缓存命中不应触发 generating 事件
-      expect(electronApi.onWorkspaceSummaryGenerating).toHaveBeenCalled()
-      expect(store.summaryStatus).not.toBe('generating')
-    })
-
-    it('does not fetch a summary when no workspace folder is open', async () => {
-      const store = useAiStore()
-      store.init()
-      electronApi.ensureWorkspaceSummary = vi.fn(async () => ({
-        success: true,
-        data: { summary: '不应有', status: 'ok' }
-      }))
-      electronApi.startAiRun.mockResolvedValue({ success: true, data: { runId: 'r1' } })
-
-      await store.sendMessage('hello')
-
-      expect(electronApi.ensureWorkspaceSummary).not.toHaveBeenCalled()
       const input = electronApi.startAiRun.mock.calls[0][0]
+      expect(input.snapshot.workspaceRoot).toBeNull()
       expect(input.workspaceSummary).toBeUndefined()
-      expect(store.summaryStatus).toBe('idle')
-    })
-
-    it('skips the summary on failure but still starts the run', async () => {
-      const store = useAiStore()
-      store.init()
-      const fileStore = useFileStore()
-      fileStore.openedFolderPath = 'C:\\ws'
-      electronApi.ensureWorkspaceSummary = vi.fn(async () => ({
-        success: false,
-        error: 'LLM 不可用'
-      }))
-      electronApi.startAiRun.mockResolvedValue({ success: true, data: { runId: 'r1' } })
-
-      await store.sendMessage('k8s 如何安装')
-
-      expect(electronApi.ensureWorkspaceSummary).toHaveBeenCalledWith('C:\\ws')
-      const input = electronApi.startAiRun.mock.calls[0][0]
-      expect(input.workspaceSummary).toBeUndefined()
-      expect(store.summaryStatus).toBe('failed')
     })
 
     it('is a no-op for empty text or when already running', async () => {
@@ -722,6 +602,77 @@ describe('ai store', () => {
 
       expect(electronApi.cancelAiRun).toHaveBeenCalledWith('r1')
       expect(store.running).toBe(false)
+    })
+  })
+
+  describe('recallMessage', () => {
+    it('deletes the target user message and all subsequent messages, returns the content', () => {
+      const store = useAiStore()
+      store.messages.push(
+        { id: 'msg_1', role: 'user', content: 'first' },
+        { id: 'msg_2', role: 'assistant', content: 'reply 1' },
+        { id: 'msg_3', role: 'user', content: 'second' },
+        { id: 'msg_4', role: 'assistant', content: 'reply 2' }
+      )
+      store.toolCalls.push({ toolCallId: 'tc1', toolName: 'search_workspace', status: 'completed', messageId: 'msg_2' })
+
+      const content = store.recallMessage('msg_3')
+
+      expect(content).toBe('second')
+      expect(store.messages).toEqual([
+        { id: 'msg_1', role: 'user', content: 'first' },
+        { id: 'msg_2', role: 'assistant', content: 'reply 1' }
+      ])
+      expect(store.toolCalls).toHaveLength(1)
+    })
+
+    it('returns null when running', () => {
+      const store = useAiStore()
+      store.messages.push({ id: 'msg_1', role: 'user', content: 'hi' })
+      store.running = true
+
+      expect(store.recallMessage('msg_1')).toBeNull()
+      expect(store.messages).toHaveLength(1)
+    })
+
+    it('returns null when there are pending approvals', () => {
+      const store = useAiStore()
+      store.messages.push({ id: 'msg_1', role: 'user', content: 'hi' })
+      store.pendingApprovals.push(makeApproval())
+
+      expect(store.recallMessage('msg_1')).toBeNull()
+      expect(store.messages).toHaveLength(1)
+    })
+
+    it('returns null for a non-user message', () => {
+      const store = useAiStore()
+      store.messages.push({ id: 'msg_1', role: 'user', content: 'hi' },
+        { id: 'msg_2', role: 'assistant', content: 'reply' })
+
+      expect(store.recallMessage('msg_2')).toBeNull()
+      expect(store.messages).toHaveLength(2)
+    })
+
+    it('returns null for an unknown message id', () => {
+      const store = useAiStore()
+      store.messages.push({ id: 'msg_1', role: 'user', content: 'hi' })
+
+      expect(store.recallMessage('msg_999')).toBeNull()
+      expect(store.messages).toHaveLength(1)
+    })
+
+    it('persists the conversation after recall', async () => {
+      const store = useAiStore()
+      store.activeConversationId = 'conv_1'
+      store.messages.push(
+        { id: 'msg_1', role: 'user', content: 'hi' },
+        { id: 'msg_2', role: 'assistant', content: 'reply' }
+      )
+      electronApi.saveAiConversation.mockClear()
+
+      store.recallMessage('msg_1')
+
+      await vi.waitFor(() => expect(electronApi.saveAiConversation).toHaveBeenCalled())
     })
   })
 

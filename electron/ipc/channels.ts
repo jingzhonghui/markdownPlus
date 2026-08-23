@@ -100,8 +100,7 @@ export const IPC_CHANNELS = {
       SUMMARIZE: 'ai:conversation:summarize'
     },
     WORKSPACE: {
-      ENSURE_SUMMARY: 'ai:workspace:ensureSummary',
-      SUMMARY_GENERATING: 'ai:workspace:summaryGenerating'
+      AUTHORIZE: 'ai:workspace:authorize'
     },
     EVENT: 'ai:run:event'
   }

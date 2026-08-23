@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { aiRunInputSchema, approvalResolutionSchema } from '../contracts'
 import { useFileStore } from '../../../src/stores/file'
@@ -9,20 +9,22 @@ describe('AI IPC contracts', () => {
     expect(
       aiRunInputSchema.parse({
         conversationId: 'conv-1',
-        message: '总结 https://example.com/report',
+        message: '鎬荤粨 https://example.com/report',
         history: [],
         snapshot: {
           conversationId: 'conv-1',
           activeDocument: null,
           selection: null,
-          cursor: null
+          cursor: null,
+          workspaceRoot: null
+
         }
       }).message
-    ).toBe('总结 https://example.com/report')
+    ).toBe('鎬荤粨 https://example.com/report')
   })
 
   it('preserves leading and trailing message whitespace exactly', () => {
-    const message = ' \t总结 https://example.com/report\r\n '
+    const message = ' \t鎬荤粨 https://example.com/report\r\n '
 
     expect(
       aiRunInputSchema.parse({
@@ -33,7 +35,9 @@ describe('AI IPC contracts', () => {
           conversationId: 'conv-1',
           activeDocument: null,
           selection: null,
-          cursor: null
+          cursor: null,
+          workspaceRoot: null
+
         }
       }).message
     ).toBe(message)
@@ -49,7 +53,9 @@ describe('AI IPC contracts', () => {
           conversationId: 'conv-1',
           activeDocument: null,
           selection: null,
-          cursor: null
+          cursor: null,
+          workspaceRoot: null
+
         }
       })
     ).toThrow()
@@ -82,14 +88,16 @@ describe('AI IPC contracts', () => {
           conversationId: 'conv-1',
           activeDocument: null,
           selection: null,
-          cursor: null
+          cursor: null,
+          workspaceRoot: null
+
         },
         sourceCandidates: ['https://example.com/report']
       })
     ).toThrow()
   })
 
-  it('accepts a snapshot with workspaceFiles', () => {
+  it('accepts a snapshot with an authorized workspace root', () => {
     const result = aiRunInputSchema.parse({
       conversationId: 'conv-1',
       message: 'summarize notes',
@@ -99,17 +107,29 @@ describe('AI IPC contracts', () => {
         activeDocument: null,
         selection: null,
         cursor: null,
-        workspaceFiles: [
-          { name: 'notes.md', path: '/docs/notes.md', isOpen: true, parentDirs: ['docs'] }
-        ]
+        workspaceRoot: 'C:\\workspace'
       }
     })
-    expect(result.snapshot.workspaceFiles).toEqual([
-      { name: 'notes.md', path: '/docs/notes.md', isOpen: true, parentDirs: ['docs'] }
-    ])
+    expect(result.snapshot.workspaceRoot).toBe('C:\\workspace')
   })
 
-  it('rejects workspaceFiles with extra fields', () => {
+  it('accepts a snapshot without a workspace root', () => {
+    const result = aiRunInputSchema.parse({
+      conversationId: 'conv-1',
+      message: 'summarize notes',
+      history: [],
+      snapshot: {
+        conversationId: 'conv-1',
+        activeDocument: null,
+        selection: null,
+        cursor: null,
+        workspaceRoot: null
+      }
+    })
+    expect(result.snapshot.workspaceRoot).toBeNull()
+  })
+
+  it('rejects a non-string workspace root', () => {
     expect(() =>
       aiRunInputSchema.parse({
         conversationId: 'conv-1',
@@ -120,41 +140,10 @@ describe('AI IPC contracts', () => {
           activeDocument: null,
           selection: null,
           cursor: null,
-          workspaceFiles: [{ name: 'notes.md', path: '/docs/notes.md', isOpen: true, extra: true }]
+          workspaceRoot: 42
         }
       })
     ).toThrow()
-  })
-
-  it('accepts an optional workspace summary on the run input', () => {
-    const result = aiRunInputSchema.parse({
-      conversationId: 'conv-1',
-      message: 'k8s 如何安装',
-      history: [],
-      workspaceSummary: '该工作区是云原生运维知识库，包含 k8s、docker、helm 相关文档。',
-      snapshot: {
-        conversationId: 'conv-1',
-        activeDocument: null,
-        selection: null,
-        cursor: null
-      }
-    })
-    expect(result.workspaceSummary).toContain('云原生运维')
-  })
-
-  it('omits the workspace summary when absent', () => {
-    const result = aiRunInputSchema.parse({
-      conversationId: 'conv-1',
-      message: 'hello',
-      history: [],
-      snapshot: {
-        conversationId: 'conv-1',
-        activeDocument: null,
-        selection: null,
-        cursor: null
-      }
-    })
-    expect(result.workspaceSummary).toBeUndefined()
   })
 
   it('accepts the real renderer start payload without a renderer-owned run id', () => {
@@ -167,7 +156,8 @@ describe('AI IPC contracts', () => {
       conversationId,
       activeDocument: snapshot.activeDocument,
       selection: snapshot.selection,
-      cursor: snapshot.cursor
+      cursor: snapshot.cursor,
+      workspaceRoot: snapshot.workspaceRoot
     }
 
     const result = aiRunInputSchema.safeParse({

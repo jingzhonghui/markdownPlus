@@ -19,7 +19,8 @@ const snapshot: AiExecutionSnapshot = {
     modified: false
   },
   selection: { text: '', from: 0, to: 0, cursor: 0 },
-  cursor: 0
+  cursor: 0,
+  workspaceRoot: null
 }
 
 function context(): ToolExecutionContext {

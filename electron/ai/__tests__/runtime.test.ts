@@ -8,6 +8,7 @@ import { ApprovalManager } from '../approval-manager'
 import { SourceAccessService } from '../source-access-service'
 import { createSourceAuthorizationContext } from '../source-authorization'
 import { SYSTEM_PROMPT } from '../prompts'
+import { WorkspaceSearchService } from '../../workspace/workspace-search-service'
 import type { LlmProvider, AiProviderEvent, ProviderTool } from '../provider'
 import type {
   AiDocumentSnapshot,
@@ -15,7 +16,9 @@ import type {
   AiRunEvent,
   AiRunInput,
   AiRuntimeConfig,
-  AiSelectionSnapshot
+  AiSelectionSnapshot,
+  SearchWorkspaceResult,
+  WorkspaceDirectoryResult
 } from '../../../shared/ai/types'
 
 function makeDoc(overrides: Partial<AiDocumentSnapshot> = {}): AiDocumentSnapshot {
@@ -35,7 +38,8 @@ function makeDoc(overrides: Partial<AiDocumentSnapshot> = {}): AiDocumentSnapsho
 function makeSnapshot(
   doc: AiDocumentSnapshot | null = makeDoc(),
   selection: AiSelectionSnapshot | null = null,
-  cursor: number | null = null
+  cursor: number | null = null,
+  workspaceRoot: string | null = null
 ): AiExecutionSnapshot {
   return {
     runId: randomUUID(),
@@ -43,6 +47,7 @@ function makeSnapshot(
     activeDocument: doc,
     selection,
     cursor,
+    workspaceRoot
   }
 }
 
@@ -62,6 +67,23 @@ function makeRunInput(snapshot: AiExecutionSnapshot): AiRunInput {
     history: [],
     snapshot
   }
+}
+
+function emptySearchResult(): SearchWorkspaceResult {
+  return { status: 'completed', mode: 'content', query: '', matches: [], truncated: false, elapsedMs: 0 }
+}
+
+function makeFakeSearchService(
+  overrides: Partial<WorkspaceSearchService> = {}
+): WorkspaceSearchService {
+  const base: WorkspaceSearchService = {
+    search: vi.fn(async () => emptySearchResult()),
+    listRoot: vi.fn(async () => ({ path: '.', files: [], subDirectories: [], totalFiles: 0, isEmpty: true }) as WorkspaceDirectoryResult),
+    readDirectory: vi.fn(async () => ({ path: '.', files: [], subDirectories: [], totalFiles: 0, isEmpty: true }) as WorkspaceDirectoryResult),
+    readFile: vi.fn(async () => ''),
+    ...overrides
+  } as unknown as WorkspaceSearchService
+  return base
 }
 
 interface CapturedRun {
@@ -131,7 +153,8 @@ class FakeProvider implements LlmProvider {
 function makeRuntime(
   provider: LlmProvider,
   options: { maxSteps?: number; toolTimeoutMs?: number; approvalTimeoutMs?: number } = {},
-  sourceAccessService = new SourceAccessService()
+  sourceAccessService = new SourceAccessService(),
+  searchService: WorkspaceSearchService = makeFakeSearchService()
 ): AiRuntime {
   const approvalTimeoutMs = options.approvalTimeoutMs ?? 60_000
   return new AiRuntime({
@@ -139,6 +162,7 @@ function makeRuntime(
     registry: new ToolRegistry(),
     approvalManager: new ApprovalManager({ approvalTimeoutMs }),
     sourceAccessService,
+    searchService,
     config: makeConfig(),
     ...options,
     approvalTimeoutMs
@@ -153,9 +177,9 @@ async function waitRunEnd(
 }
 
 describe('document tools', () => {
-  const service = new SourceAccessService()
-  const tools = createDocumentTools(service)
-  const searchFiles = tools.searchWorkspaceFiles as unknown as {
+  const searchService = makeFakeSearchService()
+  const tools = createDocumentTools(searchService)
+  const searchTool = tools.searchWorkspace as unknown as {
     execute: (input: unknown, context: ToolExecutionContext) => Promise<unknown>
   }
   const readFile = tools.readWorkspaceFile as unknown as {
@@ -176,50 +200,54 @@ describe('document tools', () => {
     }
   }
 
-  it('search_workspace_files 按名称返回匹配的文件', async () => {
+  it('search_workspace 在未打开工作区时返回明确错误', async () => {
     const snapshot = makeSnapshot(null)
-    snapshot.workspaceFiles = [
-      { name: 'notes.md', path: '/docs/notes.md', isOpen: true, parentDirs: ['docs'] },
-      { name: 'report.md', path: '/docs/report.md', isOpen: false, parentDirs: ['docs'] },
-      { name: 'draft.mdx', path: '/docs/draft.mdx', isOpen: false, parentDirs: ['docs'] }
-    ]
-    const result = await searchFiles.execute({ query: 'report' }, contextWith(snapshot))
-    expect(result).toEqual({
+    await expect(
+      searchTool.execute({ query: 'report', mode: 'filename' }, contextWith(snapshot))
+    ).rejects.toThrow('工作区')
+  })
+
+  it('search_workspace 委托给搜索服务并返回结果', async () => {
+    const search = vi.fn(async () => ({
+      status: 'completed' as const,
+      mode: 'filename' as const,
       query: 'report',
-      matches: [{ name: 'report.md', path: '/docs/report.md', isOpen: false, parentDirs: ['docs'] }],
-      total: 1,
-      matchedDirs: []
-    })
+      matches: [{ type: 'filename' as const, path: 'docs/report.md', extension: 'md' }],
+      truncated: false,
+      elapsedMs: 1
+    }))
+    const localSearch = makeFakeSearchService({ search })
+    const localTools = createDocumentTools(localSearch)
+    const snapshot = makeSnapshot(null, null, null, 'C:\\ws')
+    const result = await (localTools.searchWorkspace as unknown as {
+      execute: (input: unknown, context: ToolExecutionContext) => Promise<unknown>
+    }).execute(
+      { query: 'report', mode: 'filename' },
+      contextWith(snapshot, new AbortController().signal)
+    )
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'report', mode: 'filename' }),
+      'C:\\ws',
+      expect.any(AbortSignal)
+    )
+    expect(result).toMatchObject({ status: 'completed', mode: 'filename' })
   })
 
-  it('search_workspace_files 无匹配时返回空列表', async () => {
-    const result = await searchFiles.execute({ query: 'missing' }, contextWith(makeSnapshot(null)))
-    expect(result).toEqual({ query: 'missing', matches: [], total: 0, matchedDirs: [] })
-  })
-
-  it('read_workspace_file 读取工作区中的文件', async () => {
-    const readLocalFile = vi.fn().mockResolvedValue({
-      requestedPath: '/docs/notes.md',
-      normalizedPath: '/docs/notes.md',
-      fileType: 'markdown',
-      content: '# 内容'
-    })
-    const fakeService = { readLocalFile } as unknown as SourceAccessService
-    const localTools = createDocumentTools(fakeService)
-    const snapshot = makeSnapshot(null)
-    snapshot.workspaceFiles = [{ name: 'notes.md', path: '/docs/notes.md', isOpen: true, parentDirs: ['docs'] }]
+  it('read_workspace_file 委托给搜索服务读取文件', async () => {
+    const readFileFn = vi.fn(async () => '# 内容')
+    const localSearch = makeFakeSearchService({ readFile: readFileFn })
+    const localTools = createDocumentTools(localSearch)
+    const snapshot = makeSnapshot(null, null, null, 'C:\\ws')
     const result = await (localTools.readWorkspaceFile as unknown as {
       execute: (input: unknown, context: ToolExecutionContext) => Promise<unknown>
-    }).execute({ path: '/docs/notes.md' }, contextWith(snapshot, new AbortController().signal))
-    expect(readLocalFile).toHaveBeenCalledWith('/docs/notes.md', expect.any(AbortSignal))
-    expect(result).toMatchObject({ normalizedPath: '/docs/notes.md', content: '# 内容' })
+    }).execute({ path: 'docs/notes.md' }, contextWith(snapshot, new AbortController().signal))
+    expect(readFileFn).toHaveBeenCalledWith('C:\\ws', 'docs/notes.md', expect.any(AbortSignal))
+    expect(result).toMatchObject({ content: '# 内容' })
   })
 
-  it('read_workspace_file 拒绝读取工作区外的路径', async () => {
-    const snapshot = makeSnapshot(null)
-    snapshot.workspaceFiles = [{ name: 'notes.md', path: '/docs/notes.md', isOpen: true, parentDirs: ['docs'] }]
+  it('read_workspace_file 在未打开工作区时拒绝', async () => {
     await expect(
-      readFile.execute({ path: '/etc/passwd' }, contextWith(snapshot, new AbortController().signal))
+      readFile.execute({ path: 'notes.md' }, contextWith(makeSnapshot(null), new AbortController().signal))
     ).rejects.toThrow('工作区')
   })
 
@@ -296,7 +324,7 @@ describe('runtime approval flow', () => {
     await vi.waitFor(() => expect(provider.captured).not.toBeNull())
 
     expect(Object.keys(provider.captured!.tools)).toEqual([
-      'list_workspace_root', 'search_workspace_files', 'read_workspace_directory', 'read_workspace_file',
+      'search_workspace', 'list_workspace_root', 'read_workspace_directory', 'read_workspace_file',
       'read_selected_text', 'get_current_datetime', 'read_web_url', 'read_local_file',
       'replace_current_document', 'insert_into_current_document', 'create_document'
     ])
@@ -612,24 +640,33 @@ describe('runtime approval flow', () => {
     runtime.dispose()
   })
 
-  it('search_workspace_files 经 runtime 返回 completed + 匹配结果', async () => {
+  it('search_workspace 经 runtime 返回 completed + 匹配结果', async () => {
     const provider = new FakeProvider()
-    const runtime = makeRuntime(provider)
-    const snapshot = makeSnapshot(makeDoc())
-    snapshot.workspaceFiles = [{ name: '测试文档.md', path: '/docs/测试文档.md', isOpen: true, parentDirs: ['docs'] }]
+    const search = vi.fn(async () => ({
+      status: 'completed' as const,
+      mode: 'filename' as const,
+      query: '测试文档',
+      matches: [{ type: 'filename' as const, path: 'docs/测试文档.md', extension: 'md' }],
+      truncated: false,
+      elapsedMs: 1
+    }))
+    const runtime = makeRuntime(provider, {}, new SourceAccessService(), makeFakeSearchService({ search }))
+    const snapshot = makeSnapshot(makeDoc(), null, null, 'C:\\ws')
     const events: AiRunEvent[] = []
     void runtime.start(makeRunInput(snapshot), (e) => events.push(e))
 
     await vi.waitFor(() => expect(provider.captured).not.toBeNull())
-    const searchTool = provider.captured!.tools['search_workspace_files']!
-    const result = await searchTool.execute({ query: '测试文档' })
+    const searchTool = provider.captured!.tools['search_workspace']!
+    const result = await searchTool.execute({ query: '测试文档', mode: 'filename' })
     expect(result).toEqual({
       status: 'completed',
       data: {
+        status: 'completed',
+        mode: 'filename',
         query: '测试文档',
-        matches: [{ name: '测试文档.md', path: '/docs/测试文档.md', isOpen: true, parentDirs: ['docs'] }],
-        total: 1,
-        matchedDirs: []
+        matches: [{ type: 'filename', path: 'docs/测试文档.md', extension: 'md' }],
+        truncated: false,
+        elapsedMs: 1
       }
     })
 
@@ -730,7 +767,7 @@ describe('runtime lifecycle', () => {
     const toolCalls = Array.from({ length: 13 }, (_, i) => ({
       type: 'tool-call-started' as const,
       toolCallId: `tc-${i}`,
-      toolName: 'search_workspace_files'
+      toolName: 'search_workspace'
     }))
     provider.setEvents(toolCalls)
     const runtime = makeRuntime(provider, { maxSteps: 12 })
@@ -791,6 +828,7 @@ describe('runtime lifecycle', () => {
       registry,
       approvalManager: new ApprovalManager(),
       sourceAccessService: new SourceAccessService(),
+      searchService: makeFakeSearchService(),
       config: makeConfig(),
       toolTimeoutMs: 20
     })
@@ -834,6 +872,7 @@ describe('runtime lifecycle', () => {
       registry,
       approvalManager: new ApprovalManager(),
       sourceAccessService: new SourceAccessService(),
+      searchService: makeFakeSearchService(),
       config: makeConfig()
     })
     const started = await runtime.start(makeRunInput(makeSnapshot()), () => {})
@@ -860,46 +899,5 @@ describe('runtime lifecycle', () => {
 
     runtime.dispose()
     await waitRunEnd(events, 'run-cancelled')
-  })
-})
-
-describe('workspace summary injection', () => {
-  it('prepends a hidden summary message before the history when workspaceSummary is present', async () => {
-    const provider = new FakeProvider()
-    const runtime = makeRuntime(provider)
-    const snapshot = makeSnapshot(makeDoc())
-    const input = {
-      ...makeRunInput(snapshot),
-      workspaceSummary: '该工作区是云原生运维知识库，包含 k8s、docker 相关文档。'
-    }
-    const events: AiRunEvent[] = []
-    void runtime.start(input, (e) => events.push(e))
-
-    await vi.waitFor(() => expect(provider.captured).not.toBeNull())
-    const messages = provider.captured!.messages as { role: string; content: string }[]
-    expect(messages).toHaveLength(2)
-    expect(messages[0].role).toBe('user')
-    expect(messages[0].content).toContain('云原生运维')
-    expect(messages[0].content).toContain('工作区')
-    expect(messages[1].content).toBe('请总结文档')
-
-    provider.finish()
-    await waitRunEnd(events, 'run-completed')
-  })
-
-  it('keeps the original messages unchanged when workspaceSummary is absent', async () => {
-    const provider = new FakeProvider()
-    const runtime = makeRuntime(provider)
-    const snapshot = makeSnapshot(makeDoc())
-    const events: AiRunEvent[] = []
-    void runtime.start(makeRunInput(snapshot), (e) => events.push(e))
-
-    await vi.waitFor(() => expect(provider.captured).not.toBeNull())
-    const messages = provider.captured!.messages as { role: string; content: string }[]
-    expect(messages).toHaveLength(1)
-    expect(messages[0].content).toBe('请总结文档')
-
-    provider.finish()
-    await waitRunEnd(events, 'run-completed')
   })
 })

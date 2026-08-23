@@ -9,6 +9,8 @@ const props = defineProps<{
   toolCalls: { toolCallId: string; toolName: string; status: 'running' | 'completed' | 'failed'; result?: ToolExecutionResult; messageId?: string }[]
 }>()
 
+const emit = defineEmits<{ recall: [messageId: string] }>()
+
 /** 按 messageId 分组工具调用 */
 const toolCallsByMessage = computed(() => {
   const map = new Map<string, typeof props.toolCalls>()
@@ -57,6 +59,8 @@ watch(
       :message="message"
       :streaming="running && index === messages.length - 1 && message.role === 'assistant'"
       :tool-calls="toolCallsByMessage.get(message.id) ?? []"
+      :can-recall="!running"
+      @recall="emit('recall', $event)"
     />
   </div>
 </template>

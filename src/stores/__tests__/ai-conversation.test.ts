@@ -27,8 +27,7 @@ function makeStore() {
       return () => {
         eventHandler = null
       }
-    }),
-    onWorkspaceSummaryGenerating: vi.fn(() => () => undefined)
+    })
   }
   vi.stubGlobal('window', { electronAPI: electronApi })
   return {

@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApprovalManager } from '../approval-manager'
 import { SourceAccessService } from '../source-access-service'
+import { WorkspaceSearchService } from '../../workspace/workspace-search-service'
 import type { AiProviderEvent, LlmProvider, LlmRunInput } from '../provider'
 import { AiRuntime } from '../runtime'
 import { ToolRegistry } from '../tool-registry'
@@ -11,6 +12,7 @@ import type {
   AiRunEvent,
   AiRunInput,
   AiRuntimeConfig,
+  SearchWorkspaceResult,
   ToolExecutionResult
 } from '../../../shared/ai/types'
 
@@ -37,9 +39,7 @@ function executionSnapshot(): AiExecutionSnapshot {
     activeDocument: documentSnapshot(),
     selection: null,
     cursor: null,
-    workspaceFiles: [
-      { name: 'release-notes.md', path: '/docs/release-notes.md', isOpen: true, parentDirs: ['docs'] }
-    ]
+    workspaceRoot: 'C:\\ws'
   }
 }
 
@@ -59,6 +59,22 @@ function runtimeConfig(): AiRuntimeConfig {
     apiKey: API_KEY,
     temperature: 0
   }
+}
+
+function makeFakeSearchService(): WorkspaceSearchService {
+  return {
+    search: vi.fn(async (input): Promise<SearchWorkspaceResult> => ({
+      status: 'completed',
+      mode: input.mode,
+      query: input.query,
+      matches: [],
+      truncated: false,
+      elapsedMs: 1
+    })),
+    listRoot: vi.fn(),
+    readDirectory: vi.fn(),
+    readFile: vi.fn(async () => DOCUMENT_BODY)
+  } as unknown as WorkspaceSearchService
 }
 
 class ScriptedProvider implements LlmProvider {
@@ -83,13 +99,15 @@ class ScriptedProvider implements LlmProvider {
 function createRuntime(
   provider: LlmProvider,
   sourceAccessService = new SourceAccessService(),
-  approvalTimeoutMs = 60_000
+  approvalTimeoutMs = 60_000,
+  searchService: WorkspaceSearchService = makeFakeSearchService()
 ): AiRuntime {
   return new AiRuntime({
     provider,
     registry: new ToolRegistry(),
     approvalManager: new ApprovalManager({ approvalTimeoutMs }),
     sourceAccessService,
+    searchService,
     config: runtimeConfig(),
     approvalTimeoutMs
   })
@@ -111,46 +129,48 @@ describe('AI main-process integration', () => {
   it('keeps the document body out of initial provider input, exposes it through workspace tools, and streams final text', async () => {
     let searchResult: ToolExecutionResult | undefined
     let readResult: ToolExecutionResult | undefined
+    const search = vi.fn(async (): Promise<SearchWorkspaceResult> => ({
+      status: 'completed',
+      mode: 'filename',
+      query: 'release-notes',
+      matches: [{ type: 'filename', path: 'docs/release-notes.md', extension: 'md' }],
+      truncated: false,
+      elapsedMs: 1
+    }))
+    const readFile = vi.fn(async () => DOCUMENT_BODY)
+    const searchService = makeFakeSearchService()
+    searchService.search = search
+    searchService.readFile = readFile
     const provider = new ScriptedProvider(async function* (input) {
-      yield { type: 'tool-call-started', toolCallId: 'search-1', toolName: 'search_workspace_files' }
-      searchResult = await input.tools.search_workspace_files.execute({ query: 'release-notes' })
+      yield { type: 'tool-call-started', toolCallId: 'search-1', toolName: 'search_workspace' }
+      searchResult = await input.tools.search_workspace.execute({ query: 'release-notes', mode: 'filename' })
       yield { type: 'tool-call-completed', toolCallId: 'search-1', result: searchResult }
       yield { type: 'tool-call-started', toolCallId: 'read-1', toolName: 'read_workspace_file' }
-      readResult = await input.tools.read_workspace_file.execute({ path: '/docs/release-notes.md' })
+      readResult = await input.tools.read_workspace_file.execute({ path: 'docs/release-notes.md' })
       yield { type: 'tool-call-completed', toolCallId: 'read-1', result: readResult }
       yield { type: 'text-delta', text: 'Roadmap summarized.' }
       yield { type: 'completed' }
     })
     const events: AiRunEvent[] = []
     const service = new SourceAccessService()
-    vi.spyOn(service, 'readLocalFile').mockResolvedValue({
-      requestedPath: '/docs/release-notes.md',
-      normalizedPath: '/docs/release-notes.md',
-      fileType: 'markdown',
-      size: DOCUMENT_BODY.length,
-      content: DOCUMENT_BODY,
-      chunks: [],
-      truncated: false
-    })
-    const runtime = createRuntime(provider, service)
+    const runtime = createRuntime(provider, service, 60_000, searchService)
 
     await runtime.start(runInput(), (event) => events.push(event))
     await waitForEvent(events, 'run-completed')
 
     expect(JSON.stringify(provider.input?.messages)).not.toContain(DOCUMENT_BODY)
     expect(provider.input?.system).not.toContain(DOCUMENT_BODY)
-    expect(searchResult).toEqual({
+    expect(searchResult).toMatchObject({
       status: 'completed',
       data: {
-        query: 'release-notes',
-        matches: [{ name: 'release-notes.md', path: '/docs/release-notes.md', isOpen: true, parentDirs: ['docs'] }],
-        total: 1,
-        matchedDirs: []
+        status: 'completed',
+        mode: 'filename',
+        matches: [{ type: 'filename', path: 'docs/release-notes.md', extension: 'md' }]
       }
     })
     expect(readResult).toMatchObject({
       status: 'completed',
-      data: { normalizedPath: '/docs/release-notes.md', content: DOCUMENT_BODY }
+      data: { content: DOCUMENT_BODY }
     })
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'text-delta', text: 'Roadmap summarized.' })
@@ -348,7 +368,7 @@ describe('AI main-process integration', () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
     ]
     const provider = new ScriptedProvider(async function* (input) {
-      await input.tools.search_workspace_files.execute({ query: 'release' })
+      await input.tools.search_workspace.execute({ query: 'release', mode: 'filename' })
       yield { type: 'text-delta', text: 'Safe response' }
       yield { type: 'completed' }
     })

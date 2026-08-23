@@ -18,6 +18,7 @@ function mockApp() {
     getAiConfig: vi.fn(),
     onAiRunEvent: vi.fn(() => () => undefined),
     readFolder: vi.fn(async () => ({ success: true, data: [] })),
+    authorizeWorkspaceRoot: vi.fn(async () => ({ success: true })),
     openFile: vi.fn(async () => ({ success: true })),
     getRecentFiles: vi.fn(async () => ({ success: true, data: [] }))
   }

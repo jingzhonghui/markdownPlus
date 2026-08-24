@@ -47,6 +47,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Free disk space
+        if: matrix.name == 'linux'
+        shell: bash
+        run: |
+          set -x
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup /opt/ghc /opt/ghc-* /usr/local/share/boost
+          sudo apt-get clean
+          sudo docker system prune -af --volumes 2>/dev/null || true
+          df -h /
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

@@ -12,6 +12,13 @@ import { registerAiHandlers, disposeAiServices } from './ai/ipc-handlers'
 import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater'
 import { inspectLaunchTarget, parseLaunchTargets, type LaunchTarget } from './launch-target'
 
+// AppImage is mounted via FUSE where the setuid bit cannot take effect, so the
+// SUID sandbox helper is unusable. Disable the Chromium sandbox for AppImage
+// runs (deb keeps the SUID sandbox configured by the after-install script).
+if (process.env.APPIMAGE) {
+  app.commandLine.appendSwitch('no-sandbox')
+}
+
 let mainWindow: BrowserWindow | null = null
 let pendingOpenTargets: LaunchTarget[] = []
 let rendererReady = false

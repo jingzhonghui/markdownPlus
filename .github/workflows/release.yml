@@ -87,6 +87,11 @@ jobs:
           test -n "$deb_path"
           deb_mode="$(dpkg-deb -c "$deb_path" | awk '/chrome-sandbox$/ {print $1; exit}')"
           test "$deb_mode" = "-rwsr-xr-x"
+          control_dir="$(mktemp -d)"
+          dpkg-deb -e "$deb_path" "$control_dir"
+          grep -q "chmod 4755" "$control_dir/postinst"
+          ! grep -q "chmod 0755" "$control_dir/postinst"
+          ! grep -q "unshare" "$control_dir/postinst"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

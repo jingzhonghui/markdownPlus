@@ -1,5 +1,5 @@
 appId: com.markdown-plus.app
-productName: MackdownPlus
+productName: MarkdownPlus
 copyright: Copyright © 2026 Markdown+ Team
 directories:
   output: dist
@@ -62,6 +62,8 @@ linux:
   icon: resources/icon.png
   category: Office
   maintainer: Markdown+ Team
+deb:
+  afterInstall: build/after-install.sh
 # 自动更新发布源配置（GitHub Releases）
 publish:
   provider: github

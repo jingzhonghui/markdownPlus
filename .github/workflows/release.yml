@@ -85,7 +85,7 @@ jobs:
           test "$(stat -c '%a' "$sandbox_path")" = "4755"
           deb_path="$(find dist -maxdepth 1 -type f -name '*.deb' -print -quit)"
           test -n "$deb_path"
-          deb_mode="$(dpkg-deb -c "$deb_path" | awk '/chrome-sandbox$/ {print $1; exit}')"
+          deb_mode="$(dpkg-deb -c "$deb_path" | awk '/chrome-sandbox$/ {print $1}')"
           test "$deb_mode" = "-rwsr-xr-x"
           control_dir="$(mktemp -d)"
           dpkg-deb -e "$deb_path" "$control_dir"

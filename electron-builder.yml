@@ -13,6 +13,8 @@ files:
   - '!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}'
   - '!**/node_modules/*.d.ts'
   - '!**/node_modules/.bin'
+  - '!**/*.map'
+  - '!**/node_modules/pdfjs-dist/**'
   - '!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}'
   - '!.editorconfig'
   - '!**/._*'

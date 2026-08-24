@@ -10,8 +10,52 @@ import { hadAbnormalExit, markAppRunning, readRecoverySnapshot, writeRecoverySna
 import { openUserGuide } from './user-guide'
 import { registerAiHandlers, disposeAiServices } from './ai/ipc-handlers'
 import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater'
+import { inspectLaunchTarget, parseLaunchTargets, type LaunchTarget } from './launch-target'
 
 let mainWindow: BrowserWindow | null = null
+let pendingOpenTargets: LaunchTarget[] = []
+let rendererReady = false
+
+function flushOpenTargets(): void {
+  if (!rendererReady || !mainWindow || mainWindow.isDestroyed() || pendingOpenTargets.length === 0) return
+  mainWindow.webContents.send(IPC_CHANNELS.APP.OPEN_TARGETS, pendingOpenTargets.splice(0))
+}
+
+function queueOpenTargets(targets: LaunchTarget[]): void {
+  const existing = new Set(pendingOpenTargets.map((target) => target.path.toLowerCase()))
+  for (const target of targets) {
+    const key = target.path.toLowerCase()
+    if (!existing.has(key)) {
+      existing.add(key)
+      pendingOpenTargets.push(target)
+    }
+  }
+  flushOpenTargets()
+}
+
+function initialLaunchTargets(): LaunchTarget[] {
+  if (!app.isPackaged) return []
+  return parseLaunchTargets(process.argv)
+    .map((target) => inspectLaunchTarget(target))
+    .filter((target): target is LaunchTarget => target !== null)
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    queueOpenTargets(
+      parseLaunchTargets(commandLine)
+        .map((target) => inspectLaunchTarget(target))
+        .filter((target): target is LaunchTarget => target !== null)
+    )
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+}
 
 /**
  * 创建主窗口
@@ -87,7 +131,7 @@ function createWindow(): void {
 /**
  * 应用生命周期管理
  */
-app.whenReady().then(() => {
+if (hasSingleInstanceLock) app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.markdown-plus.app')
 
   // 默认打开或关闭开发者工具（仅开发环境）
@@ -122,6 +166,11 @@ app.whenReady().then(() => {
     clearRecoverySnapshot()
     return { success: true }
   })
+  ipcMain.handle(IPC_CHANNELS.APP.OPEN_TARGETS, () => {
+    rendererReady = true
+    const targets = pendingOpenTargets.splice(0)
+    return targets
+  })
 
   // 自动更新 handlers
   ipcMain.handle(IPC_CHANNELS.UPDATE.CHECK, () => checkForUpdates())
@@ -148,6 +197,8 @@ app.whenReady().then(() => {
   registerAiHandlers(() => mainWindow)
 
   createWindow()
+
+  queueOpenTargets(initialLaunchTargets())
 
   // 初始化自动更新，并在启动后延迟静默检查一次
   initUpdater(() => mainWindow)

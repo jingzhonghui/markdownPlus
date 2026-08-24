@@ -36,6 +36,16 @@ async function loadAiReadiness(): Promise<void> {
   }
 }
 
+async function openLaunchTargets(targets: Array<{ path: string; kind: 'file' | 'directory' }>): Promise<void> {
+  for (const target of targets) {
+    if (target.kind === 'directory') {
+      await fileStore.openFolderPath(target.path)
+    } else {
+      await fileStore.openFile(target.path)
+    }
+  }
+}
+
 /**
  * 处理窗口关闭确认事件
  * 主进程检测到未保存修改时发送此事件
@@ -49,14 +59,25 @@ async function handleConfirmClose(): Promise<void> {
 }
 
 let removeConfirmCloseListener: (() => void) | null = null
+let removeOpenTargetsListener: (() => void) | null = null
 
-onMounted(() => {
+onMounted(async () => {
   themeStore.initTheme()
-  void fileStore.init()
   updateStore.init()
   initFileDrop()
   aiStore.init()
   void loadAiReadiness()
+
+  if (window.electronAPI?.onOpenTargets) {
+    removeOpenTargetsListener = window.electronAPI.onOpenTargets((targets) => {
+      void openLaunchTargets(targets)
+    })
+  }
+
+  await fileStore.init()
+  if (window.electronAPI?.getOpenTargets) {
+    await openLaunchTargets(await window.electronAPI.getOpenTargets())
+  }
 
   if (window.electronAPI?.onConfirmClose) {
     removeConfirmCloseListener = window.electronAPI.onConfirmClose(handleConfirmClose)
@@ -66,6 +87,9 @@ onMounted(() => {
 onUnmounted(() => {
   if (removeConfirmCloseListener) {
     removeConfirmCloseListener()
+  }
+  if (removeOpenTargetsListener) {
+    removeOpenTargetsListener()
   }
   disposeFileDrop()
   updateStore.dispose()

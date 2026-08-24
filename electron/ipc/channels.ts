@@ -49,7 +49,8 @@ export const IPC_CHANNELS = {
     RECOVERY_STATUS: 'recovery:status',
     RECOVERY_READ: 'recovery:read',
     RECOVERY_WRITE: 'recovery:write',
-    RECOVERY_CLEAR: 'recovery:clear'
+    RECOVERY_CLEAR: 'recovery:clear',
+    OPEN_TARGETS: 'app:open-targets'
   },
   WINDOW: {
     MINIMIZE: 'window:minimize',

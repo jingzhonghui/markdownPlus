@@ -3,6 +3,7 @@ import { IPC_CHANNELS } from './ipc/channels'
 import type { MdxAttachmentAsset, MdxDocument } from './mdx/schema'
 import type { UserGuideOpenResult } from './user-guide'
 import type { UpdateInfoPayload, UpdateProgressPayload } from './updater'
+import type { LaunchTarget } from './launch-target'
 import type {
   AiConfigInput,
   AiConfigView,
@@ -136,6 +137,8 @@ export interface ElectronAPI {
   readRecovery: () => Promise<{ success: boolean; data?: unknown; error?: string }>
   writeRecovery: (snapshot: unknown) => Promise<{ success: boolean; error?: string }>
   clearRecovery: () => Promise<{ success: boolean; error?: string }>
+  getOpenTargets: () => Promise<LaunchTarget[]>
+  onOpenTargets: (callback: (targets: LaunchTarget[]) => void) => () => void
 
   // 文件系统
   revealInExplorer: (filePath: string) => Promise<{ success: boolean; error?: string }>
@@ -246,6 +249,12 @@ const api: ElectronAPI = {
   readRecovery: () => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_READ),
   writeRecovery: (snapshot) => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_WRITE, snapshot),
   clearRecovery: () => ipcRenderer.invoke(IPC_CHANNELS.APP.RECOVERY_CLEAR),
+  getOpenTargets: () => ipcRenderer.invoke(IPC_CHANNELS.APP.OPEN_TARGETS),
+  onOpenTargets: (callback) => {
+    const handler = (_event: unknown, targets: LaunchTarget[]): void => callback(targets)
+    ipcRenderer.on(IPC_CHANNELS.APP.OPEN_TARGETS, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.APP.OPEN_TARGETS, handler)
+  },
 
   // 文件系统
   revealInExplorer: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.REVEAL_IN_EXPLORER, filePath),

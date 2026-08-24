@@ -75,6 +75,19 @@ jobs:
           GH_USER: ${{ github.actor }}
         run: ${{ matrix.build_cmd }}
 
+      - name: Verify Linux Chromium sandbox permissions
+        if: matrix.name == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sandbox_path="dist/linux-unpacked/chrome-sandbox"
+          test -f "$sandbox_path"
+          test "$(stat -c '%a' "$sandbox_path")" = "4755"
+          deb_path="$(find dist -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$deb_path"
+          deb_mode="$(dpkg-deb -c "$deb_path" | awk '/chrome-sandbox$/ {print $1; exit}')"
+          test "$deb_mode" = "-rwsr-xr-x"
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:

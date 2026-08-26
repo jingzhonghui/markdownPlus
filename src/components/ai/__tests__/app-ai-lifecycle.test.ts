@@ -14,12 +14,8 @@ const electronAPI = {
   onAiRunEvent: vi.fn(() => () => undefined),
   onUpdateAvailable: vi.fn(() => () => undefined),
   onUpdateNotAvailable: vi.fn(() => () => undefined),
-  onUpdateProgress: vi.fn(() => () => undefined),
-  onUpdateDownloaded: vi.fn(() => () => undefined),
   onUpdateError: vi.fn(() => () => undefined),
-  checkForUpdates: vi.fn(async () => ({ success: true })),
-  downloadUpdate: vi.fn(async () => ({ success: true })),
-  quitAndInstall: vi.fn(async () => ({ success: true }))
+  checkForUpdates: vi.fn(async () => ({ success: true }))
 }
 
 describe('App AI ownership', () => {

@@ -9,7 +9,7 @@ import { registerPdfHandlers } from './ipc/pdf-handlers'
 import { hadAbnormalExit, markAppRunning, readRecoverySnapshot, writeRecoverySnapshot, clearRecoverySnapshot } from './recovery'
 import { openUserGuide } from './user-guide'
 import { registerAiHandlers, disposeAiServices } from './ai/ipc-handlers'
-import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater'
+import { initUpdater, checkForUpdates, openReleasesPage } from './updater'
 import { inspectLaunchTarget, parseLaunchTargets, type LaunchTarget } from './launch-target'
 
 // AppImage is mounted via FUSE where the setuid bit cannot take effect, so the
@@ -181,13 +181,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
 
   // 自动更新 handlers
   ipcMain.handle(IPC_CHANNELS.UPDATE.CHECK, () => checkForUpdates())
-  ipcMain.handle(IPC_CHANNELS.UPDATE.DOWNLOAD, () => downloadUpdate())
-  ipcMain.handle(IPC_CHANNELS.UPDATE.QUIT_AND_INSTALL, () => {
-    // 绕过 window close 守卫（渲染层已确认无未保存修改）
-    setCloseConfirmed(true)
-    quitAndInstall()
-    return { success: true }
-  })
+  ipcMain.handle(IPC_CHANNELS.UPDATE.OPEN_RELEASES, () => openReleasesPage())
 
   markAppRunning()
 

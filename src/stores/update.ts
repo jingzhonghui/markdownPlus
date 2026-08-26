@@ -1,18 +1,18 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { UpdateInfo, UpdateProgress, UpdateStatus } from '../types/update'
+import type { UpdateInfo, UpdateStatus } from '../types/update'
 
 /**
- * 自动更新状态管理 Store
+ * 更新状态管理 Store
  *
  * 通过 preload 暴露的 electronAPI 与主进程 electron-updater 交互。
- * 主进程事件（available/not-available/progress/downloaded/error）驱动状态机。
+ * 仅检测更新、提示新版本；不自动下载，由用户点击按钮前往 GitHub 发布页手动下载。
+ * 主进程事件（available/not-available/error）驱动状态机。
  */
 export const useUpdateStore = defineStore('update', () => {
   // State
   const status = ref<UpdateStatus>('idle')
   const info = ref<UpdateInfo | null>(null)
-  const progress = ref<UpdateProgress | null>(null)
   const errorMessage = ref('')
   const dialogOpen = ref(false)
 
@@ -46,21 +46,6 @@ export const useUpdateStore = defineStore('update', () => {
       api.onUpdateNotAvailable(() => {
         status.value = 'not-available'
       }),
-      api.onUpdateProgress((payload) => {
-        progress.value = {
-          percent: payload.percent,
-          bytesPerSecond: payload.bytesPerSecond,
-          transferred: payload.transferred,
-          total: payload.total
-        }
-        status.value = 'downloading'
-      }),
-      api.onUpdateDownloaded((payload) => {
-        info.value = toInfo(payload)
-        progress.value = null
-        status.value = 'downloaded'
-        dialogOpen.value = true
-      }),
       api.onUpdateError((payload) => {
         errorMessage.value = payload.message
         status.value = 'error'
@@ -91,33 +76,24 @@ export const useUpdateStore = defineStore('update', () => {
   }
 
   /**
-   * 用户确认后下载更新
+   * 在系统浏览器中打开 GitHub 发布页（供用户手动下载安装包）
    */
-  async function confirmDownload(): Promise<void> {
+  async function openReleases(): Promise<void> {
     const api = window.electronAPI
     if (!api) {
       errorMessage.value = '当前环境不支持自动更新'
       status.value = 'error'
       return
     }
-    status.value = 'downloading'
-    progress.value = null
-    dialogOpen.value = true
-    const result = await api.downloadUpdate()
+    const result = await api.openReleasesPage()
     if (!result.success) {
-      errorMessage.value = result.error ?? '下载更新失败'
+      errorMessage.value = result.error ?? '打开发布页失败'
       status.value = 'error'
       dialogOpen.value = true
+      return
     }
-  }
-
-  /**
-   * 重启并安装更新（调用前需确认无未保存修改）
-   */
-  async function restartAndInstall(): Promise<void> {
-    const api = window.electronAPI
-    if (!api) return
-    await api.quitAndInstall()
+    dialogOpen.value = false
+    status.value = 'idle'
   }
 
   /**
@@ -143,13 +119,11 @@ export const useUpdateStore = defineStore('update', () => {
   return {
     status,
     info,
-    progress,
     errorMessage,
     dialogOpen,
     init,
     check,
-    confirmDownload,
-    restartAndInstall,
+    openReleases,
     dismiss,
     dispose
   }

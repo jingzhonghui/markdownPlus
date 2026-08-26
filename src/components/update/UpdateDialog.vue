@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useUpdateStore } from '../../stores/update'
-import { useFileStore } from '../../stores/file'
 import { renderMarkdown } from '../../utils/markdown'
 
 const updateStore = useUpdateStore()
-const fileStore = useFileStore()
 
 const releaseNotesHtml = computed(() => {
   const notes = updateStore.info?.releaseNotes
@@ -13,32 +11,8 @@ const releaseNotesHtml = computed(() => {
   return renderMarkdown(notes)
 })
 
-const percentage = computed(() => {
-  const p = updateStore.progress?.percent ?? 0
-  return Math.max(0, Math.min(100, Math.round(p)))
-})
-
-const speedText = computed(() => {
-  const speed = updateStore.progress?.bytesPerSecond ?? 0
-  return `${formatBytes(speed)}/s`
-})
-
-function formatBytes(bytes: number): string {
-  if (!bytes || bytes <= 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-}
-
 async function handleDownload(): Promise<void> {
-  await updateStore.confirmDownload()
-}
-
-async function handleRestart(): Promise<void> {
-  const canClose = await fileStore.confirmSaveBeforeClose()
-  if (!canClose) return
-  fileStore.cleanupTimers()
-  await updateStore.restartAndInstall()
+  await updateStore.openReleases()
 }
 </script>
 
@@ -78,55 +52,7 @@ async function handleRestart(): Promise<void> {
               class="update-btn update-btn-confirm"
               @click="handleDownload"
             >
-              立即更新
-            </button>
-          </div>
-        </template>
-
-        <!-- 下载中 -->
-        <template v-else-if="updateStore.status === 'downloading'">
-          <h3>正在下载更新</h3>
-          <p class="update-version">
-            v{{ updateStore.info?.version }}
-          </p>
-          <div class="update-progress-track">
-            <div :style="{ width: percentage + '%' }" />
-          </div>
-          <div class="update-progress-meta">
-            <span>{{ percentage }}%</span>
-            <span>{{ speedText }}</span>
-          </div>
-          <div class="update-actions">
-            <button
-              type="button"
-              class="update-btn update-btn-cancel"
-              @click="updateStore.dismiss"
-            >
-              后台下载
-            </button>
-          </div>
-        </template>
-
-        <!-- 下载完成 -->
-        <template v-else-if="updateStore.status === 'downloaded'">
-          <h3>更新已就绪</h3>
-          <p class="update-message">
-            新版本 v{{ updateStore.info?.version }} 已下载完成，重启应用即可完成安装。
-          </p>
-          <div class="update-actions">
-            <button
-              type="button"
-              class="update-btn update-btn-cancel"
-              @click="updateStore.dismiss"
-            >
-              稍后
-            </button>
-            <button
-              type="button"
-              class="update-btn update-btn-confirm"
-              @click="handleRestart"
-            >
-              重启并安装
+              前往下载
             </button>
           </div>
         </template>
@@ -202,27 +128,6 @@ async function handleRestart(): Promise<void> {
   color: var(--color-text-secondary);
   background: var(--color-bg-secondary);
   border-radius: var(--radius-md);
-}
-
-.update-progress-track {
-  height: 8px;
-  overflow: hidden;
-  background: var(--color-bg-tertiary);
-  border-radius: 4px;
-}
-
-.update-progress-track > div {
-  height: 100%;
-  background: var(--color-primary);
-  transition: width 0.2s ease;
-}
-
-.update-progress-meta {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
 }
 
 .update-actions {

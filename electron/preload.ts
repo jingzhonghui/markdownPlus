@@ -2,7 +2,7 @@ import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC_CHANNELS } from './ipc/channels'
 import type { MdxAttachmentAsset, MdxDocument } from './mdx/schema'
 import type { UserGuideOpenResult } from './user-guide'
-import type { UpdateInfoPayload, UpdateProgressPayload } from './updater'
+import type { UpdateInfoPayload } from './updater'
 import type { LaunchTarget } from './launch-target'
 import type {
   AiConfigInput,
@@ -16,7 +16,7 @@ import type {
   ToolExecutionResult
 } from '../shared/ai/types'
 
-export type { UpdateInfoPayload, UpdateProgressPayload }
+export type { UpdateInfoPayload }
 
 export { IPC_CHANNELS }
 
@@ -154,12 +154,9 @@ export interface ElectronAPI {
 
   // 自动更新
   checkForUpdates: () => Promise<{ success: boolean; error?: string }>
-  downloadUpdate: () => Promise<{ success: boolean; error?: string }>
-  quitAndInstall: () => Promise<{ success: boolean; error?: string }>
+  openReleasesPage: () => Promise<{ success: boolean; error?: string }>
   onUpdateAvailable: (callback: (info: UpdateInfoPayload) => void) => () => void
   onUpdateNotAvailable: (callback: (info: UpdateInfoPayload) => void) => () => void
-  onUpdateProgress: (callback: (progress: UpdateProgressPayload) => void) => () => void
-  onUpdateDownloaded: (callback: (info: UpdateInfoPayload) => void) => () => void
   onUpdateError: (callback: (error: { message: string }) => void) => () => void
 
   // AI 助手
@@ -279,8 +276,7 @@ const api: ElectronAPI = {
 
   // 自动更新
   checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE.CHECK),
-  downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE.DOWNLOAD),
-  quitAndInstall: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE.QUIT_AND_INSTALL),
+  openReleasesPage: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE.OPEN_RELEASES),
   onUpdateAvailable: (callback) => {
     const handler = (_event: unknown, info: UpdateInfoPayload): void => callback(info)
     ipcRenderer.on(IPC_CHANNELS.UPDATE.AVAILABLE, handler)
@@ -290,16 +286,6 @@ const api: ElectronAPI = {
     const handler = (_event: unknown, info: UpdateInfoPayload): void => callback(info)
     ipcRenderer.on(IPC_CHANNELS.UPDATE.NOT_AVAILABLE, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE.NOT_AVAILABLE, handler)
-  },
-  onUpdateProgress: (callback) => {
-    const handler = (_event: unknown, progress: UpdateProgressPayload): void => callback(progress)
-    ipcRenderer.on(IPC_CHANNELS.UPDATE.PROGRESS, handler)
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE.PROGRESS, handler)
-  },
-  onUpdateDownloaded: (callback) => {
-    const handler = (_event: unknown, info: UpdateInfoPayload): void => callback(info)
-    ipcRenderer.on(IPC_CHANNELS.UPDATE.DOWNLOADED, handler)
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE.DOWNLOADED, handler)
   },
   onUpdateError: (callback) => {
     const handler = (_event: unknown, error: { message: string }): void => callback(error)

@@ -6,12 +6,9 @@ type Listener = (payload?: unknown) => void
 
 interface MockApi {
   checkForUpdates: ReturnType<typeof vi.fn>
-  downloadUpdate: ReturnType<typeof vi.fn>
-  quitAndInstall: ReturnType<typeof vi.fn>
+  openReleasesPage: ReturnType<typeof vi.fn>
   onUpdateAvailable: (cb: Listener) => () => void
   onUpdateNotAvailable: (cb: Listener) => () => void
-  onUpdateProgress: (cb: Listener) => () => void
-  onUpdateDownloaded: (cb: Listener) => () => void
   onUpdateError: (cb: Listener) => () => void
   handlers: Record<string, Listener>
 }
@@ -26,12 +23,9 @@ function createMockApi(): MockApi {
   }
   return {
     checkForUpdates: vi.fn(),
-    downloadUpdate: vi.fn(),
-    quitAndInstall: vi.fn(),
+    openReleasesPage: vi.fn(),
     onUpdateAvailable: makeListener('available'),
     onUpdateNotAvailable: makeListener('not-available'),
-    onUpdateProgress: makeListener('progress'),
-    onUpdateDownloaded: makeListener('downloaded'),
     onUpdateError: makeListener('error'),
     handlers
   }
@@ -60,28 +54,6 @@ describe('update store', () => {
     expect(store.dialogOpen).toBe(true)
     expect(store.info?.version).toBe('2.0.0')
     expect(store.info?.releaseNotes).toBe('# 更新日志')
-  })
-
-  it('updates progress and status on progress event', () => {
-    const store = useUpdateStore()
-    store.init()
-
-    api.handlers.progress({ percent: 42.5, bytesPerSecond: 1024, transferred: 1024, total: 2048 })
-
-    expect(store.status).toBe('downloading')
-    expect(store.progress?.percent).toBe(42.5)
-    expect(store.progress?.total).toBe(2048)
-  })
-
-  it('opens the dialog on downloaded event', () => {
-    const store = useUpdateStore()
-    store.init()
-
-    api.handlers.downloaded({ version: '2.0.0' })
-
-    expect(store.status).toBe('downloaded')
-    expect(store.dialogOpen).toBe(true)
-    expect(store.progress).toBeNull()
   })
 
   it('sets error status and message on error event', () => {
@@ -129,16 +101,30 @@ describe('update store', () => {
     expect(store.status).toBe('idle')
   })
 
-  it('confirmDownload sets downloading and invokes downloadUpdate', async () => {
+  it('openReleases opens the releases page and closes the dialog on success', async () => {
     const store = useUpdateStore()
     store.init()
-    api.downloadUpdate.mockResolvedValue({ success: true })
+    api.handlers.available({ version: '2.0.0' })
+    api.openReleasesPage.mockResolvedValue({ success: true })
 
-    const promise = store.confirmDownload()
+    await store.openReleases()
 
-    expect(store.status).toBe('downloading')
-    await promise
-    expect(api.downloadUpdate).toHaveBeenCalledTimes(1)
+    expect(api.openReleasesPage).toHaveBeenCalledTimes(1)
+    expect(store.dialogOpen).toBe(false)
+    expect(store.status).toBe('idle')
+  })
+
+  it('openReleases keeps the dialog open and shows an error on failure', async () => {
+    const store = useUpdateStore()
+    store.init()
+    api.handlers.available({ version: '2.0.0' })
+    api.openReleasesPage.mockResolvedValue({ success: false, error: '打开发布页失败' })
+
+    await store.openReleases()
+
+    expect(store.status).toBe('error')
+    expect(store.errorMessage).toBe('打开发布页失败')
+    expect(store.dialogOpen).toBe(true)
   })
 
   it('dispose unregisters all event listeners', () => {

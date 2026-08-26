@@ -62,12 +62,9 @@ export const IPC_CHANNELS = {
   },
   UPDATE: {
     CHECK: 'update:check',
-    DOWNLOAD: 'update:download',
-    QUIT_AND_INSTALL: 'update:quitAndInstall',
+    OPEN_RELEASES: 'update:openReleases',
     AVAILABLE: 'update:available',
     NOT_AVAILABLE: 'update:not-available',
-    PROGRESS: 'update:progress',
-    DOWNLOADED: 'update:downloaded',
     ERROR: 'update:error'
   },
   DIALOG: {

@@ -9,11 +9,82 @@ import { MarkdownParser, MarkdownSerializer, MarkdownSerializerState } from 'pro
 import { markdownSchema } from './schema'
 
 /**
+ * markdown-it 规则：把相邻的、marker 重新开始的有序列表拆分为独立列表。
+ * CommonMark 会把 `1. a\n2. b\n\n1. c\n2. d` 合并为一个列表，导致第二个列表
+ * 的起始序号丢失（显示 3、4）。该规则根据 list_item 的 marker 数字判断：
+ * 当后一项的 marker 数字 ≤ 前一项时（如 2 后面的 1），视为新列表开始。
+ */
+export function applyAdjacentOrderedListSplit(md: MarkdownIt): void {
+  md.core.ruler.push('split_adjacent_ordered_lists', (state) => {
+    const lines = state.src.split('\n')
+    const tokens = state.tokens
+    const result: typeof tokens = []
+    let i = 0
+    while (i < tokens.length) {
+      const token = tokens[i]
+      if (token.type !== 'ordered_list_open') {
+        result.push(token)
+        i++
+        continue
+      }
+
+      // 收集整个列表 token 组
+      const group = [token]
+      let level = 1
+      let j = i + 1
+      while (j < tokens.length && level > 0) {
+        const cur = tokens[j]
+        group.push(cur)
+        if (cur.type === 'ordered_list_open' || cur.type === 'bullet_list_open') level++
+        if (cur.type === 'ordered_list_close' || cur.type === 'bullet_list_close') level--
+        j++
+      }
+
+      // 提取顶层 list_item 的 marker 数字
+      let lvl = 0
+      const items: Array<{ gi: number; marker: number }> = []
+      for (let k = 0; k < group.length; k++) {
+        const g = group[k]
+        if (g.type === 'ordered_list_open' || g.type === 'bullet_list_open') lvl++
+        if (g.type === 'list_item_open' && lvl === 1) {
+          const m = /^\s*(\d+)[.)]/.exec(lines[g.map?.[0] ?? 0] || '')
+          items.push({ gi: k, marker: m ? parseInt(m[1], 10) : 0 })
+        }
+        if (g.type === 'ordered_list_close' || g.type === 'bullet_list_close') lvl--
+      }
+
+      // 拆分点：marker 重新开始
+      const splits: number[] = []
+      for (let k = 1; k < items.length; k++) {
+        if (items[k].marker <= items[k - 1].marker) splits.push(items[k].gi)
+      }
+
+      let start = 0
+      for (const sg of splits) {
+        result.push(...group.slice(start, sg))
+        const close = new state.Token('ordered_list_close', 'ol', -1)
+        result.push(close)
+        const open = new state.Token('ordered_list_open', 'ol', 1)
+        const first = group[sg]
+        open.map = first.map ? [first.map[0], first.map[1]] : null
+        open.attrSet('start', String(items.find((x) => x.gi === sg)?.marker ?? 1))
+        result.push(open)
+        start = sg
+      }
+      result.push(...group.slice(start))
+      i = j
+    }
+    state.tokens = result
+  })
+}
+
+/**
  * 创建 MarkdownIt 实例
  */
 function createMarkdownIt(): MarkdownIt {
   const md = MarkdownIt('commonmark', { html: false })
   md.enable('table')
+  applyAdjacentOrderedListSplit(md)
 
   // 行内数学公式规则 $...$
   md.inline.ruler.after('escape', 'math_inline', (state, silent) => {
@@ -257,13 +328,14 @@ function createMarkdownSerializer(_schema: Schema): MarkdownSerializer {
         state.render(row, node, i)
         // 首行若是表头，追加 GFM 分隔行
         if (i === 0 && row.firstChild?.type.name === 'table_header') {
-          const aligns: string[] = []
-          row.forEach((cell) => {
-            const a = cell.attrs.align as string | null
-            if (a === 'center') aligns.push(':---:')
-            else if (a === 'right') aligns.push('---:')
-            else aligns.push('---')
-          })
+            const aligns: string[] = []
+            row.forEach((cell) => {
+              const a = cell.attrs.align as string | null
+              if (a === 'left') aligns.push(':---')
+              else if (a === 'center') aligns.push(':---:')
+              else if (a === 'right') aligns.push('---:')
+              else aligns.push('---')
+            })
           if (aligns.length > 0) {
             state.write('| ' + aligns.join(' | ') + ' |')
             state.ensureNewLine()

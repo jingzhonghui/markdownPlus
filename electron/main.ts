@@ -20,7 +20,7 @@ if (process.env.APPIMAGE) {
 }
 
 let mainWindow: BrowserWindow | null = null
-let pendingOpenTargets: LaunchTarget[] = []
+const pendingOpenTargets: LaunchTarget[] = []
 let rendererReady = false
 
 function flushOpenTargets(): void {

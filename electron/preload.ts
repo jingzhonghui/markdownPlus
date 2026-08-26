@@ -87,6 +87,7 @@ export interface ElectronAPI {
   // 剪贴板
   clipboardReadText: () => Promise<string>
   clipboardWriteText: (text: string) => Promise<void>
+  clipboardWriteTable: (data: { text: string; html: string }) => Promise<void>
 
   // 拖放文件路径
   getPathForFile: (file: File) => string
@@ -197,6 +198,7 @@ const api: ElectronAPI = {
   // 剪贴板
   clipboardReadText: async () => clipboard.readText(),
   clipboardWriteText: async (text) => clipboard.writeText(text),
+  clipboardWriteTable: async (data) => clipboard.write(data),
 
   // 拖放文件路径
   getPathForFile: (file) => webUtils.getPathForFile(file),

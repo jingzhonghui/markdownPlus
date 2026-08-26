@@ -26,6 +26,7 @@ import {
   createIRPlugin,
   irPluginKey,
   createPastePlugin,
+  getListClipboard,
 } from '../../utils/prosemirror'
 import type { IRPluginState } from '../../utils/prosemirror'
 import { NodeSelection, Selection, TextSelection } from 'prosemirror-state'
@@ -47,6 +48,8 @@ import {
   deleteRow,
   deleteTable,
   isInTable,
+  selectedRect,
+  cellAround,
 } from 'prosemirror-tables'
 
 class MathInlineView implements NodeView {
@@ -115,9 +118,17 @@ const themeStore = useThemeStore()
 const { fileContent, activeTabId } = storeToRefs(fileStore)
 const containerRef = ref<HTMLDivElement>()
 const editorRef = ref<HTMLDivElement>()
+const tableToolbarRef = ref<HTMLDivElement>()
 const viewRef = shallowRef<EditorView | null>(null)
 let editorTabId: string | null = null
 const isDragging = ref(false)
+const tableToolbar = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  tablePos: -1,
+  align: null as 'left' | 'center' | 'right' | null
+})
 const showMarkers = ref(false)
 const shikiHighlighter = shallowRef<Highlighter | null>(null)
 let highlightRequest = 0
@@ -378,6 +389,119 @@ function closeContextMenu() {
   contextMenu.activeSubmenu = null
 }
 
+function hideTableToolbar(): void {
+  tableToolbar.visible = false
+  tableToolbar.tablePos = -1
+  tableToolbar.align = null
+}
+
+function getTableContext(view: EditorView): { pos: number; node: ProseMirrorNode } | null {
+  const cell = cellAround(view.state.selection.$from)
+  if (!cell) return null
+  const table = cell.node(-1)
+  return { pos: cell.start(-1) - 1, node: table }
+}
+
+function getTableAlign(table: ProseMirrorNode): 'left' | 'center' | 'right' | null {
+  const firstRow = table.firstChild
+  const firstCell = firstRow?.firstChild
+  const align = firstCell?.attrs.align
+  return align === 'left' || align === 'center' || align === 'right' ? align : null
+}
+
+function updateTableToolbar(view: EditorView): void {
+  const context = getTableContext(view)
+  if (!context || !containerRef.value || !editorRef.value) {
+    hideTableToolbar()
+    return
+  }
+
+  const tableElement = view.nodeDOM(context.pos) as HTMLElement | null
+  if (!tableElement) {
+    hideTableToolbar()
+    return
+  }
+
+  const containerRect = containerRef.value.getBoundingClientRect()
+  const tableRect = tableElement.getBoundingClientRect()
+  const scrollTop = containerRef.value.scrollTop || 0
+  const scrollLeft = containerRef.value.scrollLeft || 0
+  const toolbarWidth = tableToolbarRef.value?.offsetWidth || 196
+  const toolbarHeight = tableToolbarRef.value?.offsetHeight || 36
+  const gap = 6
+  const maxX = Math.max(8, containerRect.width - toolbarWidth - 8)
+  const x = Math.min(Math.max(8, tableRect.left - containerRect.left + scrollLeft), maxX)
+  const aboveY = tableRect.top - containerRect.top + scrollTop - toolbarHeight - gap
+  const belowY = tableRect.bottom - containerRect.top + scrollTop + gap
+
+  tableToolbar.visible = true
+  tableToolbar.x = x
+  tableToolbar.y = aboveY >= 8 ? aboveY : belowY
+  tableToolbar.tablePos = context.pos
+  tableToolbar.align = getTableAlign(context.node)
+}
+
+function handleTableToolbarLayout(): void {
+  const view = viewRef.value
+  if (view) updateTableToolbar(view)
+}
+
+function setTableAlign(view: EditorView, align: 'left' | 'center' | 'right'): void {
+  const context = getTableContext(view)
+  if (!context) return
+  let tr = view.state.tr
+  context.node.descendants((node, pos) => {
+    if (node.type.name === 'table_cell' || node.type.name === 'table_header') {
+      tr = tr.setNodeMarkup(context.pos + 1 + pos, undefined, { ...node.attrs, align })
+    }
+    return true
+  })
+  view.dispatch(tr)
+  view.focus()
+  nextTick(() => updateTableToolbar(view))
+}
+
+function escapeHtmlForClipboard(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function tableToHtml(table: ProseMirrorNode): string {
+  const rows: string[] = []
+  table.forEach((row) => {
+    const cells: string[] = []
+    row.forEach((cell) => {
+      const tag = cell.type.name === 'table_header' ? 'th' : 'td'
+      const align = cell.attrs.align as string | null
+      const styleAttr = align ? ` style="text-align:${align}"` : ''
+      cells.push(`<${tag}${styleAttr}>${escapeHtmlForClipboard(cell.textContent)}</${tag}>`)
+    })
+    rows.push(`<tr>${cells.join('')}</tr>`)
+  })
+  return `<table><tbody>${rows.join('')}</tbody></table>`
+}
+
+async function copyCurrentTable(view: EditorView): Promise<void> {
+  const context = getTableContext(view)
+  if (!context) return
+  const markdown = serializeMarkdown(view.state.schema.node('doc', null, [context.node])).trim()
+  const html = tableToHtml(context.node)
+  await window.electronAPI?.clipboardWriteTable?.({ text: markdown, html })
+  view.focus()
+}
+
+function deleteCurrentTable(view: EditorView): void {
+  const context = getTableContext(view)
+  if (!context) return
+  const tableEnd = context.pos + context.node.nodeSize
+  view.dispatch(view.state.tr.delete(context.pos, tableEnd))
+  hideTableToolbar()
+  view.focus()
+}
+
 // 计算菜单位置，确保在屏幕边界内
 function calculateMenuPosition(x: number, y: number, menuHeight: number = 80): { x: number; y: number } {
   // 菜单预估尺寸
@@ -415,6 +539,14 @@ function buildTableMenuItems(view: EditorView): ContextMenuItem[] {
   const { state } = view
   if (!isInTable(state)) return []
 
+  const currentAlign = getCurrentColumnAlign(state)
+  const check = (align: string) => (currentAlign === align ? '✓ ' : '')
+  const alignItems: ContextMenuItem[] = [
+    { label: check('left') + '左对齐', action: () => setColumnAlign(view, 'left') },
+    { label: check('center') + '居中对齐', action: () => setColumnAlign(view, 'center') },
+    { label: check('right') + '右对齐', action: () => setColumnAlign(view, 'right') },
+  ]
+
   return [
     ...buildHistoryMenuItems(view),
     { label: '在左侧插入列', action: () => { addColumnBefore(state, view.dispatch); view.focus() } },
@@ -425,6 +557,8 @@ function buildTableMenuItems(view: EditorView): ContextMenuItem[] {
     { label: '', action: () => {}, divider: true },
     { label: '删除当前列', action: () => { deleteColumn(state, view.dispatch); view.focus() } },
     { label: '删除当前行', action: () => { deleteRow(state, view.dispatch); view.focus() } },
+    { label: '', action: () => {}, divider: true },
+    { label: '对齐', children: alignItems },
     { label: '', action: () => {}, divider: true },
     { label: '删除表格', action: () => { deleteTable(state, view.dispatch); view.focus() } },
   ]
@@ -534,6 +668,32 @@ function handleEditorBlankContextMenu(event: MouseEvent): void {
   contextMenu.x = pos.x
   contextMenu.y = pos.y
   contextMenu.visible = true
+}
+
+// 复制/剪切有序列表时，将带序号的纯文本写入剪贴板
+function handleListCopy(view: EditorView, event: Event, isCut: boolean): boolean {
+  const result = getListClipboard(view.state)
+  if (!result) return false
+  const clipboardEvent = event as ClipboardEvent
+  if (!clipboardEvent.clipboardData) return false
+  clipboardEvent.clipboardData.setData('text/plain', result.text)
+  clipboardEvent.clipboardData.setData('text/html', result.html)
+  clipboardEvent.preventDefault()
+  if (isCut) {
+    view.dispatch(view.state.tr.deleteSelection())
+  }
+  return true
+}
+
+function createListClipboardPlugin(): ProseMirrorPlugin {
+  return new ProseMirrorPlugin({
+    props: {
+      handleDOMEvents: {
+        copy: (view, event) => handleListCopy(view, event, false),
+        cut: (view, event) => handleListCopy(view, event, true),
+      },
+    },
+  })
 }
 
 // 右键菜单插件
@@ -663,6 +823,7 @@ function createEditorState(content: string): EditorState {
     createIRPlugin(),
     createCodeHighlightPlugin(),
     createContextMenuPlugin(),
+    createListClipboardPlugin(),
   ]
   return EditorState.create({ doc, plugins })
 }
@@ -781,6 +942,7 @@ function initEditor(): void {
       view.updateState(view.state.apply(tr))
       syncShowMarkers()
       if (selectionChanged) publishSelectionFromProseMirror()
+      nextTick(() => updateTableToolbar(view))
       if (!view.hasFocus()) view.focus()
     },
     attributes: {
@@ -945,6 +1107,44 @@ function applyAndSync(view: EditorView, tr: any): void {
   syncShowMarkers()
 }
 
+/**
+ * 获取光标所在列的对齐方式（用于右键菜单勾选显示）
+ */
+function getCurrentColumnAlign(state: EditorState): 'left' | 'center' | 'right' | null {
+  if (!isInTable(state)) return null
+  const rect = selectedRect(state)
+  const cells = rect.map.cellsInRect({ left: rect.left, top: 0, right: rect.left + 1, bottom: rect.map.height })
+  if (cells.length === 0) return null
+  const node = state.doc.nodeAt(rect.tableStart + cells[0])
+  return (node?.attrs.align as 'left' | 'center' | 'right') || null
+}
+
+/**
+ * 设置光标所在列（或选中的多列）的对齐方式
+ */
+function setColumnAlign(view: EditorView, align: 'left' | 'center' | 'right'): void {
+  const { state } = view
+  if (!isInTable(state)) return
+  const rect = selectedRect(state)
+  const { map, tableStart } = rect
+  const { doc } = state
+  let tr = state.tr
+  const seen = new Set<number>()
+  for (let col = rect.left; col < rect.right; col++) {
+    const cells = map.cellsInRect({ left: col, top: 0, right: col + 1, bottom: map.height })
+    for (const tablePos of cells) {
+      const pos = tableStart + tablePos
+      if (seen.has(pos)) continue
+      seen.add(pos)
+      const node = doc.nodeAt(pos)
+      if (!node) continue
+      tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, align })
+    }
+  }
+  view.dispatch(tr)
+  view.focus()
+}
+
 function insertTableNode(): void {
   const view = viewRef.value
   if (!view) return
@@ -1104,6 +1304,7 @@ onMounted(() => {
   if (container) {
     container.addEventListener('mousedown', handleEditorBlankMouseDown)
     container.addEventListener('contextmenu', handleEditorBlankContextMenu)
+    container.addEventListener('scroll', handleTableToolbarLayout, { passive: true })
   }
   window.addEventListener('editor:format', handleFormatEvent)
   window.addEventListener('editor:heading', handleHeadingEvent)
@@ -1127,9 +1328,11 @@ onMounted(() => {
     view.dom.addEventListener('mousedown', focusEditor)
   }
   window.addEventListener('focus', focusEditor)
+  window.addEventListener('resize', handleTableToolbarLayout)
   nextTick(() => {
     loadEditorImages()
     focusEditor()
+    if (viewRef.value) updateTableToolbar(viewRef.value)
   })
 })
 
@@ -1152,6 +1355,7 @@ onUnmounted(() => {
   if (container) {
     container.removeEventListener('mousedown', handleEditorBlankMouseDown)
     container.removeEventListener('contextmenu', handleEditorBlankContextMenu)
+    container.removeEventListener('scroll', handleTableToolbarLayout)
   }
   window.removeEventListener('editor:format', handleFormatEvent)
   window.removeEventListener('editor:heading', handleHeadingEvent)
@@ -1169,6 +1373,7 @@ onUnmounted(() => {
   window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
   window.removeEventListener('blur', closeContextMenu)
   window.removeEventListener('focus', focusEditor)
+  window.removeEventListener('resize', handleTableToolbarLayout)
   view?.dom.removeEventListener('mousedown', focusEditor)
   view?.destroy()
   viewRef.value = null
@@ -1194,6 +1399,100 @@ defineExpose({
     :class="{ dragging: isDragging, 'ir-show-markers': showMarkers }"
   >
     <div
+      v-if="tableToolbar.visible"
+      ref="tableToolbarRef"
+      class="table-toolbar"
+      :style="{ left: `${tableToolbar.x}px`, top: `${tableToolbar.y}px` }"
+      @mousedown.stop.prevent
+    >
+      <button
+        class="table-toolbar-btn"
+        :class="{ active: tableToolbar.align === 'left' }"
+        title="整张表格左对齐"
+        aria-label="整张表格左对齐"
+        @click="viewRef && setTableAlign(viewRef, 'left')"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M4 6h16M4 10h11M4 14h16M4 18h11" />
+        </svg>
+      </button>
+      <button
+        class="table-toolbar-btn"
+        :class="{ active: tableToolbar.align === 'center' }"
+        title="整张表格居中对齐"
+        aria-label="整张表格居中对齐"
+        @click="viewRef && setTableAlign(viewRef, 'center')"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M4 6h16M7 10h10M4 14h16M7 18h10" />
+        </svg>
+      </button>
+      <button
+        class="table-toolbar-btn"
+        :class="{ active: tableToolbar.align === 'right' }"
+        title="整张表格右对齐"
+        aria-label="整张表格右对齐"
+        @click="viewRef && setTableAlign(viewRef, 'right')"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M4 6h16M9 10h11M4 14h16M9 18h11" />
+        </svg>
+      </button>
+      <span class="table-toolbar-divider" />
+      <button
+        class="table-toolbar-btn"
+        title="复制整张表格"
+        aria-label="复制整张表格"
+        @click="viewRef && void copyCurrentTable(viewRef)"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <rect
+            x="9"
+            y="9"
+            width="11"
+            height="11"
+            rx="2"
+          />
+          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+        </svg>
+      </button>
+      <button
+        class="table-toolbar-btn danger"
+        title="删除整张表格"
+        aria-label="删除整张表格"
+        @click="viewRef && deleteCurrentTable(viewRef)"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" />
+        </svg>
+      </button>
+    </div>
+    <div
       ref="editorRef"
       class="ir-editor-wrapper"
     />
@@ -1218,6 +1517,52 @@ defineExpose({
 .ir-container.dragging .ir-editor-wrapper {
   background-color: var(--color-primary-light);
   border: 2px dashed var(--color-primary);
+}
+.table-toolbar {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 4px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 14%);
+}
+.table-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.table-toolbar-btn:hover,
+.table-toolbar-btn.active {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+.table-toolbar-btn.danger:hover {
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+}
+.table-toolbar-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.table-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: var(--color-border);
 }
 .ir-editor-wrapper {
   min-height: 100%;
@@ -1464,6 +1809,13 @@ defineExpose({
   background: var(--color-bg-secondary);
   font-weight: 600;
 }
+/* 表格列对齐 */
+.ir-editor-wrapper :deep(.ProseMirror td[align="left"]),
+.ir-editor-wrapper :deep(.ProseMirror th[align="left"]) { text-align: left; }
+.ir-editor-wrapper :deep(.ProseMirror td[align="center"]),
+.ir-editor-wrapper :deep(.ProseMirror th[align="center"]) { text-align: center; }
+.ir-editor-wrapper :deep(.ProseMirror td[align="right"]),
+.ir-editor-wrapper :deep(.ProseMirror th[align="right"]) { text-align: right; }
 /* 移除了 columnResizing 插件，不再显示 resize handle */
 .ir-editor-wrapper :deep(.ProseMirror .selectedCell):after {
   z-index: 2;

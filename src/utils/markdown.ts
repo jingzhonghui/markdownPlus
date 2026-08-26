@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it'
 import katex from 'katex'
 import type { MdxImageAsset } from '../types/mdx'
+import { applyAdjacentOrderedListSplit } from './prosemirror/markdown'
 
 // Markdown-it 实例
 let md: MarkdownIt | null = null
@@ -133,6 +134,9 @@ export function getMarkdownIt(): MarkdownIt {
 
     // 添加 GFM 支持
     md.enable(['table', 'strikethrough'])
+
+    // 相邻的有序列表拆分为独立列表
+    applyAdjacentOrderedListSplit(md)
 
     // 数学公式支持
     md.use(mathPlugin)

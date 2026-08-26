@@ -10,6 +10,9 @@ export type { NodeSpec, MarkSpec } from 'prosemirror-model'
 // Markdown 转换
 export { parseMarkdown, serializeMarkdown, markdownParser, markdownSerializer } from './markdown'
 
+// 列表剪贴板
+export { getListClipboard } from './list-clipboard'
+
 // 键盘快捷键和命令
 export {
   buildKeymap,

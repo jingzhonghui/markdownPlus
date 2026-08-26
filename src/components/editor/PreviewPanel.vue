@@ -394,6 +394,14 @@ defineExpose({
   text-decoration: underline;
 }
 
+.preview-content :deep(ul) {
+  list-style-type: disc;
+}
+
+.preview-content :deep(ol) {
+  list-style-type: decimal;
+}
+
 .preview-content :deep(ul),
 .preview-content :deep(ol) {
   margin: 0 0 16px;

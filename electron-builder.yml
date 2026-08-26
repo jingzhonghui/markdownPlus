@@ -45,7 +45,7 @@ nsis:
   artifactName: '${productName}-${arch}-${version}-Setup.${ext}'
   oneClick: false
   perMachine: false
-  allowElevation: false
+  allowElevation: true
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   include: build/windows-shell.nsh

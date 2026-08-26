@@ -28,22 +28,22 @@ Function MarkdownPlusLoadOptions
   StrCpy $FileContextState 1
   StrCpy $FolderContextState 0
   ClearErrors
-  ReadRegDWORD $0 HKCU ${MP_OPTIONS_KEY} AssociateMdx
+  ReadRegDWORD $0 SHCTX ${MP_OPTIONS_KEY} AssociateMdx
   ${IfNot} ${Errors}
     StrCpy $AssociateMdxState $0
   ${EndIf}
   ClearErrors
-  ReadRegDWORD $0 HKCU ${MP_OPTIONS_KEY} AssociateMd
+  ReadRegDWORD $0 SHCTX ${MP_OPTIONS_KEY} AssociateMd
   ${IfNot} ${Errors}
     StrCpy $AssociateMdState $0
   ${EndIf}
   ClearErrors
-  ReadRegDWORD $0 HKCU ${MP_OPTIONS_KEY} FileContextMenu
+  ReadRegDWORD $0 SHCTX ${MP_OPTIONS_KEY} FileContextMenu
   ${IfNot} ${Errors}
     StrCpy $FileContextState $0
   ${EndIf}
   ClearErrors
-  ReadRegDWORD $0 HKCU ${MP_OPTIONS_KEY} FolderContextMenu
+  ReadRegDWORD $0 SHCTX ${MP_OPTIONS_KEY} FolderContextMenu
   ${IfNot} ${Errors}
     StrCpy $FolderContextState $0
   ${EndIf}
@@ -89,49 +89,49 @@ Function MarkdownPlusOptionsLeave
   ${NSD_GetState} $AssociateMdCheckbox $AssociateMdState
   ${NSD_GetState} $FileContextCheckbox $FileContextState
   ${NSD_GetState} $FolderContextCheckbox $FolderContextState
-  WriteRegDWORD HKCU ${MP_OPTIONS_KEY} AssociateMdx $AssociateMdxState
-  WriteRegDWORD HKCU ${MP_OPTIONS_KEY} AssociateMd $AssociateMdState
-  WriteRegDWORD HKCU ${MP_OPTIONS_KEY} FileContextMenu $FileContextState
-  WriteRegDWORD HKCU ${MP_OPTIONS_KEY} FolderContextMenu $FolderContextState
+  WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} AssociateMdx $AssociateMdxState
+  WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} AssociateMd $AssociateMdState
+  WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} FileContextMenu $FileContextState
+  WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} FolderContextMenu $FolderContextState
 FunctionEnd
 !endif
 
 !macro MarkdownPlusWriteFileAssociation extension progid description
-  WriteRegStr HKCU "Software\Classes\${extension}" "" "${progid}"
-  WriteRegStr HKCU "Software\Classes\${progid}" "" "${description}"
-  WriteRegStr HKCU "Software\Classes\${progid}\DefaultIcon" "" "$appExe,0"
-  WriteRegStr HKCU "Software\Classes\${progid}\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHCTX "Software\Classes\${extension}" "" "${progid}"
+  WriteRegStr SHCTX "Software\Classes\${progid}" "" "${description}"
+  WriteRegStr SHCTX "Software\Classes\${progid}\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHCTX "Software\Classes\${progid}\shell\open\command" "" '"$appExe" "%1"'
 !macroend
 
 !macro MarkdownPlusRemoveFileAssociation extension progid
-  ReadRegStr $0 HKCU "Software\Classes\${extension}" ""
+  ReadRegStr $0 SHCTX "Software\Classes\${extension}" ""
   ${If} $0 == "${progid}"
-    DeleteRegValue HKCU "Software\Classes\${extension}" ""
+    DeleteRegValue SHCTX "Software\Classes\${extension}" ""
   ${EndIf}
-  DeleteRegKey HKCU "Software\Classes\${progid}"
+  DeleteRegKey SHCTX "Software\Classes\${progid}"
 !macroend
 
 !macro MarkdownPlusRestoreFileAssociation extension progid backupName
-  ReadRegStr $0 HKCU "Software\Classes\${extension}" ""
+  ReadRegStr $0 SHCTX "Software\Classes\${extension}" ""
   ${If} $0 == "${progid}"
-    ReadRegStr $1 HKCU ${MP_OPTIONS_KEY} ${backupName}
+    ReadRegStr $1 SHCTX ${MP_OPTIONS_KEY} ${backupName}
     ${If} $1 == ""
-      DeleteRegValue HKCU "Software\Classes\${extension}" ""
+      DeleteRegValue SHCTX "Software\Classes\${extension}" ""
     ${Else}
-      WriteRegStr HKCU "Software\Classes\${extension}" "" $1
+      WriteRegStr SHCTX "Software\Classes\${extension}" "" $1
     ${EndIf}
   ${EndIf}
-  DeleteRegKey HKCU "Software\Classes\${progid}"
+  DeleteRegKey SHCTX "Software\Classes\${progid}"
 !macroend
 
 !macro MarkdownPlusWriteFileMenu extension
-  WriteRegStr HKCU "Software\Classes\SystemFileAssociations\${extension}\shell\MarkdownPlusOpen" "MUIVerb" "使用 Markdown+ 打开"
-  WriteRegStr HKCU "Software\Classes\SystemFileAssociations\${extension}\shell\MarkdownPlusOpen" "Icon" "$appExe"
-  WriteRegStr HKCU "Software\Classes\SystemFileAssociations\${extension}\shell\MarkdownPlusOpen\command" "" '"$appExe" "%1"'
+  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\${extension}\shell\MarkdownPlusOpen" "MUIVerb" "使用 Markdown+ 打开"
+  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\${extension}\shell\MarkdownPlusOpen" "Icon" "$appExe"
+  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\${extension}\shell\MarkdownPlusOpen\command" "" '"$appExe" "%1"'
 !macroend
 
 !macro MarkdownPlusRemoveFileMenu extension
-  DeleteRegKey HKCU "Software\Classes\SystemFileAssociations\${extension}\shell\MarkdownPlusOpen"
+  DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\${extension}\shell\MarkdownPlusOpen"
 !macroend
 
 !ifndef BUILD_UNINSTALLER
@@ -145,23 +145,23 @@ FunctionEnd
 !endif
 
 !macro customInstall
-  WriteRegDWORD HKCU ${MP_OPTIONS_KEY} AssociateMdx $AssociateMdxState
-  WriteRegDWORD HKCU ${MP_OPTIONS_KEY} AssociateMd $AssociateMdState
-  WriteRegDWORD HKCU ${MP_OPTIONS_KEY} FileContextMenu $FileContextState
-  WriteRegDWORD HKCU ${MP_OPTIONS_KEY} FolderContextMenu $FolderContextState
+  WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} AssociateMdx $AssociateMdxState
+  WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} AssociateMd $AssociateMdState
+  WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} FileContextMenu $FileContextState
+  WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} FolderContextMenu $FolderContextState
   StrCpy $0 0
-  ReadRegDWORD $0 HKCU ${MP_OPTIONS_KEY} PreviousMdxCaptured
+  ReadRegDWORD $0 SHCTX ${MP_OPTIONS_KEY} PreviousMdxCaptured
   ${If} $0 != 1
-    ReadRegStr $0 HKCU ${MP_MDX_EXT} ""
-    WriteRegStr HKCU ${MP_OPTIONS_KEY} PreviousMdxAssociation $0
-    WriteRegDWORD HKCU ${MP_OPTIONS_KEY} PreviousMdxCaptured 1
+    ReadRegStr $0 SHCTX ${MP_MDX_EXT} ""
+    WriteRegStr SHCTX ${MP_OPTIONS_KEY} PreviousMdxAssociation $0
+    WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} PreviousMdxCaptured 1
   ${EndIf}
   StrCpy $0 0
-  ReadRegDWORD $0 HKCU ${MP_OPTIONS_KEY} PreviousMdCaptured
+  ReadRegDWORD $0 SHCTX ${MP_OPTIONS_KEY} PreviousMdCaptured
   ${If} $0 != 1
-    ReadRegStr $0 HKCU ${MP_MD_EXT} ""
-    WriteRegStr HKCU ${MP_OPTIONS_KEY} PreviousMdAssociation $0
-    WriteRegDWORD HKCU ${MP_OPTIONS_KEY} PreviousMdCaptured 1
+    ReadRegStr $0 SHCTX ${MP_MD_EXT} ""
+    WriteRegStr SHCTX ${MP_OPTIONS_KEY} PreviousMdAssociation $0
+    WriteRegDWORD SHCTX ${MP_OPTIONS_KEY} PreviousMdCaptured 1
   ${EndIf}
 
   ${If} $AssociateMdxState == 1
@@ -182,11 +182,11 @@ FunctionEnd
     !insertmacro MarkdownPlusRemoveFileMenu ".md"
   ${EndIf}
   ${If} $FolderContextState == 1
-    WriteRegStr HKCU ${MP_FOLDER_MENU} "MUIVerb" "使用 Markdown+ 打开文件夹"
-    WriteRegStr HKCU ${MP_FOLDER_MENU} "Icon" "$appExe"
-    WriteRegStr HKCU "${MP_FOLDER_MENU}\command" "" '"$appExe" "%1"'
+    WriteRegStr SHCTX ${MP_FOLDER_MENU} "MUIVerb" "使用 Markdown+ 打开文件夹"
+    WriteRegStr SHCTX ${MP_FOLDER_MENU} "Icon" "$appExe"
+    WriteRegStr SHCTX "${MP_FOLDER_MENU}\command" "" '"$appExe" "%1"'
   ${Else}
-    DeleteRegKey HKCU ${MP_FOLDER_MENU}
+    DeleteRegKey SHCTX ${MP_FOLDER_MENU}
   ${EndIf}
   System::Call 'shell32::SHChangeNotify(i, i, p, p)' 0x08000000 0 0 0
 !macroend
@@ -196,7 +196,7 @@ FunctionEnd
   !insertmacro MarkdownPlusRestoreFileAssociation ".md" "MarkdownPlus.md" PreviousMdAssociation
   !insertmacro MarkdownPlusRemoveFileMenu ".mdx"
   !insertmacro MarkdownPlusRemoveFileMenu ".md"
-  DeleteRegKey HKCU ${MP_FOLDER_MENU}
-  DeleteRegKey HKCU ${MP_OPTIONS_KEY}
+  DeleteRegKey SHCTX ${MP_FOLDER_MENU}
+  DeleteRegKey SHCTX ${MP_OPTIONS_KEY}
   System::Call 'shell32::SHChangeNotify(i, i, p, p)' 0x08000000 0 0 0
 !macroend

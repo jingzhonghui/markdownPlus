@@ -32,6 +32,7 @@ extraResources:
     filter:
       - '**/*'
 win:
+  artifactName: '${productName}-${arch}-${version}.${ext}'
   target:
     - target: nsis
       arch:
@@ -41,6 +42,7 @@ win:
         - x64
   icon: resources/icon.ico
 nsis:
+  artifactName: '${productName}-${arch}-${version}-Setup.${ext}'
   oneClick: false
   perMachine: false
   allowElevation: false
@@ -56,6 +58,7 @@ mac:
   icon: build/icon.icns
   category: public.app-category.productivity
 linux:
+  artifactName: '${productName}-linux-${version}.${ext}'
   target:
     - AppImage
     - deb

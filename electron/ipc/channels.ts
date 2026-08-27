@@ -17,6 +17,7 @@ export const IPC_CHANNELS = {
     RECENT_CLEAR: 'file:clearRecent',
     CREATE: 'file:create',
     RENAME: 'file:rename',
+    MOVE: 'file:move',
     DELETE: 'file:delete',
     REVEAL_IN_EXPLORER: 'file:revealInExplorer'
   },

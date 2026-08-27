@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { useFileStore, type FileTreeNode } from '../../stores/file'
+
+interface DragState {
+  sourcePath: string | null
+  /** 当前悬停的合法目标目录路径（只高亮最内层/第一级目标） */
+  hoverPath: string | null
+}
 
 const props = defineProps<{
   node: FileTreeNode
@@ -13,7 +19,36 @@ const emit = defineEmits<{
 
 const fileStore = useFileStore()
 
+const dragState = inject<DragState | null>('fileTreeDragState', null)
+const onDropToFolder = inject<((targetDir: string) => void) | null>('fileTreeOnDropToFolder', null)
+
+// 高亮由共享 hoverPath 决定：dragover 在内层目录 stopPropagation，
+// 因此 hoverPath 只会是最内层的合法目标，祖先目录不会同时高亮
+const isDragOver = computed(() => dragState?.hoverPath === props.node.path)
+
 const depth = computed(() => props.depth ?? 0)
+
+function normalizePath(value: string): string {
+  return value.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+}
+
+function getParentDir(filePath: string): string {
+  const normalized = normalizePath(filePath)
+  const idx = normalized.lastIndexOf('/')
+  return idx === -1 ? '' : normalized.slice(0, idx)
+}
+
+function isValidDropTarget(): boolean {
+  if (!props.node.isDirectory || !dragState?.sourcePath) return false
+  const source = dragState.sourcePath
+  const normalizedSource = normalizePath(source)
+  const normalizedNode = normalizePath(props.node.path)
+  // 不能拖到自身、自身子目录或源所在的父目录（原地移动）
+  if (normalizedNode === normalizedSource) return false
+  if (normalizedNode.startsWith(`${normalizedSource}/`)) return false
+  if (normalizedNode === getParentDir(source)) return false
+  return true
+}
 
 function isActiveFile(node: FileTreeNode): boolean {
   return !node.isDirectory && fileStore.currentFile?.path === node.path
@@ -40,20 +75,78 @@ function onExpandClick(): void {
     fileStore.toggleNode(props.node)
   }
 }
+
+function onDragStart(event: DragEvent): void {
+  if (!dragState) return
+  dragState.sourcePath = props.node.path
+  dragState.hoverPath = null
+  if (event.dataTransfer) {
+    event.dataTransfer.setData('text/plain', props.node.path)
+    event.dataTransfer.effectAllowed = 'move'
+  }
+}
+
+function onDragEnd(): void {
+  if (dragState) {
+    dragState.sourcePath = null
+    dragState.hoverPath = null
+  }
+}
+
+function onDragOver(event: DragEvent): void {
+  // 文件节点不处理也不拦截，让 dragover 冒泡到父目录统一处理
+  if (!props.node.isDirectory) return
+  // 目录节点总是停止冒泡，避免拖到其展开区域时误高亮列表空白区
+  event.stopPropagation()
+  if (!isValidDropTarget()) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  // 只记录最内层的合法目标（外层目录收不到被 stop 的事件，天然不会同时高亮）
+  dragState!.hoverPath = props.node.path
+}
+
+function onDragLeave(event: DragEvent): void {
+  if (!dragState) return
+  const el = event.currentTarget as HTMLElement
+  if (el.contains(event.relatedTarget as Node)) return
+  // 鼠标离开当前悬停的节点后清除高亮；下一个 dragover 会立即设置新的目标
+  if (dragState.hoverPath === props.node.path) dragState.hoverPath = null
+}
+
+function onDrop(event: DragEvent): void {
+  // 文件节点不拦截 drop，让事件冒泡到父目录节点处理
+  if (!props.node.isDirectory) return
+  // 目录节点总是停止冒泡，避免拖到其展开区域时误落到列表空白区（移动到根目录）
+  event.stopPropagation()
+  dragState!.hoverPath = null
+  if (!isValidDropTarget() || !onDropToFolder) return
+  void onDropToFolder(props.node.path)
+}
 </script>
 
 <template>
-  <div class="tree-item">
+  <!-- dragover/drop 绑定在外层 tree-item 上：子节点的事件冒泡经过父级 tree-item，
+       但不经过父级 item-content（二者是兄弟），故不能绑在 item-content 上 -->
+  <div
+    class="tree-item"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop.prevent="onDrop"
+  >
     <div
       class="item-content"
       :data-file-path="node.path"
       :class="{
         'is-directory': node.isDirectory,
         'is-active': !node.isDirectory && isActiveFile(node),
+        'is-drag-over': isDragOver,
       }"
       :style="{ paddingLeft: `${depth * 12 + 8}px` }"
+      draggable="true"
       @click="onClick"
       @contextmenu.prevent.stop="onContextMenu"
+      @dragstart="onDragStart"
+      @dragend="onDragEnd"
     >
       <!-- 展开/折叠图标 -->
       <span
@@ -156,6 +249,11 @@ function onExpandClick(): void {
 
 .item-content.is-active {
   background-color: var(--color-primary-light);
+}
+
+.item-content.is-drag-over {
+  background-color: var(--color-primary-light);
+  outline: 1px dashed var(--color-primary);
 }
 
 .item-content.is-active .node-name {

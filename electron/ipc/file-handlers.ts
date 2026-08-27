@@ -352,6 +352,45 @@ export function registerFileHandlers(): void {
     }
   })
 
+  // 移动文件/文件夹到其他目录
+  ipcMain.handle(IPC_CHANNELS.FILE.MOVE, async (_, { sourcePath, targetDir }: { sourcePath: string; targetDir: string }) => {
+    try {
+      const sourceStat = fs.statSync(sourcePath)
+      const targetDirStat = fs.statSync(targetDir)
+      if (!targetDirStat.isDirectory()) {
+        return { success: false, error: '目标不是文件夹' }
+      }
+      const targetPath = path.join(targetDir, path.basename(sourcePath))
+      if (fs.existsSync(targetPath)) {
+        return { success: false, error: '目标已存在' }
+      }
+      // 禁止把文件夹移入自身或其子目录
+      if (sourceStat.isDirectory()) {
+        const normalizedSource = path.resolve(sourcePath).replace(/[\\/]+$/, '')
+        const normalizedTarget = path.resolve(targetDir).replace(/[\\/]+$/, '')
+        if (normalizedTarget === normalizedSource || normalizedTarget.startsWith(normalizedSource + path.sep)) {
+          return { success: false, error: '不能移动到自身或其子目录' }
+        }
+      }
+      try {
+        fs.renameSync(sourcePath, targetPath)
+      } catch (renameError) {
+        // 跨盘符（EXDEV）时回退为复制 + 删除
+        if ((renameError as NodeJS.ErrnoException)?.code !== 'EXDEV') throw renameError
+        fs.cpSync(sourcePath, targetPath, { recursive: true })
+        if (sourceStat.isDirectory()) {
+          fs.rmSync(sourcePath, { recursive: true, force: true })
+        } else {
+          fs.unlinkSync(sourcePath)
+        }
+      }
+      return { success: true, data: { path: targetPath } }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
   // 删除文件/文件夹
   ipcMain.handle(IPC_CHANNELS.FILE.DELETE, async (_, { targetPath }: { targetPath: string }) => {
     try {

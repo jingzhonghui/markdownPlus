@@ -274,6 +274,131 @@ export function useFolder(deps: FolderDeps) {
     }
   }
 
+  // ========== 拖拽移动辅助：增量更新文件树（保持各节点展开状态） ==========
+  function findNodeInTree(nodes: FileTreeNode[], targetPath: string): FileTreeNode | null {
+    for (const node of nodes) {
+      if (node.path === targetPath) return node
+      if (node.isDirectory) {
+        const found = findNodeInTree(node.children, targetPath)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  function removeNodeFromTree(nodes: FileTreeNode[], targetPath: string): FileTreeNode | null {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i]
+      if (node.path === targetPath) {
+        return nodes.splice(i, 1)[0]
+      }
+      if (node.isDirectory) {
+        const found = removeNodeFromTree(node.children, targetPath)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  function insertNodeSorted(nodes: FileTreeNode[], node: FileTreeNode): void {
+    let insertAt = nodes.length
+    for (let i = 0; i < nodes.length; i++) {
+      const current = nodes[i]
+      if (node.isDirectory !== current.isDirectory) {
+        if (node.isDirectory) {
+          insertAt = i
+          break
+        }
+        continue
+      }
+      if (node.name.localeCompare(current.name) < 0) {
+        insertAt = i
+        break
+      }
+    }
+    nodes.splice(insertAt, 0, node)
+  }
+
+  function relocateNodePaths(node: FileTreeNode, sourcePath: string, newPath: string): void {
+    const normalizedSource = sourcePath.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+    const normalizedNode = node.path.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+    if (normalizedNode === normalizedSource) {
+      node.path = newPath
+    } else if (normalizedNode.startsWith(`${normalizedSource}/`)) {
+      node.path = newPath + node.path.slice(sourcePath.length)
+    }
+    for (const child of node.children) relocateNodePaths(child, sourcePath, newPath)
+  }
+
+  function syncRootItems(): void {
+    const root = fileTree.value[0]
+    if (root && root.path === openedFolderPath.value) {
+      folderItems.value = root.children.map((child) => ({
+        name: child.name,
+        path: child.path,
+        isDirectory: child.isDirectory
+      }))
+    }
+  }
+
+  async function applyMoveToTree(sourcePath: string, newPath: string, targetDir: string): Promise<void> {
+    const movedNode = removeNodeFromTree(fileTree.value, sourcePath)
+    if (!movedNode) {
+      // 源节点不在已加载的树中，回退到全量刷新
+      await readFolder(openedFolderPath.value!)
+      return
+    }
+    relocateNodePaths(movedNode, sourcePath, newPath)
+    const targetNode = findNodeInTree(fileTree.value, targetDir)
+    if (!targetNode) {
+      // 目标节点尚未加载，回退到全量刷新
+      await readFolder(openedFolderPath.value!)
+      return
+    }
+    if (targetNode.children.length === 0) {
+      // 目标目录尚未展开加载，重新读取磁盘以包含移动后的文件
+      await loadChildren(targetNode)
+    } else {
+      insertNodeSorted(targetNode.children, movedNode)
+    }
+    syncRootItems()
+  }
+
+  async function moveItem(sourcePath: string, targetDir: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result = await window.electronAPI.moveFile(sourcePath, targetDir)
+      if (!result.success) {
+        deps.error.value = result.error || '移动失败'
+        return false
+      }
+
+      // 更新所有受影响 tab 的 fileInfo.path（精确匹配 + 前缀匹配）
+      const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+      const normalizedSource = normalize(sourcePath)
+      const newPath = result.data!.path
+      for (const tab of tabs.value) {
+        const info = tab.fileInfo
+        if (!info) continue
+        const tabPath = info.path
+        const normalizedTab = normalize(tabPath)
+        if (normalizedTab === normalizedSource) {
+          info.path = newPath
+        } else if (normalizedTab.startsWith(`${normalizedSource}/`)) {
+          info.path = newPath + tabPath.slice(sourcePath.length)
+        }
+      }
+      stateVersion.value++
+      deps.persistSession()
+
+      // 增量更新文件树，保持各节点原有的展开状态
+      await applyMoveToTree(sourcePath, newPath, targetDir)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async function deleteItem(targetPath: string): Promise<boolean> {
     try {
       if (!window.electronAPI) return false
@@ -332,6 +457,7 @@ export function useFolder(deps: FolderDeps) {
     createFile,
     createFolder,
     renameItem,
+    moveItem,
     deleteItem,
     copyPath
   }

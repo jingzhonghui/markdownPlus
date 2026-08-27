@@ -1,9 +1,67 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, reactive, provide, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useFileStore, type FileTreeNode } from '../../stores/file'
+import { requestDialog } from '../../utils/dialog'
 import FileTreeItem from './FileTreeItem.vue'
 
 const fileStore = useFileStore()
+
+// ========== 拖拽移动 ==========
+const dragState = reactive<{ sourcePath: string | null; hoverPath: string | null }>({
+  sourcePath: null,
+  hoverPath: null
+})
+const isListDragOver = ref(false)
+
+function normalizePath(value: string): string {
+  return value.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+}
+
+function getParentDir(filePath: string): string {
+  const normalized = normalizePath(filePath)
+  const idx = normalized.lastIndexOf('/')
+  return idx === -1 ? '' : normalized.slice(0, idx)
+}
+
+async function handleDropToFolder(targetDir: string): Promise<void> {
+  const source = dragState.sourcePath
+  dragState.sourcePath = null
+  dragState.hoverPath = null
+  isListDragOver.value = false
+  if (!source || !fileStore.openedFolderPath) return
+  // 原地移动（目标目录就是源的父目录）直接忽略
+  if (normalizePath(targetDir) === getParentDir(source)) return
+  const ok = await fileStore.moveItem(source, targetDir)
+  if (!ok) {
+    await requestDialog({
+      title: '无法移动',
+      message: fileStore.error || '移动失败',
+      buttons: [{ label: '确定', value: 0, primary: true }]
+    })
+  }
+}
+
+function onListDragOver(event: DragEvent): void {
+  if (!dragState.sourcePath || !fileStore.openedFolderPath) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dragState.hoverPath = null
+  isListDragOver.value = true
+}
+
+function onListDragLeave(event: DragEvent): void {
+  const el = event.currentTarget as HTMLElement
+  if (el.contains(event.relatedTarget as Node)) return
+  isListDragOver.value = false
+}
+
+async function onListDrop(): Promise<void> {
+  if (!dragState.sourcePath || !fileStore.openedFolderPath) return
+  await handleDropToFolder(fileStore.openedFolderPath)
+}
+
+provide('fileTreeDragState', dragState)
+provide('fileTreeOnDropToFolder', handleDropToFolder)
 
 async function scrollToActiveFile(): Promise<void> {
   await nextTick()
@@ -285,7 +343,11 @@ onUnmounted(() => {
     <!-- 文件列表 -->
     <div
       class="file-list"
+      :class="{ 'is-drag-over': isListDragOver }"
       @contextmenu.prevent.stop="onEmptyContextMenu"
+      @dragover="onListDragOver"
+      @dragleave="onListDragLeave"
+      @drop.prevent.stop="onListDrop"
     >
       <!-- 文件夹浏览 -->
       <div
@@ -480,6 +542,12 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 8px;
+}
+
+.file-list.is-drag-over {
+  outline: 2px dashed var(--color-primary);
+  outline-offset: -2px;
+  border-radius: var(--radius-md);
 }
 
 .file-section {

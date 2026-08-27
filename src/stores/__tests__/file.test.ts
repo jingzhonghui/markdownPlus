@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMdxDocument } from '../../types/mdx'
 import type { MdxDocument } from '../../types/mdx'
 import { useFileStore } from '../file'
+import type { FileTreeNode } from '../file/types'
 import { requestDialog } from '../../utils/dialog'
 
 vi.mock('../../utils/dialog', () => ({
@@ -424,6 +425,118 @@ describe('file store', () => {
 
       expect(store.tabs).toHaveLength(0)
       expect(store.activeTabId).toBeNull()
+    })
+  })
+
+  describe('moveItem', () => {
+    function mockFolderTree(): void {
+      electronAPI.readFolder.mockImplementation(async (dirPath) => {
+        if (dirPath === 'C:/docs') {
+          return {
+            success: true,
+            data: [
+              { name: 'A', path: 'C:/docs/A', isDirectory: true },
+              { name: 'B', path: 'C:/docs/B', isDirectory: true },
+              { name: 'a.mdx', path: 'C:/docs/a.mdx', isDirectory: false }
+            ]
+          }
+        }
+        if (dirPath === 'C:/docs/A') {
+          return {
+            success: true,
+            data: [{ name: 'x.mdx', path: 'C:/docs/A/x.mdx', isDirectory: false }]
+          }
+        }
+        if (dirPath === 'C:/docs/B') {
+          return {
+            success: true,
+            data: [{ name: 'b.md', path: 'C:/docs/B/b.md', isDirectory: false }]
+          }
+        }
+        return { success: false }
+      })
+    }
+
+    async function openTreeAndTab(): Promise<{ root: FileTreeNode; nodeA: FileTreeNode; nodeB: FileTreeNode }> {
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      const root = store.fileTree[0]
+      const nodeA = root.children.find((c) => c.name === 'A')!
+      const nodeB = root.children.find((c) => c.name === 'B')!
+      await store.expandNode(nodeA)
+      await store.expandNode(nodeB)
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: makeDoc('x', 'content'), filePath: 'C:/docs/A/x.mdx', format: 'mdx' }
+      })
+      await store.openFile('C:/docs/A/x.mdx')
+      return { root, nodeA, nodeB }
+    }
+
+    it('moves a file, updates the open tab path and keeps the tree expanded', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        moveFile: vi.fn(async () => ({ success: true, data: { path: 'C:/docs/x.mdx' } }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      const { root, nodeA } = await openTreeAndTab()
+      expect(nodeA.isExpanded).toBe(true)
+
+      const ok = await store.moveItem('C:/docs/A/x.mdx', 'C:/docs')
+
+      expect(ok).toBe(true)
+      expect(electronAPI.moveFile).toHaveBeenCalledWith('C:/docs/A/x.mdx', 'C:/docs')
+      // 打开的 tab 路径更新到新位置
+      expect(store.tabs[0].fileInfo?.path).toBe('C:/docs/x.mdx')
+      // 树中节点被移到根目录下
+      expect(root.children.some((c) => c.path === 'C:/docs/x.mdx')).toBe(true)
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/A/x.mdx')).toBe(false)
+      // 展开状态保持
+      expect(nodeA.isExpanded).toBe(true)
+    })
+
+    it('moves a folder and rewrites the prefix of tabs of files inside it', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        moveFile: vi.fn(async () => ({ success: true, data: { path: 'C:/docs/B/A' } }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      const { root, nodeA, nodeB } = await openTreeAndTab()
+      expect(nodeA.isExpanded).toBe(true)
+
+      const ok = await store.moveItem('C:/docs/A', 'C:/docs/B')
+
+      expect(ok).toBe(true)
+      // 文件夹内打开的文件 tab 前缀更新
+      expect(store.tabs[0].fileInfo?.path).toBe('C:/docs/B/A/x.mdx')
+      // 节点移到 B 下，且保持展开状态
+      expect(nodeB.children.some((c) => c.path === 'C:/docs/B/A')).toBe(true)
+      expect(root.children.some((c) => c.path === 'C:/docs/A')).toBe(false)
+      expect(nodeA.isExpanded).toBe(true)
+    })
+
+    it('reports failure and does not touch tabs when the move fails', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        moveFile: vi.fn(async () => ({ success: false, error: '目标已存在' }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      await openTreeAndTab()
+
+      const ok = await store.moveItem('C:/docs/A/x.mdx', 'C:/docs')
+
+      expect(ok).toBe(false)
+      expect(store.tabs[0].fileInfo?.path).toBe('C:/docs/A/x.mdx')
+      expect(store.error).toBe('目标已存在')
     })
   })
 

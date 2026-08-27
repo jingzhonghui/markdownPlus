@@ -1025,6 +1025,7 @@ export const useFileStore = defineStore('file', () => {
     createFile: folder.createFile,
     createFolder: folder.createFolder,
     renameItem: folder.renameItem,
+    moveItem: folder.moveItem,
     deleteItem: folder.deleteItem,
     copyPath: folder.copyPath
   }

@@ -123,6 +123,7 @@ export interface ElectronAPI {
   createFile: (dirPath: string, name: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
   createFolder: (parentPath: string, name: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
   renameFile: (oldPath: string, newName: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
+  moveFile: (sourcePath: string, targetDir: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
   deleteFile: (targetPath: string) => Promise<{ success: boolean; error?: string }>
 
   // 应用信息
@@ -232,6 +233,7 @@ const api: ElectronAPI = {
   createFile: (dirPath, name) => ipcRenderer.invoke(IPC_CHANNELS.FILE.CREATE, { dirPath, name }),
   createFolder: (parentPath, name) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.CREATE, { parentPath, name }),
   renameFile: (oldPath, newName) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RENAME, { oldPath, newName }),
+  moveFile: (sourcePath, targetDir) => ipcRenderer.invoke(IPC_CHANNELS.FILE.MOVE, { sourcePath, targetDir }),
   deleteFile: (targetPath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.DELETE, { targetPath }),
 
   // 应用信息

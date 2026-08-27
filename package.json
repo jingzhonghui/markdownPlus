@@ -1,6 +1,6 @@
 {
   "name": "markdown-plus",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MarkdownPlus 编辑器 - 自包含 Markdown 文档编辑器",
   "main": "./out/main/main.cjs",
   "author": "Markdown+ Team",

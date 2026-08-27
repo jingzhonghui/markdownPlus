@@ -30,6 +30,7 @@ function createMockElectronAPI(overrides: Record<string, unknown> = {}) {
     saveAsFile: vi.fn(),
     closeFile: vi.fn(async () => ({ success: true })),
     getRecentFiles: vi.fn(async () => ({ success: true, data: [] })),
+    addRecentFile: vi.fn(async () => ({ success: true })),
     removeRecentFile: vi.fn(async () => ({ success: true })),
     clearRecentFiles: vi.fn(async () => ({ success: true })),
     readFolder: vi.fn(async () => ({ success: false })),
@@ -132,6 +133,90 @@ describe('file store', () => {
 
       expect(ok).toBe(false)
       expect(store.tabs).toHaveLength(0)
+    })
+
+    it('passes addToRecent:false through to the main process', async () => {
+      const doc = makeDoc('Opened', 'content')
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: doc, filePath: 'C:/docs/opened.mdx', format: 'mdx' }
+      })
+
+      const store = useFileStore()
+      await store.openFile('C:/docs/opened.mdx', { addToRecent: false })
+
+      expect(electronAPI.openFile).toHaveBeenCalledWith('C:/docs/opened.mdx', false)
+    })
+  })
+
+  describe('openFolderPath', () => {
+    it('records opened folders in the recent list with type folder', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async () => ({ success: true, data: [] }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      const ok = await store.openFolderPath('C:/docs')
+
+      expect(ok).toBe(true)
+      expect(electronAPI.addRecentFile).toHaveBeenCalledWith('C:/docs', 'folder')
+    })
+
+    it('does not record the folder when opening fails', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async () => ({ success: false }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      const ok = await store.openFolderPath('C:/docs')
+
+      expect(ok).toBe(false)
+      expect(electronAPI.addRecentFile).not.toHaveBeenCalled()
+    })
+
+    it('refreshes the recent files list immediately after opening a folder', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async () => ({ success: true, data: [] })),
+        getRecentFiles: vi.fn(async () => ({
+          success: true,
+          data: [{ path: 'C:/docs', type: 'folder' }]
+        }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      const ok = await store.openFolderPath('C:/docs')
+
+      expect(ok).toBe(true)
+      expect(store.recentFiles).toEqual([{ path: 'C:/docs', type: 'folder' }])
+    })
+  })
+
+  describe('restoreSession', () => {
+    it('restores open tabs without recording them as recent files', async () => {
+      const doc = makeDoc('Doc', 'content')
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: doc, filePath: 'C:/docs/a.md', format: 'markdown' }
+      })
+
+      const session = {
+        openedFolderPath: null,
+        openFilePaths: ['C:/docs/a.md'],
+        activeFilePath: null,
+        sidebarCollapsed: false,
+        editorMode: 'ir',
+        aiPanelOpen: false,
+        aiActiveConversationId: null
+      }
+      vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(session))
+
+      const store = useFileStore()
+      await store.restoreSession()
+
+      expect(electronAPI.openFile).toHaveBeenCalledWith('C:/docs/a.md', false)
     })
   })
 

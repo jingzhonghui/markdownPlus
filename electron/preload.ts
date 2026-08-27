@@ -27,6 +27,12 @@ export interface FolderItem {
   isDirectory: boolean
 }
 
+// 最近文件列表项类型
+export interface RecentItem {
+  path: string
+  type: 'file' | 'folder'
+}
+
 // 图片压缩选项
 export interface ImageCompressOptions {
   compress?: boolean
@@ -76,11 +82,12 @@ export interface PdfSourceEntry {
 export interface ElectronAPI {
   // 文件操作
   newFile: () => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
-  openFile: (filePath?: string) => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
+  openFile: (filePath?: string, addToRecent?: boolean) => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
   saveFile: (content?: string, title?: string, filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   saveAsFile: (content: string, title?: string, filePath?: string) => Promise<{ success: boolean; data?: string; error?: string }>
   closeFile: (filePath?: string) => Promise<{ success: boolean; error?: string }>
-  getRecentFiles: () => Promise<{ success: boolean; data?: string[]; error?: string }>
+  getRecentFiles: () => Promise<{ success: boolean; data?: RecentItem[]; error?: string }>
+  addRecentFile: (filePath: string, type?: 'file' | 'folder') => Promise<{ success: boolean; error?: string }>
   removeRecentFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
   clearRecentFiles: () => Promise<{ success: boolean; error?: string }>
 
@@ -184,11 +191,12 @@ export interface ElectronAPI {
 const api: ElectronAPI = {
   // 文件操作
   newFile: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.NEW),
-  openFile: (filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.OPEN, filePath),
+  openFile: (filePath?, addToRecent?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.OPEN, filePath, addToRecent),
   saveFile: (content?, title?, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE, content, title, filePath),
   saveAsFile: (content?, title?, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE_AS, content, title, filePath),
   closeFile: (filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.CLOSE, filePath),
   getRecentFiles: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT),
+  addRecentFile: (filePath, type) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT_ADD, filePath, type),
   removeRecentFile: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT_REMOVE, filePath),
   clearRecentFiles: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT_CLEAR),
 

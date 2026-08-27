@@ -4,6 +4,7 @@ import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { useUpdateStore } from '../../stores/update'
 import { useAiStore } from '../../stores/ai'
+import { requestDialog } from '../../utils/dialog'
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
@@ -19,6 +20,7 @@ interface MenuItem {
   shortcut?: string
   payload?: string
   checked?: boolean
+  icon?: string
   children?: MenuItem[]
 }
 
@@ -26,17 +28,24 @@ const activeMenu = ref<string | null>(null)
 const menuPosition = ref({ left: 0, top: 0 })
 
 const fileMenu = computed<MenuItem[]>(() => {
-  const recentItems: MenuItem[] = fileStore.recentFiles.map((filePath) => ({
+  const recentItems: MenuItem[] = fileStore.recentFiles.map((item) => ({
     kind: 'item',
-    label: filePath.split(/[/\\]/).pop() || filePath,
-    action: 'recent',
-    payload: filePath
+    label: item.path.split(/[/\\]/).pop() || item.path,
+    action: item.type === 'folder' ? 'recent-folder' : 'recent-file',
+    payload: item.path,
+    icon: item.type === 'folder' ? 'folder' : 'file'
   }))
 
-  const recentMenu: MenuItem =
+  const recentChildren: MenuItem[] =
     recentItems.length > 0
-      ? { kind: 'submenu', label: '最近文件', children: recentItems }
-      : { kind: 'submenu', label: '最近文件', children: [{ kind: 'item', label: '（无最近文件）', action: 'none' }] }
+      ? [
+          ...recentItems,
+          { kind: 'divider' },
+          { kind: 'item', label: '清空最近文件', action: 'clear-recent' }
+        ]
+      : [{ kind: 'item', label: '（无最近文件）', action: 'none' }]
+
+  const recentMenu: MenuItem = { kind: 'submenu', label: '最近文件', children: recentChildren }
 
   return [
     { kind: 'item', label: '新建文件', action: 'new', shortcut: 'Ctrl+N' },
@@ -57,6 +66,8 @@ const fileMenu = computed<MenuItem[]>(() => {
     { kind: 'item', label: '批量导出 PDF...', action: 'export-batch-pdf' },
     { kind: 'divider' },
     recentMenu,
+    { kind: 'divider' },
+    { kind: 'item', label: '清空最近文件...', action: 'clear-recent' },
     { kind: 'divider' },
     { kind: 'item', label: '退出', action: 'exit' }
   ]
@@ -133,9 +144,9 @@ const shortcuts = [
   { keys: 'Ctrl+I', label: '斜体' },
   { keys: 'Ctrl+K', label: '插入链接' },
   { keys: 'Ctrl+Shift+K', label: '插入图片' },
-  { keys: 'Ctrl+F', label: '查找（源码模式）' },
-  { keys: 'Ctrl+H', label: '替换（源码模式）' },
-  { keys: 'Ctrl+/', label: '切换注释（源码模式）' },
+  { keys: 'Ctrl+F', label: '查找' },
+  { keys: 'Ctrl+H', label: '替换' },
+  { keys: 'Ctrl+/', label: '切换编辑模式' },
   { keys: 'Ctrl+,', label: '打开设置' }
 ]
 
@@ -238,6 +249,20 @@ async function exportBatchPdf(): Promise<void> {
   await fileStore.exportFolderToPdf(fileStore.openedFolderPath)
 }
 
+async function clearRecentFiles(): Promise<void> {
+  const choice = await requestDialog({
+    title: '清空最近文件',
+    message: '确定要清空所有最近打开的文件和文件夹记录吗？',
+    buttons: [
+      { label: '取消', value: 1 },
+      { label: '清空', value: 0, primary: true }
+    ]
+  })
+  if (choice === 0) {
+    await fileStore.clearRecent()
+  }
+}
+
 async function runMenuItem(item: MenuItem): Promise<void> {
   if (item.kind !== 'item' || !item.action || item.action === 'none') return
   closeMenu()
@@ -264,7 +289,7 @@ async function runMenuItem(item: MenuItem): Promise<void> {
       await fileStore.openFolder()
       break
     case 'close-folder':
-      fileStore.closeFolder()
+      await fileStore.closeFolder()
       break
     case 'save':
       await saveFile()
@@ -287,8 +312,16 @@ async function runMenuItem(item: MenuItem): Promise<void> {
     case 'export-batch-pdf':
       await exportBatchPdf()
       break
-    case 'recent':
+    case 'recent-file':
       await openFile(item.payload)
+      break
+    case 'recent-folder':
+      if (item.payload) {
+        await fileStore.openFolderPath(item.payload)
+      }
+      break
+    case 'clear-recent':
+      await clearRecentFiles()
       break
     case 'exit':
       window.electronAPI?.windowClose()
@@ -457,6 +490,17 @@ function handleClose(): void {
   window.electronAPI?.windowClose()
 }
 
+/**
+ * 切换编辑模式（Ctrl+/）
+ * 顺序：分屏预览 -> 源码编辑 -> 即时渲染 -> 分屏预览
+ */
+function handleToggleModeEvent(): void {
+  const modes: Array<'split' | 'source' | 'ir'> = ['split', 'source', 'ir']
+  const currentIndex = modes.indexOf(fileStore.editorMode)
+  const nextIndex = (currentIndex + 1) % modes.length
+  fileStore.setEditorMode(modes[nextIndex])
+}
+
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     if (settingsOpen.value || linkDialogOpen.value || imageDialogOpen.value || shortcutsOpen.value || aboutOpen.value) {
@@ -500,6 +544,7 @@ let removeUnmaximizedListener: (() => void) | null = null
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   document.addEventListener('mousedown', handleDocumentMousedown)
+  window.addEventListener('editor:toggleMode', handleToggleModeEvent)
 
   const maximized = await window.electronAPI?.windowIsMaximized()
   isMaximized.value = maximized ?? false
@@ -518,6 +563,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('mousedown', handleDocumentMousedown)
+  window.removeEventListener('editor:toggleMode', handleToggleModeEvent)
   removeMaximizedListener?.()
   removeUnmaximizedListener?.()
 })
@@ -680,22 +726,55 @@ onUnmounted(() => {
             <span>{{ item.label }}</span>
             <span class="sub-indicator">▸</span>
             <div class="submenu">
-              <div
+              <template
                 v-for="(sub, subIndex) in item.children"
                 :key="subIndex"
-                class="menu-entry"
-                :class="{ disabled: sub.action === 'none' }"
-                :title="sub.payload || undefined"
-                @click="runMenuItem(sub)"
               >
-                <span class="menu-entry-label">
-                  <span
-                    v-if="sub.checked !== undefined"
-                    class="menu-check"
-                  >{{ sub.checked ? '✓' : '' }}</span>
-                  {{ sub.label }}
-                </span>
-              </div>
+                <div
+                  v-if="sub.kind === 'divider'"
+                  class="menu-divider"
+                />
+                <div
+                  v-else
+                  class="menu-entry"
+                  :class="{ disabled: sub.action === 'none' }"
+                  :title="sub.payload || undefined"
+                  @click="runMenuItem(sub)"
+                >
+                  <span class="menu-entry-label">
+                    <span
+                      v-if="sub.icon"
+                      class="menu-icon"
+                    >
+                      <svg
+                        v-if="sub.icon === 'folder'"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h5.5a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1V4z" />
+                      </svg>
+                      <svg
+                        v-else-if="sub.icon === 'file'"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M4 1.5h5l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.5a1 1 0 0 1 1-1z" />
+                      </svg>
+                    </span>
+                    <span
+                      v-if="sub.checked !== undefined"
+                      class="menu-check"
+                    >{{ sub.checked ? '✓' : '' }}</span>
+                    {{ sub.label }}
+                  </span>
+                </div>
+              </template>
             </div>
           </div>
           <div
@@ -1135,6 +1214,19 @@ onUnmounted(() => {
   color: var(--color-primary);
   font-weight: 600;
   text-align: left;
+}
+
+.menu-icon {
+  display: inline-flex;
+  align-items: center;
+  width: 18px;
+  margin-right: 4px;
+  color: var(--color-text-tertiary);
+}
+
+.menu-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .menu-entry.disabled {

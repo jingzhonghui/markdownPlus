@@ -9,8 +9,10 @@ export interface FolderDeps {
   editorResetVersion: Ref<number>
   error: Ref<string | null>
   isLoading: Ref<boolean>
-  openFile: (filePath?: string) => Promise<boolean>
+  openFile: (filePath?: string, options?: { addToRecent?: boolean }) => Promise<boolean>
+  loadRecentFiles: () => Promise<void>
   persistSession: () => void
+  closeTab: (tabId: string) => Promise<boolean>
 }
 
 /**
@@ -90,6 +92,10 @@ export function useFolder(deps: FolderDeps) {
 
     // 初始化文件树
     if (success) {
+      // 记录到最近打开列表（文件夹类型），并立即刷新渲染进程的列表
+      window.electronAPI?.addRecentFile?.(dirPath, 'folder')
+      await deps.loadRecentFiles()
+
       const folderName = dirPath.split(/[/\\]/).pop() || dirPath
       fileTree.value = [
         {
@@ -157,7 +163,20 @@ export function useFolder(deps: FolderDeps) {
     }
   }
 
-  function closeFolder(): void {
+  async function closeFolder(): Promise<boolean> {
+    const folderPath = openedFolderPath.value
+    if (folderPath) {
+      const normalizedFolder = folderPath.replace(/[\\/]+/g, '/').replace(/\/$/, '')
+      const folderTabs = tabs.value.filter((tab) => {
+        const path = tab.fileInfo?.path
+        return !!path && path.replace(/[\\/]+/g, '/').startsWith(`${normalizedFolder}/`)
+      })
+      for (const tab of folderTabs) {
+        const closed = await deps.closeTab(tab.id)
+        if (!closed) return false
+      }
+    }
+
     openedFolderPath.value = null
     folderItems.value = []
     folderHistory.value = []
@@ -167,6 +186,7 @@ export function useFolder(deps: FolderDeps) {
     }
     deps.persistSession()
     void useAiStore().loadConversations(null)
+    return true
   }
 
   async function navigateToFolder(dirPath: string): Promise<boolean> {
@@ -211,7 +231,7 @@ export function useFolder(deps: FolderDeps) {
       const result = await window.electronAPI.createFile(dirPath, name)
       if (result.success && result.data?.path) {
         await readFolder(openedFolderPath.value!)
-        return await deps.openFile(result.data.path)
+        return await deps.openFile(result.data.path, { addToRecent: false })
       }
       return false
     } catch {

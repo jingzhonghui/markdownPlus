@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { EditorState, TextSelection } from 'prosemirror-state'
 import { parseMarkdown, serializeMarkdown } from '../markdown'
 import { buildKeymap } from '../keymap'
@@ -121,5 +121,51 @@ describe('Markdown ↔ ProseMirror conversion', () => {
     expect(roundtrip).toContain('| :---: | ---: |')
     expect(parseMarkdown(roundtrip).child(0).child(0).child(0).attrs.align).toBe('center')
     expect(parseMarkdown(roundtrip).child(0).child(0).child(1).attrs.align).toBe('right')
+  })
+})
+
+describe('keymap shortcuts', () => {
+  it('Mod-/ dispatches the editor:toggleMode event', () => {
+    const dispatchEvent = vi.fn()
+    vi.stubGlobal('window', { dispatchEvent })
+    try {
+      const state = EditorState.create({ doc: parseMarkdown('hello world') })
+      const handled = buildKeymap(markdownSchema)['Mod-/'](state, () => {})
+      expect(handled).toBe(true)
+      expect(dispatchEvent).toHaveBeenCalled()
+      const event = dispatchEvent.mock.calls[0][0] as CustomEvent
+      expect(event.type).toBe('editor:toggleMode')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('Mod-f dispatches the editor:find event', () => {
+    const dispatchEvent = vi.fn()
+    vi.stubGlobal('window', { dispatchEvent })
+    try {
+      const state = EditorState.create({ doc: parseMarkdown('hello') })
+      const handled = buildKeymap(markdownSchema)['Mod-f'](state, () => {})
+      expect(handled).toBe(true)
+      expect(dispatchEvent).toHaveBeenCalled()
+      const event = dispatchEvent.mock.calls[0][0] as CustomEvent
+      expect(event.type).toBe('editor:find')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('Mod-h dispatches the editor:replace event', () => {
+    const dispatchEvent = vi.fn()
+    vi.stubGlobal('window', { dispatchEvent })
+    try {
+      const state = EditorState.create({ doc: parseMarkdown('hello') })
+      const handled = buildKeymap(markdownSchema)['Mod-h'](state, () => {})
+      expect(handled).toBe(true)
+      const event = dispatchEvent.mock.calls[0][0] as CustomEvent
+      expect(event.type).toBe('editor:replace')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

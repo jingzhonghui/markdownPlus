@@ -354,6 +354,42 @@ function handleShiftTab(schema: Schema): Command {
 }
 
 /**
+ * 切换注释：对选区文本包裹 HTML 注释，再次触发可取消
+ */
+function toggleCommentCommand(): Command {
+  return (state, dispatch) => {
+    const { from, to } = state.selection
+    const text = state.doc.textBetween(from, to)
+
+    if (from === to) {
+      // 空选区：插入占位注释，光标居中
+      if (dispatch) {
+        const marker = '<!--  -->'
+        const tr = state.tr.insertText(marker, from)
+        dispatch(tr.setSelection(TextSelection.create(tr.doc, from + 5)))
+      }
+      return true
+    }
+
+    const isCommented = text.startsWith('<!--') && text.endsWith('-->')
+    if (isCommented) {
+      if (dispatch) dispatch(state.tr.insertText(text.slice(4, -3).trim(), from, to))
+    } else {
+      const openIdx = text.indexOf('<!--')
+      const closeIdx = text.lastIndexOf('-->')
+      if (openIdx !== -1 && closeIdx !== -1 && openIdx < closeIdx) {
+        // 选区包含完整注释：移除注释标记
+        const inner = text.slice(openIdx + 4, closeIdx).trim()
+        if (dispatch) dispatch(state.tr.insertText(inner, from, to))
+      } else {
+        if (dispatch) dispatch(state.tr.insertText(`<!-- ${text} -->`, from, to))
+      }
+    }
+    return true
+  }
+}
+
+/**
  * 键盘快捷键映射表
  */
 export function buildKeymap(schema: Schema): Record<string, Command> {
@@ -399,6 +435,26 @@ export function buildKeymap(schema: Schema): Record<string, Command> {
     // 链接和图片
     'Mod-k': insertLink(),
     'Mod-Shift-k': insertImage(),
+
+    // 查找 / 替换 / 切换编辑模式
+    'Mod-f': (_state, _dispatch) => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('editor:find'))
+      }
+      return true
+    },
+    'Mod-h': (_state, _dispatch) => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('editor:replace'))
+      }
+      return true
+    },
+    'Mod-/': (_state, _dispatch) => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('editor:toggleMode'))
+      }
+      return true
+    },
 
     // 水平分割线
     'Mod-Shift--': insertHorizontalRule(),
@@ -499,6 +555,7 @@ export {
   insertImage,
   toggleCode,
   toggleStrikethrough,
+  toggleCommentCommand,
   customSplitListItem,
   handleTab,
   handleShiftTab

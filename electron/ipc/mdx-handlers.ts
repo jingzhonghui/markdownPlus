@@ -117,7 +117,7 @@ export function registerMdxHandlers(): void {
   })
 
   // ─── 打开文件 ───
-  ipcMain.handle(IPC_CHANNELS.FILE.OPEN, async (_, filePath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.FILE.OPEN, async (_, filePath?: string, addToRecent: boolean = true) => {
     try {
       let targetPath = filePath
 
@@ -154,7 +154,7 @@ export function registerMdxHandlers(): void {
           path.basename(targetPath, path.extname(targetPath)),
           content
         )
-        addRecent(targetPath)
+        if (addToRecent) addRecent(targetPath)
         return {
           success: true,
           data: { document, filePath: targetPath, format: 'markdown', isNew: false, largeFileWarning }
@@ -166,7 +166,7 @@ export function registerMdxHandlers(): void {
 
       const { document, tempDir } = result.data
       registerTempDir(targetPath, tempDir)
-      addRecent(targetPath)
+      if (addToRecent) addRecent(targetPath)
 
       return {
         success: true,

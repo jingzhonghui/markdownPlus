@@ -81,7 +81,7 @@ function onEmptyContextMenu(event: MouseEvent): void {
         { label: '打开文件', action: () => openFile() },
         { label: '打开文件夹', action: () => openFolder() },
         { label: '刷新', action: () => fileStore.readFolder(folderPath) },
-        { label: '关闭文件夹', action: () => fileStore.closeFolder() }
+        { label: '关闭文件夹', action: () => { void fileStore.closeFolder() } }
       ]
     : [
         { label: '导入 Markdown', action: () => fileStore.importMarkdown() },
@@ -94,7 +94,7 @@ function onEmptyContextMenu(event: MouseEvent): void {
 
 function onFileContextMenu(event: MouseEvent, node: FileTreeNode): void {
   const items: ContextMenuItem[] = [
-    { label: '打开', action: () => fileStore.openFile(node.path) },
+    { label: '打开', action: () => fileStore.openFile(node.path, { addToRecent: false }) },
     { label: '保存', action: () => saveFileNode(node) },
     { label: '另存为', action: () => saveFileNodeAs(node) },
     ...(/\.(md|mdx)$/i.test(node.name)
@@ -119,7 +119,7 @@ function onFolderContextMenu(event: MouseEvent, node: FileTreeNode): void {
     { label: '删除', action: () => promptDelete(node) },
     { label: '复制路径', action: () => fileStore.copyPath(node.path) },
     ...(node.path === fileStore.openedFolderPath
-      ? [{ label: '关闭文件夹', action: () => fileStore.closeFolder() }]
+      ? [{ label: '关闭文件夹', action: () => { void fileStore.closeFolder() } }]
       : [])
   ]
   showContextMenu(event, items)
@@ -222,7 +222,7 @@ async function activateFileNode(node: FileTreeNode): Promise<boolean> {
     await fileStore.setActiveTab(tab.id)
     return true
   }
-  return fileStore.openFile(node.path)
+  return fileStore.openFile(node.path, { addToRecent: false })
 }
 
 async function saveFileNode(node: FileTreeNode): Promise<void> {

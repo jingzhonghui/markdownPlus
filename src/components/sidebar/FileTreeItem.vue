@@ -27,7 +27,7 @@ async function onClick(): Promise<void> {
   if (props.node.isDirectory) {
     await fileStore.toggleNode(props.node)
   } else {
-    await fileStore.openFile(props.node.path)
+    await fileStore.openFile(props.node.path, { addToRecent: false })
   }
 }
 

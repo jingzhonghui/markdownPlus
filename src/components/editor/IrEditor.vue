@@ -28,6 +28,7 @@ import {
   createPastePlugin,
   getListClipboard,
 } from '../../utils/prosemirror'
+import { findMatches, type SearchMatch } from '../../utils/prosemirror/search'
 import type { IRPluginState } from '../../utils/prosemirror'
 import { NodeSelection, Selection, TextSelection } from 'prosemirror-state'
 import { wrapIn, setBlockType } from 'prosemirror-commands'
@@ -38,6 +39,7 @@ import katex from 'katex'
 import type { NodeView, ViewMutationRecord } from 'prosemirror-view'
 import { getHighlighter, type Highlighter } from '../../utils/shiki'
 import EditorContextMenu from '../common/EditorContextMenu.vue'
+import FindReplacePanel from './FindReplacePanel.vue'
 import type { EditorContextMenuItem } from '../../types/editor-context-menu'
 import {
   addColumnBefore,
@@ -121,6 +123,15 @@ const editorRef = ref<HTMLDivElement>()
 const tableToolbarRef = ref<HTMLDivElement>()
 const viewRef = shallowRef<EditorView | null>(null)
 let editorTabId: string | null = null
+
+// ====== 查找 / 替换状态 ======
+const searchOpen = ref(false)
+const searchReplaceMode = ref(false)
+const searchMatches = ref<SearchMatch[]>([])
+const currentMatchIndex = ref(-1)
+const lastSearchQuery = ref('')
+const lastCaseSensitive = ref(false)
+
 const isDragging = ref(false)
 const tableToolbar = reactive({
   visible: false,
@@ -808,6 +819,117 @@ function scheduleSerialize(state: { doc: ProseMirrorNode }): void {
   })
 }
 
+// ====== 查找 / 替换 ======
+const searchPluginKey = new PluginKey<DecorationSet>('irSearch')
+
+const irSearchPlugin = new ProseMirrorPlugin<DecorationSet>({
+  key: searchPluginKey,
+  state: {
+    init: () => DecorationSet.empty,
+    apply: (tr, old) => {
+      const meta = tr.getMeta(searchPluginKey)
+      if (meta) return meta as DecorationSet
+      return old.map(tr.mapping, tr.doc)
+    }
+  },
+  props: {
+    decorations(state) {
+      return searchPluginKey.getState(state) ?? DecorationSet.empty
+    },
+    handleKeyDown: (_view, event) => {
+      if (event.key === 'Escape' && searchOpen.value) {
+        closeSearch()
+        return true
+      }
+      return false
+    }
+  }
+})
+
+function recomputeMatches(query: string, caseSensitive: boolean): void {
+  const view = viewRef.value
+  if (!view) return
+  lastSearchQuery.value = query
+  lastCaseSensitive.value = caseSensitive
+  searchMatches.value = findMatches(view.state.doc, query, caseSensitive)
+  if (searchMatches.value.length === 0) {
+    currentMatchIndex.value = -1
+  } else if (currentMatchIndex.value < 0 || currentMatchIndex.value >= searchMatches.value.length) {
+    currentMatchIndex.value = 0
+  }
+  updateSearchDecorations()
+}
+
+function updateSearchDecorations(): void {
+  const view = viewRef.value
+  if (!view) return
+  const decos = searchMatches.value.map((m, i) =>
+    Decoration.inline(m.from, m.to, {
+      class: i === currentMatchIndex.value ? 'ir-search-match-current' : 'ir-search-match'
+    })
+  )
+  const set = DecorationSet.create(view.state.doc, decos)
+  view.dispatch(view.state.tr.setMeta(searchPluginKey, set))
+}
+
+function jumpToMatch(index: number): void {
+  const view = viewRef.value
+  const match = searchMatches.value[index]
+  if (!view || !match) return
+  view.dispatch(
+    view.state.tr.setSelection(
+      TextSelection.between(view.state.doc.resolve(match.from), view.state.doc.resolve(match.to))
+    )
+  )
+  currentMatchIndex.value = index
+  updateSearchDecorations()
+  view.focus()
+}
+
+function nextMatch(): void {
+  if (searchMatches.value.length === 0) return
+  jumpToMatch((currentMatchIndex.value + 1) % searchMatches.value.length)
+}
+
+function prevMatch(): void {
+  if (searchMatches.value.length === 0) return
+  jumpToMatch((currentMatchIndex.value - 1 + searchMatches.value.length) % searchMatches.value.length)
+}
+
+function replaceCurrent(query: string, replaceText: string, caseSensitive: boolean): void {
+  const view = viewRef.value
+  const match = searchMatches.value[currentMatchIndex.value]
+  if (!view || !match) return
+  view.dispatch(view.state.tr.replaceWith(match.from, match.to, view.state.schema.text(replaceText)))
+  recomputeMatches(query, caseSensitive)
+}
+
+function replaceAll(query: string, replaceText: string, caseSensitive: boolean): void {
+  const view = viewRef.value
+  if (!view || searchMatches.value.length === 0) return
+  let tr = view.state.tr
+  for (let i = searchMatches.value.length - 1; i >= 0; i--) {
+    const m = searchMatches.value[i]
+    tr = tr.replaceWith(m.from, m.to, view.state.schema.text(replaceText))
+  }
+  view.dispatch(tr)
+  recomputeMatches(query, caseSensitive)
+}
+
+function openSearch(replaceMode = false): void {
+  searchReplaceMode.value = replaceMode
+  searchOpen.value = true
+}
+
+function closeSearch(): void {
+  searchOpen.value = false
+  const view = viewRef.value
+  if (view) {
+    view.dispatch(view.state.tr.setMeta(searchPluginKey, DecorationSet.empty))
+  }
+  viewRef.value?.focus()
+}
+
 function createEditorState(content: string): EditorState {
   const doc = parseMarkdown(content || '')
   const plugins = [
@@ -824,6 +946,7 @@ function createEditorState(content: string): EditorState {
     createCodeHighlightPlugin(),
     createContextMenuPlugin(),
     createListClipboardPlugin(),
+    irSearchPlugin,
   ]
   return EditorState.create({ doc, plugins })
 }
@@ -943,7 +1066,10 @@ function initEditor(): void {
       syncShowMarkers()
       if (selectionChanged) publishSelectionFromProseMirror()
       nextTick(() => updateTableToolbar(view))
-      if (!view.hasFocus()) view.focus()
+      if (!view.hasFocus() && !searchOpen.value) view.focus()
+      if (tr.docChanged && searchOpen.value) {
+        recomputeMatches(lastSearchQuery.value, lastCaseSensitive.value)
+      }
     },
     attributes: {
       class: 'ir-editor',
@@ -1253,6 +1379,14 @@ function handleUndoEvent(): void {
   view.focus()
 }
 
+function handleEditorFind(): void {
+  openSearch(false)
+}
+
+function handleEditorReplace(): void {
+  openSearch(true)
+}
+
 function handleRedoEvent(): void {
   const view = viewRef.value
   if (!view) return
@@ -1317,6 +1451,8 @@ onMounted(() => {
   window.addEventListener('editor:cut', handleCutEvent)
   window.addEventListener('editor:copy', handleCopyEvent)
   window.addEventListener('editor:paste', handlePasteEvent)
+  window.addEventListener('editor:find', handleEditorFind)
+  window.addEventListener('editor:replace', handleEditorReplace)
   document.addEventListener('click', closeContextMenu)
   document.addEventListener('contextmenu', closeContextMenu, true)
   window.addEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
@@ -1368,6 +1504,8 @@ onUnmounted(() => {
   window.removeEventListener('editor:cut', handleCutEvent)
   window.removeEventListener('editor:copy', handleCopyEvent)
   window.removeEventListener('editor:paste', handlePasteEvent)
+  window.removeEventListener('editor:find', handleEditorFind)
+  window.removeEventListener('editor:replace', handleEditorReplace)
   document.removeEventListener('click', closeContextMenu)
   document.removeEventListener('contextmenu', closeContextMenu, true)
   window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
@@ -1492,6 +1630,18 @@ defineExpose({
         </svg>
       </button>
     </div>
+    <FindReplacePanel
+      :open="searchOpen"
+      :replace-mode="searchReplaceMode"
+      :match-count="searchMatches.length"
+      :current-index="currentMatchIndex"
+      @close="closeSearch"
+      @search="recomputeMatches"
+      @next="nextMatch"
+      @prev="prevMatch"
+      @replace="replaceCurrent"
+      @replace-all="replaceAll"
+    />
     <div
       ref="editorRef"
       class="ir-editor-wrapper"
@@ -1518,6 +1668,15 @@ defineExpose({
   background-color: var(--color-primary-light);
   border: 2px dashed var(--color-primary);
 }
+.ir-editor-wrapper :deep(.ir-search-match) {
+  background: rgb(255 200 0 / 0.3);
+  border-radius: 2px;
+}
+.ir-editor-wrapper :deep(.ir-search-match-current) {
+  background: rgb(255 165 0 / 0.5);
+  border-radius: 2px;
+}
+
 .table-toolbar {
   position: absolute;
   z-index: 20;

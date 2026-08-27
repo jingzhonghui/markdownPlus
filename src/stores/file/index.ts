@@ -5,7 +5,7 @@ import { createMdxDocument } from '../../types/mdx'
 import { loadSessionState, saveSessionState } from '../session'
 import { useAiStore } from '../ai'
 import { requestDialog } from '../../utils/dialog'
-import type { FileInfo, EditorMode, EditorSelectionSnapshot, TabInfo } from './types'
+import type { FileInfo, EditorMode, EditorSelectionSnapshot, RecentItem, TabInfo } from './types'
 import { createTabState, createTabOps } from './tabs'
 import { useAssets } from './assets'
 import { useFolder } from './folder'
@@ -40,7 +40,7 @@ export const useFileStore = defineStore('file', () => {
   )
   const isLoading = ref(false)
   const error = ref<string | null>(null)
-  const recentFiles = ref<string[]>([])
+  const recentFiles = ref<RecentItem[]>([])
   const wordCount = ref(0)
   const cursorLine = ref(1)
   const cursorColumn = ref(1)
@@ -257,7 +257,7 @@ export const useFileStore = defineStore('file', () => {
   }
 
   async function removeRecent(filePath: string): Promise<void> {
-    recentFiles.value = recentFiles.value.filter((p) => p !== filePath)
+    recentFiles.value = recentFiles.value.filter((p) => p.path !== filePath)
     if (window.electronAPI?.removeRecentFile) {
       await window.electronAPI.removeRecentFile(filePath)
     }
@@ -317,7 +317,7 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  async function openFile(filePath?: string): Promise<boolean> {
+  async function openFile(filePath?: string, options?: { addToRecent?: boolean }): Promise<boolean> {
     isLoading.value = true
     error.value = null
 
@@ -337,7 +337,7 @@ export const useFileStore = defineStore('file', () => {
         }
       }
 
-      const result = await window.electronAPI.openFile(filePath)
+      const result = await window.electronAPI.openFile(filePath, options?.addToRecent)
 
       if (result.success && result.data) {
         const doc = result.data.document as MdxDocument
@@ -532,6 +532,7 @@ export const useFileStore = defineStore('file', () => {
   }
 
   // ====== 文件夹浏览 ======
+  let closeFolderTab: (tabId: string) => Promise<boolean> = async () => true
   const folder = useFolder({
     tabs,
     activeTabId,
@@ -540,7 +541,9 @@ export const useFileStore = defineStore('file', () => {
     error,
     isLoading,
     openFile,
-    persistSession: () => persistSession()
+    loadRecentFiles,
+    persistSession: () => persistSession(),
+    closeTab: (tabId) => closeFolderTab(tabId)
   })
 
   // ====== 会话持久化实现（依赖 folder.openedFolderPath） ======
@@ -566,6 +569,7 @@ export const useFileStore = defineStore('file', () => {
     revealFileInTree: folder.revealFileInTree,
     editorResetVersion
   })
+  closeFolderTab = tabOps.closeTab
 
   // ====== 资源管理 ======
   const assets = useAssets({ activeTab, stateVersion, scheduleRecoverySnapshot })
@@ -637,7 +641,7 @@ export const useFileStore = defineStore('file', () => {
     }
 
     for (const filePath of state.openFilePaths ?? []) {
-      await openFile(filePath)
+      await openFile(filePath, { addToRecent: false })
     }
 
     if (state.activeFilePath) {
@@ -1026,4 +1030,4 @@ export const useFileStore = defineStore('file', () => {
   }
 })
 
-export type { EditorMode, FileInfo, FolderItem, FileTreeNode, TabInfo } from './types'
+export type { EditorMode, FileInfo, FolderItem, FileTreeNode, RecentItem, TabInfo } from './types'

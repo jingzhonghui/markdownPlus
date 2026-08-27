@@ -160,7 +160,7 @@ function onPreviewScroll(ratio: number): void {
             </div>
             <div class="shortcut-item">
               <kbd>Ctrl+H</kbd>
-              <span>切换标题</span>
+              <span>替换</span>
             </div>
             <div class="shortcut-item">
               <kbd>Ctrl+F</kbd>
@@ -168,7 +168,7 @@ function onPreviewScroll(ratio: number): void {
             </div>
             <div class="shortcut-item">
               <kbd>Ctrl+/</kbd>
-              <span>注释</span>
+              <span>切换编辑模式</span>
             </div>
           </div>
         </div>

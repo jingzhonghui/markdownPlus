@@ -15,6 +15,12 @@ export interface FolderItem {
   isDirectory: boolean
 }
 
+/** 最近文件列表项 */
+export interface RecentItem {
+  path: string
+  type: 'file' | 'folder'
+}
+
 /** 文件树节点 */
 export interface FileTreeNode {
   name: string

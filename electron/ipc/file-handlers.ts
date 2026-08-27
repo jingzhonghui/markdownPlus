@@ -12,22 +12,41 @@ import { IPC_CHANNELS } from './channels'
 /** 最近文件列表上限 */
 const MAX_RECENT_FILES = 20
 
+/** 最近文件列表项类型 */
+export type RecentItemType = 'file' | 'folder'
+
+/** 最近文件列表项 */
+export interface RecentItem {
+  path: string
+  type: RecentItemType
+}
+
 /** 最近文件列表持久化文件路径 */
 function getRecentFilesPath(): string {
   return path.join(app.getPath('userData'), 'recent-files.json')
 }
 
 /**
- * 从磁盘读取最近文件列表
+ * 从磁盘读取最近文件列表（兼容旧版 string[] 数据，视为文件类型）
  */
-function loadRecentFilesFromDisk(): string[] {
+function loadRecentFilesFromDisk(): RecentItem[] {
   try {
     const filePath = getRecentFilesPath()
     if (fs.existsSync(filePath)) {
       const data = fs.readFileSync(filePath, 'utf-8')
-      const files: string[] = JSON.parse(data)
-      // 过滤掉不存在的文件
-      return files.filter((p) => fs.existsSync(p))
+      const raw = JSON.parse(data)
+      if (!Array.isArray(raw)) return []
+      const items: RecentItem[] = raw
+        .map((entry): RecentItem | null => {
+          if (typeof entry === 'string') return { path: entry, type: 'file' }
+          if (entry && typeof entry.path === 'string') {
+            return { path: entry.path, type: entry.type === 'folder' ? 'folder' : 'file' }
+          }
+          return null
+        })
+        .filter((item): item is RecentItem => item !== null)
+      // 过滤掉已不存在的文件或文件夹
+      return items.filter((item) => fs.existsSync(item.path))
     }
   } catch {
     // 读取失败返回空列表
@@ -38,7 +57,7 @@ function loadRecentFilesFromDisk(): string[] {
 /**
  * 将最近文件列表写入磁盘
  */
-function saveRecentFilesToDisk(files: string[]): void {
+function saveRecentFilesToDisk(files: RecentItem[]): void {
   try {
     const filePath = getRecentFilesPath()
     fs.writeFileSync(filePath, JSON.stringify(files, null, 2), 'utf-8')
@@ -48,12 +67,12 @@ function saveRecentFilesToDisk(files: string[]): void {
 }
 
 /** 内存缓存 */
-let recentFilesCache: string[] | null = null
+let recentFilesCache: RecentItem[] | null = null
 
 /**
  * 获取最近文件列表（带缓存）
  */
-function getRecentFiles(): string[] {
+function getRecentFiles(): RecentItem[] {
   if (!recentFilesCache) {
     recentFilesCache = loadRecentFilesFromDisk()
   }
@@ -61,18 +80,18 @@ function getRecentFiles(): string[] {
 }
 
 /**
- * 添加文件到最近列表
+ * 添加文件/文件夹到最近列表
  */
-export function addRecentFile(filePath: string): void {
+export function addRecentFile(filePath: string, type: RecentItemType = 'file'): void {
   if (!recentFilesCache) {
     recentFilesCache = loadRecentFilesFromDisk()
   }
   // 规范化路径
   const normalized = path.resolve(filePath)
   // 移除已存在的相同路径
-  recentFilesCache = recentFilesCache.filter((p) => p !== normalized)
+  recentFilesCache = recentFilesCache.filter((p) => p.path !== normalized)
   // 添加到开头
-  recentFilesCache.unshift(normalized)
+  recentFilesCache.unshift({ path: normalized, type })
   // 限制数量
   if (recentFilesCache.length > MAX_RECENT_FILES) {
     recentFilesCache = recentFilesCache.slice(0, MAX_RECENT_FILES)
@@ -89,7 +108,7 @@ function removeRecentFile(filePath: string): void {
     recentFilesCache = loadRecentFilesFromDisk()
   }
   const normalized = path.resolve(filePath)
-  recentFilesCache = recentFilesCache.filter((p) => p !== normalized)
+  recentFilesCache = recentFilesCache.filter((p) => p.path !== normalized)
   saveRecentFilesToDisk(recentFilesCache)
 }
 
@@ -189,9 +208,9 @@ export function registerFileHandlers(): void {
   })
 
   // 添加到最近文件
-  ipcMain.handle(IPC_CHANNELS.FILE.RECENT_ADD, async (_, filePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.FILE.RECENT_ADD, async (_, filePath: string, type?: RecentItemType) => {
     try {
-      addRecentFile(filePath)
+      addRecentFile(filePath, type)
       return { success: true }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'

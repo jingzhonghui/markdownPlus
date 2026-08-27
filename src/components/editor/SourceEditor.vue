@@ -2,15 +2,16 @@
 import { ref, onMounted, onUnmounted, watch, shallowRef } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
-import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view'
-import { EditorState, Compartment, type Extension } from '@codemirror/state'
+import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine, Decoration, type DecorationSet } from '@codemirror/view'
+import { EditorState, Compartment, StateField, StateEffect, type Extension } from '@codemirror/state'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { history, defaultKeymap, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands'
-import { highlightSelectionMatches, searchKeymap, openSearchPanel, closeSearchPanel } from '@codemirror/search'
+import { highlightSelectionMatches } from '@codemirror/search'
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap, type Completion } from '@codemirror/autocomplete'
 import { oneDark } from '@codemirror/theme-one-dark'
 import EditorContextMenu from '../common/EditorContextMenu.vue'
+import FindReplacePanel from './FindReplacePanel.vue'
 import type { EditorContextMenuItem } from '../../types/editor-context-menu'
 
 // Props
@@ -38,8 +39,27 @@ const editorView = shallowRef<EditorView | null>(null)
 let themeCompartment: Compartment | null = null
 
 // 查找替换面板状态
-const showSearchPanel = ref(false)
+const searchOpen = ref(false)
+const searchReplaceMode = ref(false)
+const searchMatches = ref<Array<{ from: number; to: number }>>([])
+const currentMatchIndex = ref(-1)
+const lastSearchQuery = ref('')
+const lastCaseSensitive = ref(false)
 const sourceContextMenu = ref({ visible: false, x: 0, y: 0, items: [] as EditorContextMenuItem[] })
+
+// 查找高亮（自定义 Decoration，不依赖 CodeMirror 原生搜索面板）
+const searchDecoEffect = StateEffect.define<DecorationSet>()
+const searchDecoField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update: (deco, tr) => {
+    let next = deco.map(tr.changes)
+    for (const effect of tr.effects) {
+      if (effect.is(searchDecoEffect)) next = effect.value
+    }
+    return next
+  },
+  provide: (field) => EditorView.decorations.from(field)
+})
 
 // 是否正在同步内容（防止循环更新）
 let isSyncing = false
@@ -87,12 +107,15 @@ function createExtensions(): Extension[] {
     keymap.of([
       indentWithTab,
       ...closeBracketsKeymap,
-      ...defaultKeymap,
-      ...searchKeymap,
+      // 过滤掉 defaultKeymap 中的 Ctrl+/ 注释切换，避免与切换编辑模式快捷键冲突
+      ...defaultKeymap.filter((binding) => binding.key !== 'Mod-/'),
       ...historyKeymap,
       ...completionKeymap,
       ...customKeymap
     ]),
+
+    // 查找高亮（面板由 FindReplacePanel 统一提供）
+    searchDecoField,
 
     // 主题（使用 compartment）
     themeCompartment.of(getThemeExtension()),
@@ -255,20 +278,20 @@ const customKeymap = [
     },
     preventDefault: true
   },
-  // Ctrl+H: 切换标题级别
+  // Ctrl+F: 查找（统一查找面板）
   {
-    key: 'Mod-h',
-    run: (view: EditorView) => {
-      cycleHeading(view)
+    key: 'Mod-f',
+    run: () => {
+      openSearch(false)
       return true
     },
     preventDefault: true
   },
-  // Ctrl+/: 切换注释
+  // Ctrl+H: 替换（统一查找面板）
   {
-    key: 'Mod-/',
-    run: (view: EditorView) => {
-      toggleComment(view)
+    key: 'Mod-h',
+    run: () => {
+      openSearch(true)
       return true
     },
     preventDefault: true
@@ -297,10 +320,12 @@ const customKeymap = [
     // Esc: 关闭查找面板
   {
     key: 'Escape',
-    run: (view: EditorView) => {
-      const result = closeSearchPanel(view)
-      showSearchPanel.value = false
-      return result
+    run: () => {
+      if (searchOpen.value) {
+        closeSearch()
+        return true
+      }
+      return false
     }
   }
 ]
@@ -358,43 +383,6 @@ function insertImage(view: EditorView): void {
   view.focus()
 }
 
-/**
- * 切换标题级别
- */
-function cycleHeading(view: EditorView): void {
-  const { from } = view.state.selection.main
-  const line = view.state.doc.lineAt(from)
-  const lineText = line.text
-  
-  // 匹配现有标题
-  const match = lineText.match(/^(#{0,4})\s/)
-  if (match) {
-    const currentLevel = match[1].length
-    const newLevel = currentLevel >= 4 ? 0 : currentLevel + 1
-    
-    if (newLevel === 0) {
-      // 移除标题标记
-      const newText = lineText.replace(/^#{1,4}\s+/, '')
-      view.dispatch({
-        changes: { from: line.from, to: line.to, insert: newText }
-      })
-    } else {
-      // 修改标题级别
-      const newText = lineText.replace(/^#{0,4}\s*/, '#'.repeat(newLevel) + ' ')
-      view.dispatch({
-        changes: { from: line.from, to: line.to, insert: newText }
-      })
-    }
-  } else {
-    // 添加一级标题
-    view.dispatch({
-      changes: { from: line.from, to: line.from, insert: '# ' }
-    })
-  }
-  
-  view.focus()
-}
-
 function setHeadingLevel(view: EditorView, level: number): void {
   const line = view.state.doc.lineAt(view.state.selection.main.from)
   const text = line.text.replace(/^#{1,4}\s+/, '')
@@ -403,37 +391,6 @@ function setHeadingLevel(view: EditorView, level: number): void {
     changes: { from: line.from, to: line.to, insert: heading },
     selection: { anchor: line.from + heading.length }
   })
-  view.focus()
-}
-
-/**
- * 切换注释
- */
-function toggleComment(view: EditorView): void {
-  const { from, to } = view.state.selection.main
-  const lines: { from: number; to: number; text: string }[] = []
-  
-  for (let pos = from; pos <= to; ) {
-    const line = view.state.doc.lineAt(pos)
-    lines.push({ from: line.from, to: line.to, text: line.text })
-    pos = line.to + 1
-  }
-  
-  // 检查是否已注释
-  const allCommented = lines.every(line => line.text.trim().startsWith('<!--') && line.text.trim().endsWith('-->'))
-  
-  const changes = lines.map(line => {
-    if (allCommented) {
-      // 取消注释
-      const newText = line.text.replace(/<!--\s*/, '').replace(/\s*-->/, '')
-      return { from: line.from, to: line.to, insert: newText }
-    } else {
-      // 添加注释
-      return { from: line.from, to: line.to, insert: `<!-- ${line.text} -->` }
-    }
-  })
-  
-  view.dispatch({ changes })
   view.focus()
 }
 
@@ -719,22 +676,6 @@ function handleScroll(): void {
 }
 
 /**
- * 切换查找面板
- */
-function toggleSearchPanel(): void {
-  const view = editorView.value
-  if (!view) return
-  
-  if (showSearchPanel.value) {
-    closeSearchPanel(view)
-    showSearchPanel.value = false
-  } else {
-    openSearchPanel(view)
-    showSearchPanel.value = true
-  }
-}
-
-/**
  * 销毁编辑器
  */
 function destroyEditor(): void {
@@ -981,13 +922,112 @@ async function handlePasteEvent(): Promise<void> {
 }
 
 function handleSearchEvent(): void {
+  openSearch(false)
+}
+
+function handleReplaceEvent(): void {
+  openSearch(true)
+}
+
+function handleModeToggleKeydown(event: KeyboardEvent): void {
+  if ((event.ctrlKey || event.metaKey) && event.key === '/') {
+    event.preventDefault()
+    event.stopPropagation()
+    window.dispatchEvent(new CustomEvent('editor:toggleMode'))
+  }
+}
+
+function openSearch(replaceMode = false): void {
+  searchReplaceMode.value = replaceMode
+  searchOpen.value = true
+}
+
+function closeSearch(): void {
+  searchOpen.value = false
+  searchMatches.value = []
+  currentMatchIndex.value = -1
+  const view = editorView.value
+  if (view) {
+    view.dispatch({ effects: searchDecoEffect.of(Decoration.none) })
+  }
+  editorView.value?.focus()
+}
+
+function computeMatches(text: string, query: string, caseSensitive: boolean): Array<{ from: number; to: number }> {
+  const matches: Array<{ from: number; to: number }> = []
+  if (!query) return matches
+  const hay = caseSensitive ? text : text.toLowerCase()
+  const needle = caseSensitive ? query : query.toLowerCase()
+  let idx = hay.indexOf(needle)
+  while (idx !== -1) {
+    matches.push({ from: idx, to: idx + query.length })
+    idx = hay.indexOf(needle, idx + query.length)
+  }
+  return matches
+}
+
+function applySearchState(view: EditorView): void {
+  const decos = searchMatches.value.map((m, i) =>
+    Decoration.mark({
+      class: i === currentMatchIndex.value ? 'cm-searchMatch cm-searchMatch-selected' : 'cm-searchMatch'
+    }).range(m.from, m.to)
+  )
+  const m = searchMatches.value[currentMatchIndex.value]
+  if (m) {
+    view.dispatch({
+      effects: searchDecoEffect.of(Decoration.set(decos)),
+      selection: { anchor: m.from, head: m.to },
+      scrollIntoView: true
+    })
+  } else {
+    view.dispatch({ effects: searchDecoEffect.of(Decoration.set(decos)) })
+  }
+}
+
+function handleSearch(query: string, caseSensitive: boolean): void {
   const view = editorView.value
   if (!view) return
-  if (!showSearchPanel.value) {
-    openSearchPanel(view)
-    showSearchPanel.value = true
+  lastSearchQuery.value = query
+  lastCaseSensitive.value = caseSensitive
+  searchMatches.value = computeMatches(view.state.doc.toString(), query, caseSensitive)
+  if (searchMatches.value.length === 0) {
+    currentMatchIndex.value = -1
+  } else if (currentMatchIndex.value < 0 || currentMatchIndex.value >= searchMatches.value.length) {
+    currentMatchIndex.value = 0
   }
+  applySearchState(view)
+}
+
+function nextMatch(): void {
+  const view = editorView.value
+  if (!view || searchMatches.value.length === 0) return
+  currentMatchIndex.value = (currentMatchIndex.value + 1) % searchMatches.value.length
+  applySearchState(view)
   view.focus()
+}
+
+function prevMatch(): void {
+  const view = editorView.value
+  if (!view || searchMatches.value.length === 0) return
+  currentMatchIndex.value = (currentMatchIndex.value - 1 + searchMatches.value.length) % searchMatches.value.length
+  applySearchState(view)
+  view.focus()
+}
+
+function handleReplace(query: string, replaceText: string, caseSensitive: boolean): void {
+  const view = editorView.value
+  const m = searchMatches.value[currentMatchIndex.value]
+  if (!view || !m) return
+  view.dispatch({ changes: { from: m.from, to: m.to, insert: replaceText } })
+  handleSearch(query, caseSensitive)
+}
+
+function handleReplaceAll(query: string, replaceText: string, caseSensitive: boolean): void {
+  const view = editorView.value
+  if (!view || searchMatches.value.length === 0) return
+  const changes = searchMatches.value.map((m) => ({ from: m.from, to: m.to, insert: replaceText }))
+  view.dispatch({ changes })
+  handleSearch(query, caseSensitive)
 }
 
 /** 在当前行首插入前缀 */
@@ -1031,6 +1071,7 @@ onMounted(() => {
     editorEl.addEventListener('dragover', handleDragOver)
     editorEl.addEventListener('drop', handleDrop)
     editorEl.addEventListener('paste', handlePaste)
+    editorEl.addEventListener('keydown', handleModeToggleKeydown)
   }
 
   // 工具栏事件监听
@@ -1046,7 +1087,7 @@ onMounted(() => {
   window.addEventListener('editor:copy', handleCopyEvent)
   window.addEventListener('editor:paste', handlePasteEvent)
   window.addEventListener('editor:find', handleSearchEvent)
-  window.addEventListener('editor:replace', handleSearchEvent)
+  window.addEventListener('editor:replace', handleReplaceEvent)
   document.addEventListener('click', closeSourceContextMenu)
 })
 
@@ -1057,6 +1098,7 @@ onUnmounted(() => {
     editorEl.removeEventListener('dragover', handleDragOver)
     editorEl.removeEventListener('drop', handleDrop)
     editorEl.removeEventListener('paste', handlePaste)
+    editorEl.removeEventListener('keydown', handleModeToggleKeydown)
   }
 
   window.removeEventListener('editor:format', handleFormatEvent)
@@ -1071,7 +1113,7 @@ onUnmounted(() => {
   window.removeEventListener('editor:copy', handleCopyEvent)
   window.removeEventListener('editor:paste', handlePasteEvent)
   window.removeEventListener('editor:find', handleSearchEvent)
-  window.removeEventListener('editor:replace', handleSearchEvent)
+  window.removeEventListener('editor:replace', handleReplaceEvent)
   document.removeEventListener('click', closeSourceContextMenu)
 
   destroyEditor()
@@ -1121,7 +1163,6 @@ watch(() => themeStore.systemPreference, updateTheme)
 
 // Expose methods for parent component
 defineExpose({
-  toggleSearchPanel,
   focus: () => editorView.value?.focus(),
   getView: () => editorView.value,
   scrollTo: (ratio: number) => {
@@ -1143,6 +1184,18 @@ defineExpose({
       class="codemirror-wrapper"
       @contextmenu="showSourceContextMenu"
     />
+    <FindReplacePanel
+      :open="searchOpen"
+      :replace-mode="searchReplaceMode"
+      :match-count="searchMatches.length"
+      :current-index="currentMatchIndex"
+      @close="closeSearch"
+      @search="handleSearch"
+      @next="nextMatch"
+      @prev="prevMatch"
+      @replace="handleReplace"
+      @replace-all="handleReplaceAll"
+    />
     <EditorContextMenu
       :visible="sourceContextMenu.visible"
       :x="sourceContextMenu.x"
@@ -1161,6 +1214,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
   background-color: var(--color-bg-primary);
 }
 

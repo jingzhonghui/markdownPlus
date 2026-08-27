@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { IPC_CHANNELS } from '../channels'
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'markdown-plus-folder-'))
 
@@ -31,13 +32,17 @@ vi.mock('electron', () => ({
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn() }
 }))
 
-import { registerFileHandlers } from '../file-handlers'
-import { IPC_CHANNELS } from '../channels'
+/** 重新加载 file-handlers 模块以重置模块级缓存，并注册 handlers */
+async function registerHandlersFresh(): Promise<void> {
+  electronMocks.handlers.clear()
+  vi.resetModules()
+  const mod = await import('../file-handlers')
+  mod.registerFileHandlers()
+}
 
 describe('folder:read', () => {
-  beforeEach(() => {
-    electronMocks.handlers.clear()
-    registerFileHandlers()
+  beforeEach(async () => {
+    await registerHandlersFresh()
   })
 
   it('filters dot-prefixed directories like .markdownPlus', async () => {
@@ -54,5 +59,106 @@ describe('folder:read', () => {
     expect(names).toContain('docs')
     expect(names).toContain('readme.md')
     expect(names).not.toContain('.markdownPlus')
+  })
+})
+
+describe('recent files', () => {
+  const recentStorePath = path.join(tmpDir, 'recent-files.json')
+
+  beforeEach(async () => {
+    if (fs.existsSync(recentStorePath)) {
+      fs.unlinkSync(recentStorePath)
+    }
+    await registerHandlersFresh()
+  })
+
+  afterEach(() => {
+    if (fs.existsSync(recentStorePath)) {
+      fs.unlinkSync(recentStorePath)
+    }
+  })
+
+  it('adds a file to the recent list with type file', async () => {
+    const file = path.join(tmpDir, 'note.md')
+    fs.writeFileSync(file, 'hello', 'utf8')
+
+    const addHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT_ADD)!
+    const addResult = (await addHandler({}, file)) as { success: boolean }
+    expect(addResult.success).toBe(true)
+
+    const getHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT)!
+    const getResult = (await getHandler({})) as { success: boolean; data: Array<{ path: string; type: string }> }
+    expect(getResult.success).toBe(true)
+    expect(getResult.data).toHaveLength(1)
+    expect(getResult.data[0]).toEqual({ path: path.resolve(file), type: 'file' })
+  })
+
+  it('adds a folder to the recent list with type folder', async () => {
+    const folder = path.join(tmpDir, 'docs')
+    fs.mkdirSync(folder, { recursive: true })
+
+    const addHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT_ADD)!
+    const addResult = (await addHandler({}, folder, 'folder')) as { success: boolean }
+    expect(addResult.success).toBe(true)
+
+    const getHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT)!
+    const getResult = (await getHandler({})) as { success: boolean; data: Array<{ path: string; type: string }> }
+    expect(getResult.data[0]).toEqual({ path: path.resolve(folder), type: 'folder' })
+  })
+
+  it('migrates legacy string[] data on disk to file-type items', async () => {
+    const legacyPath = path.join(tmpDir, 'legacy.md')
+    fs.writeFileSync(legacyPath, 'x', 'utf8')
+    fs.writeFileSync(recentStorePath, JSON.stringify([legacyPath]), 'utf8')
+
+    const getHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT)!
+    const getResult = (await getHandler({})) as { success: boolean; data: Array<{ path: string; type: string }> }
+    expect(getResult.data[0]).toEqual({ path: legacyPath, type: 'file' })
+  })
+
+  it('filters out recent items whose file no longer exists', async () => {
+    fs.writeFileSync(recentStorePath, JSON.stringify([
+      { path: path.join(tmpDir, 'gone.md'), type: 'file' },
+      { path: path.join(tmpDir, 'present.md'), type: 'file' }
+    ]), 'utf8')
+    fs.writeFileSync(path.join(tmpDir, 'present.md'), 'x', 'utf8')
+
+    const getHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT)!
+    const getResult = (await getHandler({})) as { success: boolean; data: Array<{ path: string }> }
+    expect(getResult.data).toHaveLength(1)
+    expect(getResult.data[0].path).toBe(path.join(tmpDir, 'present.md'))
+  })
+
+  it('deduplicates the same path and moves it to the front', async () => {
+    const a = path.join(tmpDir, 'a.md')
+    const b = path.join(tmpDir, 'b.md')
+    fs.writeFileSync(a, 'a', 'utf8')
+    fs.writeFileSync(b, 'b', 'utf8')
+
+    const addHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT_ADD)!
+    await addHandler({}, a)
+    await addHandler({}, b)
+    await addHandler({}, a)
+
+    const getHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT)!
+    const getResult = (await getHandler({})) as { success: boolean; data: Array<{ path: string }> }
+    expect(getResult.data).toHaveLength(2)
+    expect(getResult.data[0].path).toBe(path.resolve(a))
+    expect(getResult.data[1].path).toBe(path.resolve(b))
+  })
+
+  it('clears the recent list', async () => {
+    const file = path.join(tmpDir, 'note.md')
+    fs.writeFileSync(file, 'hello', 'utf8')
+
+    const addHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT_ADD)!
+    await addHandler({}, file)
+    const clearHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT_CLEAR)!
+    const clearResult = (await clearHandler({})) as { success: boolean }
+    expect(clearResult.success).toBe(true)
+
+    const getHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RECENT)!
+    const getResult = (await getHandler({})) as { success: boolean; data: Array<{ path: string }> }
+    expect(getResult.data).toHaveLength(0)
   })
 })

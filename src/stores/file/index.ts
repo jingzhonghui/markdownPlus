@@ -26,6 +26,25 @@ export const useFileStore = defineStore('file', () => {
   const MAX_SIDEBAR_WIDTH = 420
   const clampSidebarWidth = (width: number): number => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width))
 
+  // ====== 最大打开标签数（默认 20，可在设置中修改，持久化到会话） ======
+  const DEFAULT_MAX_OPEN_TABS = 20
+  const MIN_MAX_OPEN_TABS = 1
+  const MAX_MAX_OPEN_TABS = 100
+  const sessionMaxOpenTabs = loadSessionState()?.maxOpenTabs
+  const maxOpenTabs = ref<number>(
+    typeof sessionMaxOpenTabs === 'number' && Number.isFinite(sessionMaxOpenTabs)
+      ? Math.min(MAX_MAX_OPEN_TABS, Math.max(MIN_MAX_OPEN_TABS, Math.floor(sessionMaxOpenTabs)))
+      : DEFAULT_MAX_OPEN_TABS
+  )
+
+  function setMaxOpenTabs(n: number): void {
+    const clamped = Number.isFinite(n)
+      ? Math.min(MAX_MAX_OPEN_TABS, Math.max(MIN_MAX_OPEN_TABS, Math.floor(n)))
+      : DEFAULT_MAX_OPEN_TABS
+    maxOpenTabs.value = clamped
+    persistSession()
+  }
+
   const editorMode = ref<EditorMode>('ir')
   const sessionEditorMode = loadSessionState()?.editorMode
   if (sessionEditorMode === 'ir' || sessionEditorMode === 'source' || sessionEditorMode === 'split') {
@@ -217,7 +236,8 @@ export const useFileStore = defineStore('file', () => {
     title: string,
     content: string,
     format: 'markdown' | 'mdx'
-  ): TabInfo {
+  ): TabInfo | null {
+    if (tabs.value.length >= maxOpenTabs.value) return null
     const tab = tabState.createTab()
     tab.document = createMdxDocument(title, content)
     tab.content = content
@@ -240,6 +260,32 @@ export const useFileStore = defineStore('file', () => {
     }
     stateVersion.value++
     scheduleRecoverySnapshot()
+  }
+
+  /**
+   * 从磁盘重新加载指定文件的 tab 内容（用于同步拉取后被外部覆盖）。
+   * 只更新已打开的 tab；未打开的返回 false。加载成功会清空 modified 标志。
+   */
+  async function reloadFile(filePath: string): Promise<boolean> {
+    const tab = tabState.findTabByPath(filePath)
+    if (!tab) return false
+    if (!window.electronAPI) return false
+    const result = await window.electronAPI.openFile(filePath, false)
+    if (result.success && result.data) {
+      const doc = result.data.document as MdxDocument
+      tab.document = doc
+      tab.content = doc.content
+      if (tab.fileInfo) {
+        tab.fileInfo.modified = false
+        if (result.data.format) {
+          tab.fileInfo.format = result.data.format as DocumentFormat
+        }
+      }
+      stateVersion.value++
+      updateWordCount()
+      return true
+    }
+    return false
   }
 
   // ====== 最近文件 ======
@@ -276,6 +322,14 @@ export const useFileStore = defineStore('file', () => {
     error.value = null
 
     try {
+      if (tabs.value.length >= maxOpenTabs.value) {
+        await requestDialog({
+          title: '已达标签上限',
+          message: `最多同时打开 ${maxOpenTabs.value} 个标签，请先关闭一些标签。`,
+          buttons: [{ label: '知道了', value: 0, primary: true }]
+        })
+        return false
+      }
       const tab = tabState.createTab()
 
       if (window.electronAPI) {
@@ -317,7 +371,10 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  async function openFile(filePath?: string, options?: { addToRecent?: boolean }): Promise<boolean> {
+  async function openFile(
+    filePath?: string,
+    options?: { addToRecent?: boolean; silentLimit?: boolean }
+  ): Promise<boolean> {
     isLoading.value = true
     error.value = null
 
@@ -365,6 +422,19 @@ export const useFileStore = defineStore('file', () => {
             isLoading.value = false
             return false
           }
+        }
+
+        // 创建新 tab 前检查标签上限
+        if (tabs.value.length >= maxOpenTabs.value) {
+          if (!options?.silentLimit) {
+            await requestDialog({
+              title: '已达标签上限',
+              message: `最多同时打开 ${maxOpenTabs.value} 个标签，请先关闭一些标签。`,
+              buttons: [{ label: '知道了', value: 0, primary: true }]
+            })
+          }
+          isLoading.value = false
+          return false
         }
 
         // 创建新 tab
@@ -557,7 +627,8 @@ export const useFileStore = defineStore('file', () => {
       editorMode: editorMode.value,
       aiPanelOpen: useAiStore().panelOpen,
       aiPanelActive: useAiStore().panelActive,
-      aiActiveConversationId: useAiStore().activeConversationId
+      aiActiveConversationId: useAiStore().activeConversationId,
+      maxOpenTabs: maxOpenTabs.value
     })
   }
 
@@ -641,7 +712,8 @@ export const useFileStore = defineStore('file', () => {
     }
 
     for (const filePath of state.openFilePaths ?? []) {
-      await openFile(filePath, { addToRecent: false })
+      const ok = await openFile(filePath, { addToRecent: false, silentLimit: true })
+      if (!ok) break
     }
 
     if (state.activeFilePath) {
@@ -763,6 +835,15 @@ export const useFileStore = defineStore('file', () => {
           activeTabId.value = existing.id
           useAiStore().deactivatePanel()
           return true
+        }
+
+        if (tabs.value.length >= maxOpenTabs.value) {
+          await requestDialog({
+            title: '已达标签上限',
+            message: `最多同时打开 ${maxOpenTabs.value} 个标签，请先关闭一些标签。`,
+            buttons: [{ label: '知道了', value: 0, primary: true }]
+          })
+          return false
         }
 
         const tab = tabState.createTab()
@@ -941,6 +1022,10 @@ export const useFileStore = defineStore('file', () => {
     imageCompressSettings: assets.imageCompressSettings,
     hasMultipleTabs: tabState.hasMultipleTabs,
 
+    // 设置
+    maxOpenTabs,
+    setMaxOpenTabs,
+
     // Tab 操作
     setActiveTab: tabOps.setActiveTab,
     closeTab: tabOps.closeTab,
@@ -956,6 +1041,7 @@ export const useFileStore = defineStore('file', () => {
     setContent,
     updateContent,
     markSaved,
+    reloadFile,
     writeRecoverySnapshot,
     cleanupTimers,
 

@@ -15,7 +15,12 @@ const electronAPI = {
   onUpdateAvailable: vi.fn(() => () => undefined),
   onUpdateNotAvailable: vi.fn(() => () => undefined),
   onUpdateError: vi.fn(() => () => undefined),
-  checkForUpdates: vi.fn(async () => ({ success: true }))
+  checkForUpdates: vi.fn(async () => ({ success: true })),
+  syncAttachFolder: vi.fn(async () => ({ success: true })),
+  syncDetachFolder: vi.fn(async () => ({ success: true })),
+  getSyncStatus: vi.fn(async () => ({ success: true, data: null })),
+  onSyncEvent: vi.fn(() => () => undefined),
+  onSyncFileChanged: vi.fn(() => () => undefined)
 }
 
 describe('App AI ownership', () => {

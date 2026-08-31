@@ -11,6 +11,10 @@ import { openUserGuide } from './user-guide'
 import { registerAiHandlers, disposeAiServices } from './ai/ipc-handlers'
 import { initUpdater, checkForUpdates, openReleasesPage } from './updater'
 import { inspectLaunchTarget, parseLaunchTargets, type LaunchTarget } from './launch-target'
+import { SyncEngine } from './sync/engine'
+import { GitSyncProvider } from './sync/git-provider'
+import { createWorkspaceWatcher } from './sync/watcher'
+import { registerSyncHandlers } from './ipc/sync-handlers'
 
 // AppImage is mounted via FUSE where the setuid bit cannot take effect, so the
 // SUID sandbox helper is unusable. Disable the Chromium sandbox for AppImage
@@ -22,6 +26,15 @@ if (process.env.APPIMAGE) {
 let mainWindow: BrowserWindow | null = null
 const pendingOpenTargets: LaunchTarget[] = []
 let rendererReady = false
+
+const syncEngine = new SyncEngine({
+  createProvider: (workspacePath, _config) => new GitSyncProvider(workspacePath),
+  createWatcher: (workspacePath, onChanges) => createWorkspaceWatcher(workspacePath, onChanges),
+  runGit: async (args, cwd) => {
+    const { runGit } = await import('./sync/git-provider')
+    return runGit(args, cwd)
+  }
+})
 
 function flushOpenTargets(): void {
   if (!rendererReady || !mainWindow || mainWindow.isDestroyed() || pendingOpenTargets.length === 0) return
@@ -194,6 +207,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   // 注册 PDF 导出 handlers
   registerPdfHandlers()
 
+  // 注册同步 IPC handlers
+  registerSyncHandlers(syncEngine, () => mainWindow)
+
   // 注册 AI 助手 handlers
   registerAiHandlers(() => mainWindow)
 
@@ -218,6 +234,7 @@ app.on('window-all-closed', () => {
   // 清理临时资源
   cleanupAll()
   disposeAiServices()
+  syncEngine.dispose()
 
   if (process.platform !== 'darwin') {
     app.quit()
@@ -228,4 +245,5 @@ app.on('before-quit', () => {
   // 应用退出前清理临时资源
   cleanupAll()
   disposeAiServices()
+  syncEngine.dispose()
 })

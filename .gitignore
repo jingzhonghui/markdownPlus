@@ -47,3 +47,9 @@ dev-app-update.yml
 
 # Superpowers / 截图自动化临时工作区
 .superpowers/
+
+# Claude 本地配置
+.claude/
+
+# Superpowers 计划/规格文档
+docs/superpowers/

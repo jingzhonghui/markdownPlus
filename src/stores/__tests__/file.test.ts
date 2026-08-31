@@ -49,10 +49,15 @@ describe('file store', () => {
     setActivePinia(createPinia())
     electronAPI = createMockElectronAPI()
     vi.stubGlobal('window', { electronAPI })
+    const ls = new Map<string, string>()
     vi.stubGlobal('localStorage', {
-      getItem: vi.fn(() => null),
-      setItem: vi.fn(),
-      removeItem: vi.fn()
+      getItem: vi.fn((k: string) => ls.get(k) ?? null),
+      setItem: vi.fn((k: string, v: string) => {
+        ls.set(k, v)
+      }),
+      removeItem: vi.fn((k: string) => {
+        ls.delete(k)
+      })
     })
     vi.stubGlobal('navigator', { userAgent: 'Windows', clipboard: { writeText: vi.fn() } })
     vi.useFakeTimers()
@@ -147,6 +152,31 @@ describe('file store', () => {
       await store.openFile('C:/docs/opened.mdx', { addToRecent: false })
 
       expect(electronAPI.openFile).toHaveBeenCalledWith('C:/docs/opened.mdx', false)
+    })
+  })
+
+  describe('reloadFile', () => {
+    it('reloads an open tab from disk and clears modified', async () => {
+      const doc = makeDoc('Opened', 'old content')
+      electronAPI.openFile.mockResolvedValueOnce({ success: true, data: { document: doc, filePath: 'C:/docs/a.md', format: 'markdown' } })
+      const store = useFileStore()
+      await store.openFile('C:/docs/a.md')
+      expect(store.fileContent).toBe('old content')
+
+      store.updateContent('new local edit')
+      expect(store.isModified).toBe(true)
+
+      const freshDoc = makeDoc('Opened', 'remote content')
+      electronAPI.openFile.mockResolvedValueOnce({ success: true, data: { document: freshDoc, filePath: 'C:/docs/a.md', format: 'markdown' } })
+      const ok = await store.reloadFile('C:/docs/a.md')
+      expect(ok).toBe(true)
+      expect(store.fileContent).toBe('remote content')
+      expect(store.isModified).toBe(false)
+    })
+
+    it('returns false when the tab is not open', async () => {
+      const store = useFileStore()
+      await expect(store.reloadFile('C:/docs/not-open.md')).resolves.toBe(false)
     })
   })
 
@@ -554,6 +584,117 @@ describe('file store', () => {
     it('falls back to 未命名.mdx when there is no active tab', () => {
       const store = useFileStore()
       expect(store.fileName).toBe('未命名.mdx')
+    })
+  })
+
+  describe('maxOpenTabs', () => {
+    it('defaults to 20', () => {
+      const store = useFileStore()
+      expect(store.maxOpenTabs).toBe(20)
+    })
+
+    it('openFile refuses when at the limit', async () => {
+      const store = useFileStore()
+      store.setMaxOpenTabs(1)
+      electronAPI.openFile.mockImplementation(async (filePath: string) => ({
+        success: true,
+        data: { document: makeDoc('Doc', 'a'), filePath, format: 'mdx' }
+      }))
+      expect(await store.openFile('C:/a.mdx')).toBe(true)
+      expect(await store.openFile('C:/b.mdx')).toBe(false)
+      expect(store.tabs).toHaveLength(1)
+      expect(requestDialog).toHaveBeenCalled()
+    })
+
+    it('openFile activates an already-open tab even at the limit', async () => {
+      const store = useFileStore()
+      store.setMaxOpenTabs(1)
+      electronAPI.openFile.mockImplementation(async (filePath: string) => ({
+        success: true,
+        data: { document: makeDoc('Doc', 'a'), filePath, format: 'mdx' }
+      }))
+      await store.openFile('C:/a.mdx')
+      expect(await store.openFile('C:/a.mdx')).toBe(true)
+      expect(store.tabs).toHaveLength(1)
+    })
+
+    it('openFile silentLimit returns false without dialog', async () => {
+      const store = useFileStore()
+      store.setMaxOpenTabs(1)
+      electronAPI.openFile.mockImplementation(async (filePath: string) => ({
+        success: true,
+        data: { document: makeDoc('Doc', 'a'), filePath, format: 'mdx' }
+      }))
+      await store.openFile('C:/a.mdx')
+      requestDialog.mockClear()
+      expect(await store.openFile('C:/b.mdx', { silentLimit: true })).toBe(false)
+      expect(requestDialog).not.toHaveBeenCalled()
+    })
+
+    it('newFile refuses when at the limit', async () => {
+      const store = useFileStore()
+      store.setMaxOpenTabs(1)
+      electronAPI.newFile.mockResolvedValue({ success: true, data: { document: makeDoc('A', 'a'), isNew: true } })
+      expect(await store.newFile()).toBe(true)
+      expect(await store.newFile()).toBe(false)
+      expect(store.tabs).toHaveLength(1)
+    })
+
+    it('createGeneratedDocument returns null when at the limit', () => {
+      const store = useFileStore()
+      store.setMaxOpenTabs(1)
+      expect(store.createGeneratedDocument('A', 'a', 'markdown')).not.toBeNull()
+      expect(store.createGeneratedDocument('B', 'b', 'markdown')).toBeNull()
+    })
+
+    it('setMaxOpenTabs persists to session storage', () => {
+      const store = useFileStore()
+      store.setMaxOpenTabs(35)
+      expect(store.maxOpenTabs).toBe(35)
+      const saved = JSON.parse((localStorage.getItem('markdown-plus-session') || '{}') as string)
+      expect(saved.maxOpenTabs).toBe(35)
+    })
+
+    it('setMaxOpenTabs clamps out-of-range values', () => {
+      const store = useFileStore()
+      store.setMaxOpenTabs(0)
+      expect(store.maxOpenTabs).toBe(1)
+      store.setMaxOpenTabs(999)
+      expect(store.maxOpenTabs).toBe(100)
+    })
+  })
+
+  describe('closing tabs', () => {
+    async function openManyTabs(count: number): Promise<ReturnType<typeof useFileStore>> {
+      const store = useFileStore()
+      store.setMaxOpenTabs(100)
+      electronAPI.openFile.mockImplementation(async (filePath: string) => {
+        const doc = makeDoc(`Doc ${filePath}`, `# ${filePath}`)
+        return { success: true, data: { document: doc, filePath, format: 'mdx' } }
+      })
+      for (let n = 0; n < count; n++) {
+        await store.openFile(`C:/ws/f${n}.mdx`)
+      }
+      return store
+    }
+
+    it('closeAllTabs closes every tab including non-document tabs', async () => {
+      const store = await openManyTabs(60)
+      expect(store.tabs).toHaveLength(60)
+      // 模拟一个非文档标签（如冲突时打开失败的文件）
+      // @ts-expect-error 测试注入无 document 的 tab
+      store.tabs.push({ id: 'tab_broken', fileInfo: { path: 'C:/ws/.gitignore', name: '.gitignore', format: 'text' }, document: null, content: '', revision: 0 })
+      expect(store.tabs).toHaveLength(61)
+      await store.closeAllTabs()
+      expect(store.tabs).toHaveLength(0)
+    })
+
+    it('closeOtherTabs keeps only the target tab', async () => {
+      const store = await openManyTabs(10)
+      const keep = store.tabs[3]
+      await store.closeOtherTabs(keep.id)
+      expect(store.tabs).toHaveLength(1)
+      expect(store.tabs[0].id).toBe(keep.id)
     })
   })
 })

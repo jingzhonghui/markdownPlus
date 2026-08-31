@@ -157,6 +157,7 @@ const modeTooltip = computed(() => {
       </button>
 
       <span class="status-separator">|</span>
+
       <span
         class="status-item"
         :class="saveStatusClass"

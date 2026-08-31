@@ -61,6 +61,25 @@ const searchDecoField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field)
 })
 
+// git 冲突标记行高亮（<<<<<<< / ======= / >>>>>>>）
+const conflictMarkerRegex = /^(<<<<<<<|=======|>>>>>>>)/
+const conflictDecoField = StateField.define<DecorationSet>({
+  create: (state) => computeConflictDecos(state),
+  update: (deco, tr) => (tr.docChanged ? computeConflictDecos(tr.state) : deco.map(tr.changes)),
+  provide: (field) => EditorView.decorations.from(field)
+})
+
+function computeConflictDecos(state: EditorState): DecorationSet {
+  const decos: Array<{ from: number }> = []
+  for (let n = 1; n <= state.doc.lines; n++) {
+    const line = state.doc.line(n)
+    if (conflictMarkerRegex.test(line.text)) {
+      decos.push({ from: line.from })
+    }
+  }
+  return Decoration.set(decos.map((d) => Decoration.line({ class: 'cm-conflict-marker' }).range(d.from)))
+}
+
 // 是否正在同步内容（防止循环更新）
 let isSyncing = false
 
@@ -116,6 +135,9 @@ function createExtensions(): Extension[] {
 
     // 查找高亮（面板由 FindReplacePanel 统一提供）
     searchDecoField,
+
+    // git 冲突标记行高亮
+    conflictDecoField,
 
     // 主题（使用 compartment）
     themeCompartment.of(getThemeExtension()),
@@ -1347,6 +1369,15 @@ defineExpose({
 .codemirror-wrapper :deep(.cm-searchMatch-selected) {
   background-color: var(--color-primary);
   color: white;
+}
+
+/* git 冲突标记行高亮 */
+.codemirror-wrapper :deep(.cm-line.cm-conflict-marker) {
+  background-color: rgba(239, 68, 68, 0.16);
+}
+
+[data-theme='dark'] .codemirror-wrapper :deep(.cm-line.cm-conflict-marker) {
+  background-color: rgba(239, 68, 68, 0.25);
 }
 
 /* 选区样式 - 确保选中效果更明显 */

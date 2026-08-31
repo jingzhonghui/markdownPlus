@@ -169,6 +169,9 @@ function applyCreate(
   revealDocument?: () => void
 ): ToolExecutionResult {
   const tab = fileStore.createGeneratedDocument(operation.title, operation.content, operation.format)
+  if (!tab) {
+    return { status: 'failed', message: '已达到最大打开标签数上限，请先关闭一些标签' }
+  }
   revealDocument?.()
   return { status: 'applied', data: { tabId: tab.id } }
 }

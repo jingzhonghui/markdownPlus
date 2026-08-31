@@ -15,6 +15,7 @@ import type {
   ConversationRecord,
   ToolExecutionResult
 } from '../shared/ai/types'
+import type { EnableSyncOptions, SyncConfig, SyncResult, SyncStatusView } from './sync/types'
 
 export type { UpdateInfoPayload }
 
@@ -160,6 +161,21 @@ export interface ElectronAPI {
   onWindowMaximized: (callback: () => void) => () => void
   onWindowUnmaximized: (callback: () => void) => () => void
 
+  // 同步
+  syncAttachFolder: (workspacePath: string) => Promise<{ success: boolean; data?: SyncStatusView; error?: string }>
+  syncDetachFolder: () => Promise<{ success: boolean; error?: string }>
+  getSyncStatus: () => Promise<{ success: boolean; data?: SyncStatusView; error?: string }>
+  syncPull: () => Promise<{ success: boolean; data?: SyncResult; error?: string }>
+  syncPush: () => Promise<{ success: boolean; data?: SyncResult; error?: string }>
+  syncContinueRebase: () => Promise<{ success: boolean; data?: SyncResult; error?: string }>
+  syncAbortRebase: () => Promise<{ success: boolean; data?: SyncResult; error?: string }>
+  enableSync: (workspacePath: string, options: EnableSyncOptions) => Promise<{ success: boolean; data?: SyncResult; error?: string }>
+  disableSync: () => Promise<{ success: boolean; error?: string }>
+  getSyncConfig: () => Promise<{ success: boolean; data?: SyncConfig | null; error?: string }>
+  setSyncConfig: (patch: Partial<Omit<SyncConfig, 'version' | 'provider'>>) => Promise<{ success: boolean; data?: SyncConfig; error?: string }>
+  onSyncEvent: (callback: (view: SyncStatusView) => void) => () => void
+  onSyncFileChanged: (callback: (files: string[]) => void) => () => void
+
   // 自动更新
   checkForUpdates: () => Promise<{ success: boolean; error?: string }>
   openReleasesPage: () => Promise<{ success: boolean; error?: string }>
@@ -282,6 +298,29 @@ const api: ElectronAPI = {
     const handler = (): void => callback()
     ipcRenderer.on(IPC_CHANNELS.WINDOW.UNMAXIMIZED, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW.UNMAXIMIZED, handler)
+  },
+
+  // 同步
+  syncAttachFolder: (workspacePath) => ipcRenderer.invoke(IPC_CHANNELS.SYNC.ATTACH_FOLDER, workspacePath),
+  syncDetachFolder: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC.DETACH_FOLDER),
+  getSyncStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC.STATUS),
+  syncPull: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC.PULL),
+  syncPush: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC.PUSH),
+  syncContinueRebase: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC.CONTINUE_REBASE),
+  syncAbortRebase: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC.ABORT_REBASE),
+  enableSync: (workspacePath, options) => ipcRenderer.invoke(IPC_CHANNELS.SYNC.ENABLE, workspacePath, options),
+  disableSync: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC.DISABLE),
+  getSyncConfig: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC.CONFIG.GET),
+  setSyncConfig: (patch) => ipcRenderer.invoke(IPC_CHANNELS.SYNC.CONFIG.SET, patch),
+  onSyncEvent: (callback) => {
+    const handler = (_event: unknown, view: SyncStatusView): void => callback(view)
+    ipcRenderer.on(IPC_CHANNELS.SYNC.EVENT, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.SYNC.EVENT, handler)
+  },
+  onSyncFileChanged: (callback) => {
+    const handler = (_event: unknown, files: string[]): void => callback(files)
+    ipcRenderer.on(IPC_CHANNELS.SYNC.FILE_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.SYNC.FILE_CHANGED, handler)
   },
 
   // 自动更新

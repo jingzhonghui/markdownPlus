@@ -12,6 +12,7 @@ export interface SessionState {
   aiPanelOpen: boolean
   aiPanelActive?: boolean
   aiActiveConversationId: string | null
+  maxOpenTabs?: number
 }
 
 export function loadSessionState(): SessionState | null {

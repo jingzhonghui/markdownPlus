@@ -138,7 +138,7 @@ export function registerMdxHandlers(): void {
         targetPath = result.filePaths[0]
       }
 
-      const isMarkdown = path.extname(targetPath).toLowerCase() === '.md'
+      const isMdx = path.extname(targetPath).toLowerCase() === '.mdx'
 
       const MAX_FILE_SIZE = 20 * 1024 * 1024
       const WARN_FILE_SIZE = 5 * 1024 * 1024
@@ -148,29 +148,31 @@ export function registerMdxHandlers(): void {
       }
       const largeFileWarning = fileSize > WARN_FILE_SIZE
 
-      if (isMarkdown) {
-        const content = fs.readFileSync(targetPath, 'utf-8')
-        const document = createMdxDocument(
-          path.basename(targetPath, path.extname(targetPath)),
-          content
-        )
+      if (isMdx) {
+        const result = openMdx(targetPath)
+        if (!result.success || !result.data) return result
+
+        const { document, tempDir } = result.data
+        registerTempDir(targetPath, tempDir)
         if (addToRecent) addRecent(targetPath)
+
         return {
           success: true,
-          data: { document, filePath: targetPath, format: 'markdown', isNew: false, largeFileWarning }
+          data: { document, filePath: targetPath, format: 'mdx', isNew: false, largeFileWarning }
         }
       }
 
-      const result = openMdx(targetPath)
-      if (!result.success || !result.data) return result
-
-      const { document, tempDir } = result.data
-      registerTempDir(targetPath, tempDir)
+      // 其余（.md 与任意文本文件，如冲突文件 .gitignore）按纯文本打开
+      const buf = fs.readFileSync(targetPath)
+      if (buf.includes(0)) {
+        return { success: false, error: '二进制文件无法在编辑器中打开' }
+      }
+      const content = buf.toString('utf-8')
+      const document = createMdxDocument(path.basename(targetPath, path.extname(targetPath)), content)
       if (addToRecent) addRecent(targetPath)
-
       return {
         success: true,
-        data: { document, filePath: targetPath, format: 'mdx', isNew: false, largeFileWarning }
+        data: { document, filePath: targetPath, format: 'markdown', isNew: false, largeFileWarning }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
@@ -183,14 +185,14 @@ export function registerMdxHandlers(): void {
     IPC_CHANNELS.FILE.SAVE,
     async (_, content: string, title?: string, filePath?: string) => {
       try {
-        if (!filePath) return { success: false, error: 'NEW_FILE' }
+      if (!filePath) return { success: false, error: 'NEW_FILE' }
 
-        const isMarkdown = path.extname(filePath).toLowerCase() === '.md'
-        if (isMarkdown) {
-          fs.writeFileSync(filePath, content, 'utf-8')
-          addRecent(filePath)
-          return { success: true, data: filePath }
-        }
+      const isMdx = path.extname(filePath).toLowerCase() === '.mdx'
+      if (!isMdx) {
+        fs.writeFileSync(filePath, content, 'utf-8')
+        addRecent(filePath)
+        return { success: true, data: filePath }
+      }
 
         const normalized = normalizeFilePath(filePath)
         const tempDir = tempDirsByFile.get(normalized)

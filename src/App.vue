@@ -5,6 +5,7 @@ import { useFileStore } from './stores/file'
 import { useUpdateStore } from './stores/update'
 import { useFileDrop } from './composables/useFileDrop'
 import { useAiStore } from './stores/ai'
+import { useSyncStore } from './stores/sync'
 import AppHeader from './components/layout/AppHeader.vue'
 import SideBar from './components/layout/SideBar.vue'
 import StatusBar from './components/layout/StatusBar.vue'
@@ -22,6 +23,7 @@ const fileStore = useFileStore()
 const updateStore = useUpdateStore()
 const { init: initFileDrop, dispose: disposeFileDrop } = useFileDrop()
 const aiStore = useAiStore()
+const syncStore = useSyncStore()
 const aiSettingsOpen = ref(false)
 const aiReady = ref(false)
 const openAiSettings = (): void => { aiSettingsOpen.value = true }
@@ -66,6 +68,7 @@ onMounted(async () => {
   updateStore.init()
   initFileDrop()
   aiStore.init()
+  syncStore.init()
   void loadAiReadiness()
 
   if (window.electronAPI?.onOpenTargets) {

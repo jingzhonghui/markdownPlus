@@ -77,6 +77,23 @@ export const IPC_CHANNELS = {
     READ: 'folder:read',
     CREATE: 'folder:create'
   },
+  SYNC: {
+    ATTACH_FOLDER: 'sync:attachFolder',
+    DETACH_FOLDER: 'sync:detachFolder',
+    STATUS: 'sync:status',
+    PULL: 'sync:pull',
+    PUSH: 'sync:push',
+    CONTINUE_REBASE: 'sync:continueRebase',
+    ABORT_REBASE: 'sync:abortRebase',
+    ENABLE: 'sync:enable',
+    DISABLE: 'sync:disable',
+    CONFIG: {
+      GET: 'sync:config:get',
+      SET: 'sync:config:set'
+    },
+    EVENT: 'sync:event',
+    FILE_CHANGED: 'sync:fileChanged'
+  },
   AI: {
     CONFIG: {
       GET: 'ai:config:get',

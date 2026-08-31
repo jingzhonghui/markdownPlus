@@ -4,12 +4,15 @@ import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { useUpdateStore } from '../../stores/update'
 import { useAiStore } from '../../stores/ai'
+import { useSyncStore } from '../../stores/sync'
 import { requestDialog } from '../../utils/dialog'
+import SyncPanel from './SyncPanel.vue'
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
 const updateStore = useUpdateStore()
 const aiStore = useAiStore()
+const syncStore = useSyncStore()
 const isMaximized = ref(false)
 
 // ===== 菜单状态 =====
@@ -21,6 +24,7 @@ interface MenuItem {
   payload?: string
   checked?: boolean
   icon?: string
+  disabled?: boolean
   children?: MenuItem[]
 }
 
@@ -49,25 +53,27 @@ const fileMenu = computed<MenuItem[]>(() => {
 
   return [
     { kind: 'item', label: '新建文件', action: 'new', shortcut: 'Ctrl+N' },
-    { kind: 'item', label: '打开文件...', action: 'open', shortcut: 'Ctrl+O' },
-    { kind: 'item', label: '打开文件夹...', action: 'open-folder' },
+    { kind: 'item', label: '打开文件', action: 'open', shortcut: 'Ctrl+O' },
+    { kind: 'item', label: '打开文件夹', action: 'open-folder' },
     ...(fileStore.openedFolderPath
       ? [{ kind: 'item', label: '关闭文件夹', action: 'close-folder' } as MenuItem]
       : []),
     { kind: 'divider' },
+    { kind: 'item', label: '同步', action: 'sync', disabled: !fileStore.openedFolderPath },
+    { kind: 'divider' },
     { kind: 'item', label: '保存', action: 'save', shortcut: 'Ctrl+S' },
-    { kind: 'item', label: '另存为...', action: 'save-as', shortcut: 'Ctrl+Shift+S' },
+    { kind: 'item', label: '另存为', action: 'save-as', shortcut: 'Ctrl+Shift+S' },
     { kind: 'divider' },
-    { kind: 'item', label: '导入 Markdown...', action: 'import-md' },
-    { kind: 'item', label: '导入文件夹...', action: 'import-folder' },
+    { kind: 'item', label: '导入 Markdown', action: 'import-md' },
+    { kind: 'item', label: '导入文件夹', action: 'import-folder' },
     { kind: 'divider' },
-    { kind: 'item', label: '导出为 Markdown...', action: 'export-md' },
-    { kind: 'item', label: '导出为 PDF...', action: 'export-pdf' },
-    { kind: 'item', label: '批量导出 PDF...', action: 'export-batch-pdf' },
+    { kind: 'item', label: '导出为 Markdown', action: 'export-md' },
+    { kind: 'item', label: '导出为 PDF', action: 'export-pdf' },
+    { kind: 'item', label: '批量导出 PDF', action: 'export-batch-pdf' },
     { kind: 'divider' },
     recentMenu,
     { kind: 'divider' },
-    { kind: 'item', label: '清空最近文件...', action: 'clear-recent' },
+    { kind: 'item', label: '清空最近文件', action: 'clear-recent' },
     { kind: 'divider' },
     { kind: 'item', label: '退出', action: 'exit' }
   ]
@@ -108,7 +114,7 @@ const viewMenu = computed<MenuItem[]>(() => [
   { kind: 'item', label: '显示侧边栏', action: 'toggle-sidebar', checked: !fileStore.sidebarCollapsed },
   { kind: 'item', label: 'AI 助手', action: 'open-ai', checked: aiStore.panelOpen },
   { kind: 'divider' },
-  { kind: 'item', label: '设置...', action: 'settings', shortcut: 'Ctrl+,' }
+  { kind: 'item', label: '设置', action: 'settings', shortcut: 'Ctrl+,' }
 ])
 
 const insertMenu: MenuItem[] = [
@@ -175,6 +181,7 @@ const EDIT_ACTIONS = new Set(['undo', 'redo', 'cut', 'copy', 'paste', 'find', 'r
 const settingsOpen = ref(false)
 const settingsCompressEnabled = ref(true)
 const settingsCompressQuality = ref(85)
+const settingsMaxTabs = ref(20)
 const linkDialogOpen = ref(false)
 const linkHref = ref('')
 const linkTitle = ref('')
@@ -264,7 +271,7 @@ async function clearRecentFiles(): Promise<void> {
 }
 
 async function runMenuItem(item: MenuItem): Promise<void> {
-  if (item.kind !== 'item' || !item.action || item.action === 'none') return
+  if (item.kind !== 'item' || !item.action || item.action === 'none' || item.disabled) return
   closeMenu()
   if (EDIT_ACTIONS.has(item.action)) {
     window.dispatchEvent(new CustomEvent(`editor:${item.action}`))
@@ -332,9 +339,13 @@ async function runMenuItem(item: MenuItem): Promise<void> {
     case 'open-ai':
       aiStore.openPanel()
       break
+    case 'sync':
+      syncStore.openPanel()
+      break
     case 'settings':
       settingsCompressEnabled.value = fileStore.imageCompressSettings.enabled
       settingsCompressQuality.value = fileStore.imageCompressSettings.quality
+      settingsMaxTabs.value = fileStore.maxOpenTabs
       settingsOpen.value = true
       break
     case 'insert-image':
@@ -463,6 +474,7 @@ function saveSettings(): void {
     enabled: settingsCompressEnabled.value,
     quality: settingsCompressQuality.value
   })
+  fileStore.setMaxOpenTabs(settingsMaxTabs.value)
   settingsOpen.value = false
 }
 
@@ -477,6 +489,20 @@ function toggleAiPanel(): void {
     aiStore.openPanel()
   }
 }
+
+const syncTooltip = computed(() => {
+  const labels: Record<string, string> = {
+    upToDate: '已同步',
+    pendingCommit: '有未提交变更',
+    pendingPush: '有本地提交待推送',
+    pendingPull: '有远端更新待拉取',
+    conflict: '存在冲突',
+    error: '同步出错',
+    syncing: '同步中',
+    uninitialized: '同步未配置'
+  }
+  return `${labels[syncStore.status] ?? '同步'}（点击打开同步面板）`
+})
 
 function handleMinimize(): void {
   window.electronAPI?.windowMinimize()
@@ -534,6 +560,7 @@ function handleKeydown(event: KeyboardEvent): void {
     event.preventDefault()
     settingsCompressEnabled.value = fileStore.imageCompressSettings.enabled
     settingsCompressQuality.value = fileStore.imageCompressSettings.quality
+    settingsMaxTabs.value = fileStore.maxOpenTabs
     settingsOpen.value = true
   }
 }
@@ -593,6 +620,30 @@ onUnmounted(() => {
     <div class="window-drag-region" />
 
     <div class="header-right">
+      <button
+        class="icon-btn sync-btn"
+        :data-status="syncStore.status"
+        :title="syncTooltip"
+        :disabled="!fileStore.openedFolderPath"
+        @click="syncStore.openPanel()"
+      >
+        <svg
+          class="icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="2"
+            d="M21 12a9 9 0 1 1-2.64-6.36"
+          />
+          <path
+            stroke-width="2"
+            d="M21 3v6h-6"
+          />
+        </svg>
+      </button>
+
       <button
         class="icon-btn"
         :class="{ active: aiStore.panelOpen }"
@@ -737,7 +788,7 @@ onUnmounted(() => {
                 <div
                   v-else
                   class="menu-entry"
-                  :class="{ disabled: sub.action === 'none' }"
+                  :class="{ disabled: sub.disabled || sub.action === 'none' }"
                   :title="sub.payload || undefined"
                   @click="runMenuItem(sub)"
                 >
@@ -780,6 +831,7 @@ onUnmounted(() => {
           <div
             v-else
             class="menu-entry"
+            :class="{ disabled: item.disabled || item.action === 'none' }"
             @click="runMenuItem(item)"
           >
             <span class="menu-entry-label">
@@ -831,6 +883,20 @@ onUnmounted(() => {
               >
               <output>{{ settingsCompressQuality }}</output>
             </span>
+          </label>
+
+          <label class="settings-row">
+            <span>
+              <strong>最大打开标签数</strong>
+              <small>同时打开的标签数量上限，防止打开过多</small>
+            </span>
+            <input
+              v-model.number="settingsMaxTabs"
+              class="settings-number"
+              type="number"
+              min="1"
+              max="100"
+            >
           </label>
 
           <div class="settings-theme">
@@ -1030,11 +1096,14 @@ onUnmounted(() => {
         </section>
       </div>
     </teleport>
+
+    <SyncPanel v-if="syncStore.panelOpen" />
   </header>
 </template>
 
 <style scoped>
 .app-header {
+  position: relative;
   display: flex;
   align-items: center;
   height: var(--header-height);
@@ -1119,6 +1188,30 @@ onUnmounted(() => {
 .icon-btn.active {
   color: var(--color-primary);
   background-color: var(--color-primary-light);
+}
+
+.sync-btn:disabled {
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sync-btn[data-status='conflict'],
+.sync-btn[data-status='error'] {
+  color: var(--color-danger, #ef4444);
+}
+
+.sync-btn[data-status='pendingPush'],
+.sync-btn[data-status='pendingCommit'] {
+  color: var(--color-warning);
+}
+
+.sync-btn[data-status='pendingPull'] {
+  color: var(--color-accent);
+}
+
+.sync-btn[data-status='upToDate'] {
+  color: var(--color-success);
 }
 
 .icon {
@@ -1490,6 +1583,16 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
   font-size: 12px;
   text-align: right;
+}
+
+.settings-number {
+  width: 72px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text);
+  font-size: 13px;
 }
 
 .settings-theme {

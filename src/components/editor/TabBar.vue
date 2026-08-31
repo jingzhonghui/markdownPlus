@@ -1,11 +1,23 @@
 <script setup lang="ts">
-import { reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { reactive, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useFileStore } from '../../stores/file'
 import { useAiStore } from '../../stores/ai'
 import type { TabInfo } from '../../stores/file'
 
 const fileStore = useFileStore()
 const aiStore = useAiStore()
+
+// 标签过多时，自动把当前活动标签滚动到可见区域
+watch(
+  () => fileStore.activeTabId,
+  (id) => {
+    if (!id) return
+    nextTick(() => {
+      const el = document.querySelector(`[data-tab-id="${id}"]`) as HTMLElement | null
+      el?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
+  }
+)
 
 async function handleTabClick(tabId: string): Promise<void> {
   aiStore.deactivatePanel()
@@ -272,8 +284,9 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  min-width: 0;
+  min-width: 104px;
   max-width: 200px;
+  flex-shrink: 1;
   border-right: 1px solid var(--color-border);
   cursor: pointer;
   position: relative;

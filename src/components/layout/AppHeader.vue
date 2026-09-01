@@ -95,10 +95,11 @@ const viewMenu = computed<MenuItem[]>(() => [
   {
     kind: 'submenu',
     label: '编辑器模式',
+    disabled: !fileStore.canSwitchEditorMode,
     children: [
-      { kind: 'item', label: '即时渲染', action: 'mode-ir', checked: fileStore.editorMode === 'ir' },
-      { kind: 'item', label: '源码编辑', action: 'mode-source', checked: fileStore.editorMode === 'source' },
-      { kind: 'item', label: '分屏预览', action: 'mode-split', checked: fileStore.editorMode === 'split' }
+      { kind: 'item', label: '即时渲染', action: 'mode-ir', checked: fileStore.editorMode === 'ir', disabled: !fileStore.canSwitchEditorMode },
+      { kind: 'item', label: '源码编辑', action: 'mode-source', checked: fileStore.editorMode === 'source', disabled: !fileStore.canSwitchEditorMode },
+      { kind: 'item', label: '分屏预览', action: 'mode-split', checked: fileStore.editorMode === 'split', disabled: !fileStore.canSwitchEditorMode }
     ]
   },
   {
@@ -521,6 +522,7 @@ function handleClose(): void {
  * 顺序：分屏预览 -> 源码编辑 -> 即时渲染 -> 分屏预览
  */
 function handleToggleModeEvent(): void {
+  if (!fileStore.canSwitchEditorMode) return
   const modes: Array<'split' | 'source' | 'ir'> = ['split', 'source', 'ir']
   const currentIndex = modes.indexOf(fileStore.editorMode)
   const nextIndex = (currentIndex + 1) % modes.length
@@ -773,6 +775,7 @@ onUnmounted(() => {
           <div
             v-else-if="item.kind === 'submenu'"
             class="menu-entry has-sub"
+            :class="{ disabled: item.disabled }"
           >
             <span>{{ item.label }}</span>
             <span class="sub-indicator">▸</span>
@@ -1326,6 +1329,12 @@ onUnmounted(() => {
   color: var(--color-text-tertiary);
   cursor: default;
   pointer-events: none;
+  opacity: 0.7;
+}
+
+.menu-entry.disabled .menu-check,
+.menu-entry.disabled .shortcut {
+  color: inherit;
 }
 
 .menu-divider {

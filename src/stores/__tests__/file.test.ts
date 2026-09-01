@@ -153,6 +153,57 @@ describe('file store', () => {
 
       expect(electronAPI.openFile).toHaveBeenCalledWith('C:/docs/opened.mdx', false)
     })
+
+    it('opens an image file as a read-only image tab', async () => {
+      const doc = makeDoc('pic', '')
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: doc, filePath: 'C:/docs/pic.png', format: 'image', imageDataUrl: 'data:image/png;base64,AAA' }
+      })
+
+      const store = useFileStore()
+      const ok = await store.openFile('C:/docs/pic.png')
+
+      expect(ok).toBe(true)
+      expect(store.tabs).toHaveLength(1)
+      const tab = store.tabs[0]
+      expect(tab.fileInfo?.format).toBe('image')
+      expect(tab.imageDataUrl).toBe('data:image/png;base64,AAA')
+      expect(tab.content).toBe('')
+      expect(store.isModified).toBe(false)
+      expect(store.isDirty).toBe(false)
+
+      // 图片 tab 拒绝保存，避免破坏图片
+      const saved = await store.saveFile()
+      expect(saved).toBe(false)
+      expect(store.tabs[0].fileInfo?.modified).toBe(false)
+    })
+
+    it('only allows switching editor mode for .md/.mdx files', async () => {
+      const store = useFileStore()
+      expect(store.canSwitchEditorMode).toBe(true)
+
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: makeDoc('pic', ''), filePath: 'C:/docs/pic.png', format: 'image', imageDataUrl: 'data:image/png;base64,AAA' }
+      })
+      await store.openFile('C:/docs/pic.png')
+      expect(store.canSwitchEditorMode).toBe(false)
+
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: makeDoc('note', '# hi'), filePath: 'C:/docs/notes.txt', format: 'markdown' }
+      })
+      await store.openFile('C:/docs/notes.txt')
+      expect(store.canSwitchEditorMode).toBe(false)
+
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: makeDoc('doc', '# hi'), filePath: 'C:/docs/doc.mdx', format: 'mdx' }
+      })
+      await store.openFile('C:/docs/doc.mdx')
+      expect(store.canSwitchEditorMode).toBe(true)
+    })
   })
 
   describe('reloadFile', () => {
@@ -222,6 +273,265 @@ describe('file store', () => {
 
       expect(ok).toBe(true)
       expect(store.recentFiles).toEqual([{ path: 'C:/docs', type: 'folder' }])
+    })
+
+    it('keeps expanded folders and loaded children when the tree refreshes', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async (dirPath: string) => {
+          if (dirPath === 'C:/docs') {
+            return {
+              success: true,
+              data: [
+                { name: 'A', path: 'C:/docs/A', isDirectory: true },
+                { name: 'b.md', path: 'C:/docs/b.md', isDirectory: false }
+              ]
+            }
+          }
+          if (dirPath === 'C:/docs/A') {
+            return {
+              success: true,
+              data: [{ name: 'x.mdx', path: 'C:/docs/A/x.mdx', isDirectory: false }]
+            }
+          }
+          return { success: false }
+        })
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      const root = store.fileTree[0]
+      const nodeA = root.children.find((c) => c.name === 'A')!
+      await store.expandNode(nodeA)
+      expect(nodeA.isExpanded).toBe(true)
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/A/x.mdx')).toBe(true)
+
+      // 模拟 createFile/rename/delete 等操作触发的全量刷新
+      await store.readFolder('C:/docs')
+      const refreshedA = store.fileTree[0].children.find((c) => c.name === 'A')!
+      expect(refreshedA.isExpanded).toBe(true)
+      expect(refreshedA.children.some((c) => c.path === 'C:/docs/A/x.mdx')).toBe(true)
+    })
+  })
+
+  describe('tree CRUD updates', () => {
+    function mockFolderTree(): void {
+      electronAPI.readFolder.mockImplementation(async (dirPath: string) => {
+        if (dirPath === 'C:/docs') {
+          return {
+            success: true,
+            data: [
+              { name: 'A', path: 'C:/docs/A', isDirectory: true },
+              { name: 'a.mdx', path: 'C:/docs/a.mdx', isDirectory: false }
+            ]
+          }
+        }
+        if (dirPath === 'C:/docs/A') {
+          return {
+            success: true,
+            data: [{ name: 'x.mdx', path: 'C:/docs/A/x.mdx', isDirectory: false }]
+          }
+        }
+        return { success: false }
+      })
+    }
+
+    async function openTree(): Promise<{ root: FileTreeNode; nodeA: FileTreeNode }> {
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      const root = store.fileTree[0]
+      const nodeA = root.children.find((c) => c.name === 'A')!
+      await store.expandNode(nodeA)
+      return { root, nodeA }
+    }
+
+    it('inserts a new file into an expanded subfolder without collapsing the tree', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        createFile: vi.fn(async () => ({ success: true, data: { path: 'C:/docs/A/y.mdx' } })),
+        openFile: vi.fn(async () => ({
+          success: true,
+          data: { document: makeDoc('y', ''), filePath: 'C:/docs/A/y.mdx', format: 'mdx' }
+        }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      const { nodeA } = await openTree()
+      const readCallsBefore = electronAPI.readFolder.mock.calls.length
+
+      const ok = await store.createFile('C:/docs/A', 'y.mdx')
+
+      expect(ok).toBe(true)
+      // 新文件出现在 A 的 children 中，且树保持展开
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/A/y.mdx')).toBe(true)
+      expect(nodeA.isExpanded).toBe(true)
+      // 不再触发全量 readFolder 刷新
+      expect(electronAPI.readFolder.mock.calls.length).toBe(readCallsBefore)
+      // 新文件被自动打开
+      expect(store.tabs[0].fileInfo?.path).toBe('C:/docs/A/y.mdx')
+    })
+
+    it('inserts a new file into the root and syncs folderItems', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        createFile: vi.fn(async () => ({ success: true, data: { path: 'C:/docs/z.mdx' } })),
+        openFile: vi.fn(async () => ({
+          success: true,
+          data: { document: makeDoc('z', ''), filePath: 'C:/docs/z.mdx', format: 'mdx' }
+        }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      const { root } = await openTree()
+      expect(root.children.some((c) => c.path === 'C:/docs/z.mdx')).toBe(false)
+
+      const ok = await store.createFile('C:/docs', 'z.mdx')
+
+      expect(ok).toBe(true)
+      expect(root.children.some((c) => c.path === 'C:/docs/z.mdx')).toBe(true)
+      expect(store.folderItems.some((c) => c.path === 'C:/docs/z.mdx')).toBe(true)
+    })
+
+    it('inserts a new folder into an expanded subfolder', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        createFolder: vi.fn(async () => ({ success: true, data: { path: 'C:/docs/A/sub' } }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      const { nodeA } = await openTree()
+
+      const ok = await store.createFolder('C:/docs/A', 'sub')
+
+      expect(ok).toBe(true)
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/A/sub' && c.isDirectory)).toBe(true)
+      expect(nodeA.isExpanded).toBe(true)
+    })
+
+    it('renames a nested file in the tree and keeps the folder expanded', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        renameFile: vi.fn(async () => ({ success: true, data: { path: 'C:/docs/A/y.mdx' } }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      const { nodeA } = await openTree()
+
+      const ok = await store.renameItem('C:/docs/A/x.mdx', 'y.mdx')
+
+      expect(ok).toBe(true)
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/A/x.mdx')).toBe(false)
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/A/y.mdx')).toBe(true)
+      expect(nodeA.isExpanded).toBe(true)
+    })
+
+    it('renames a nested folder and updates its descendants', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        renameFile: vi.fn(async () => ({ success: true, data: { path: 'C:/docs/B' } }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      const { root, nodeA } = await openTree()
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/A/x.mdx')).toBe(true)
+
+      const ok = await store.renameItem('C:/docs/A', 'B')
+
+      expect(ok).toBe(true)
+      expect(nodeA.name).toBe('B')
+      expect(nodeA.path).toBe('C:/docs/B')
+      expect(nodeA.isExpanded).toBe(true)
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/B/x.mdx')).toBe(true)
+      expect(root.children.some((c) => c.name === 'B' && c.path === 'C:/docs/B')).toBe(true)
+      expect(store.folderItems.some((c) => c.name === 'B' && c.path === 'C:/docs/B')).toBe(true)
+    })
+
+    it('renames a nested folder with backslash paths', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async (dirPath: string) => {
+          if (dirPath === 'C:\\docs') {
+            return {
+              success: true,
+              data: [
+                { name: 'A', path: 'C:\\docs\\A', isDirectory: true },
+                { name: 'a.mdx', path: 'C:\\docs\\a.mdx', isDirectory: false }
+              ]
+            }
+          }
+          if (dirPath === 'C:\\docs\\A') {
+            return {
+              success: true,
+              data: [{ name: 'x.mdx', path: 'C:\\docs\\A\\x.mdx', isDirectory: false }]
+            }
+          }
+          return { success: false }
+        }),
+        renameFile: vi.fn(async () => ({ success: true, data: { path: 'C:\\docs\\B' } }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      await store.openFolderPath('C:\\docs')
+      const root = store.fileTree[0]
+      const nodeA = root.children.find((c) => c.name === 'A')!
+      await store.expandNode(nodeA)
+      expect(nodeA.children.some((c) => c.path === 'C:\\docs\\A\\x.mdx')).toBe(true)
+
+      const ok = await store.renameItem('C:\\docs\\A', 'B')
+
+      expect(ok).toBe(true)
+      expect(nodeA.name).toBe('B')
+      expect(nodeA.path).toBe('C:\\docs\\B')
+      expect(nodeA.children.some((c) => c.path === 'C:\\docs\\B\\x.mdx')).toBe(true)
+    })
+
+    it('renames the root folder and updates openedFolderPath', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        renameFile: vi.fn(async () => ({ success: true, data: { path: 'C:/docs2' } }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      const root = store.fileTree[0]
+      expect(root.name).toBe('docs')
+
+      const ok = await store.renameItem('C:/docs', 'docs2')
+
+      expect(ok).toBe(true)
+      expect(root.name).toBe('docs2')
+      expect(root.path).toBe('C:/docs2')
+      expect(store.openedFolderPath).toBe('C:/docs2')
+    })
+
+    it('removes a nested file from the tree without collapsing siblings', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(),
+        deleteFile: vi.fn(async () => ({ success: true }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+      mockFolderTree()
+
+      const store = useFileStore()
+      const { nodeA } = await openTree()
+
+      const ok = await store.deleteItem('C:/docs/A/x.mdx')
+
+      expect(ok).toBe(true)
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/A/x.mdx')).toBe(false)
+      expect(nodeA.isExpanded).toBe(true)
     })
   })
 

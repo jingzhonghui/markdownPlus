@@ -268,14 +268,14 @@ async function onOpenConflictFile(index: number): Promise<void> {
       <template v-else>
         <div class="sync-panel-actions">
           <button
-            class="sync-panel-btn primary"
+            class="sync-panel-btn success"
             :disabled="syncStore.syncing"
             @click="onPull"
           >
             拉取
           </button>
           <button
-            class="sync-panel-btn"
+            class="sync-panel-btn primary"
             :disabled="syncStore.syncing"
             @click="onPush"
           >
@@ -461,11 +461,16 @@ async function onOpenConflictFile(index: number): Promise<void> {
 .sync-panel-btn {
   padding: 4px 12px;
   font-size: 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-hover);
   border-radius: var(--radius-sm);
-  background-color: var(--color-bg-secondary);
-  color: var(--color-text-primary);
+  background-color: transparent;
+  color: var(--color-text-secondary);
   cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sync-panel-btn:hover {
+  background-color: var(--color-bg-secondary);
 }
 
 .sync-panel-btn.primary {
@@ -473,9 +478,26 @@ async function onOpenConflictFile(index: number): Promise<void> {
   color: var(--color-accent);
 }
 
+.sync-panel-btn.primary:hover {
+  background-color: var(--color-primary-light);
+}
+
 .sync-panel-btn.danger {
-  color: var(--color-danger, #ef4444);
   border-color: var(--color-danger, #ef4444);
+  color: var(--color-danger, #ef4444);
+}
+
+.sync-panel-btn.danger:hover {
+  background-color: rgba(239, 68, 68, 0.08);
+}
+
+.sync-panel-btn.success {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.sync-panel-btn.success:hover {
+  background-color: rgba(16, 185, 129, 0.08);
 }
 
 .sync-panel-btn:disabled {

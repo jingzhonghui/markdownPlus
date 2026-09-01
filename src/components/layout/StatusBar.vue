@@ -92,6 +92,7 @@ const modeTooltip = computed(() => {
         class="mode-toggle-btn"
         :class="fileStore.editorMode"
         :title="modeTooltip"
+        :disabled="!fileStore.canSwitchEditorMode"
         @click="toggleEditorMode"
       >
         <!-- 分屏预览图标 -->
@@ -255,6 +256,16 @@ const modeTooltip = computed(() => {
   color: #f59e0b;
   border-color: #f59e0b;
   background-color: rgba(245, 158, 11, 0.1);
+}
+
+.mode-toggle-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mode-toggle-btn:disabled:hover {
+  border-color: var(--color-border);
+  background-color: var(--color-bg-primary);
 }
 
 .mode-label {

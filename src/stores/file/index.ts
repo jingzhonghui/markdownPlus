@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { DocumentFormat, MdxDocument } from '../../types/mdx'
 import { createMdxDocument } from '../../types/mdx'
@@ -74,6 +74,13 @@ export const useFileStore = defineStore('file', () => {
   // ====== Tab 状态（纯状态 + getters） ======
   const tabState = createTabState()
   const { tabs, activeTabId, activeTab, stateVersion, fileContent } = tabState
+
+  /** 是否可切换编辑模式：仅 .md/.mdx 文件支持（图片等只读文件不可切换） */
+  const canSwitchEditorMode = computed(() => {
+    const name = activeTab.value?.fileInfo?.name
+    if (!name) return true
+    return /\.(md|mdx)$/i.test(name)
+  })
 
   // ====== 字数统计 ======
   function updateWordCount(): void {
@@ -439,13 +446,15 @@ export const useFileStore = defineStore('file', () => {
 
         // 创建新 tab
         const tab = tabState.createTab()
+        const format = (result.data.format as DocumentFormat) || (fPath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx')
         tab.document = doc
-        tab.content = doc.content
+        tab.content = format === 'image' ? '' : doc.content
+        if (format === 'image') tab.imageDataUrl = result.data.imageDataUrl
         tab.fileInfo = {
           path: fPath,
           name: fPath.split(/[/\\]/).pop() || '未命名.mdx',
           modified: false,
-          format: result.data.format || (fPath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx')
+          format
         }
         activeTabId.value = tab.id
         useAiStore().deactivatePanel()
@@ -480,6 +489,10 @@ export const useFileStore = defineStore('file', () => {
       const tab = activeTab.value
       if (!tab || !tab.document) {
         error.value = '没有打开的文档'
+        return false
+      }
+      if (tab.fileInfo?.format === 'image') {
+        error.value = '图片文件不支持编辑或保存'
         return false
       }
 
@@ -520,6 +533,10 @@ export const useFileStore = defineStore('file', () => {
       const tab = activeTab.value
       if (!tab || !tab.document) {
         error.value = '没有打开的文档'
+        return false
+      }
+      if (tab.fileInfo?.format === 'image') {
+        error.value = '图片文件不支持编辑或保存'
         return false
       }
 
@@ -987,6 +1004,8 @@ export const useFileStore = defineStore('file', () => {
     // Tab 状态
     tabs,
     activeTabId,
+    activeTab: tabState.activeTab,
+    canSwitchEditorMode,
 
     // 向后兼容的状态（computed proxy）
     currentFile: tabState.currentFile,

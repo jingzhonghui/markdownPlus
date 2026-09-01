@@ -23,9 +23,12 @@
   --color-primary-hover: #2563eb;
   --color-primary-light: #dbeafe;
   
+  --color-accent: var(--color-primary);
+  
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
+  --color-danger: var(--color-error);
   
   /* 尺寸 */
   --header-height: 34px;

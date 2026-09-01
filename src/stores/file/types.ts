@@ -37,6 +37,8 @@ export interface TabInfo {
   document: MdxDocument | null
   content: string
   revision: number
+  /** 图片文件（format='image'）的 Data URL，用于只读查看 */
+  imageDataUrl?: string
 }
 
 /**

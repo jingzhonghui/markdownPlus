@@ -26,6 +26,19 @@ export function useFolder(deps: FolderDeps) {
   const folderHistory = ref<string[]>([])
   const fileTree = ref<FileTreeNode[]>([])
 
+  /** 按 path 收集树中已存在的节点（用于刷新时保留展开状态与已加载的子节点）。 */
+  function collectOldNodes(nodes: FileTreeNode[]): Map<string, FileTreeNode> {
+    const map = new Map<string, FileTreeNode>()
+    const visit = (list: FileTreeNode[]): void => {
+      for (const node of list) {
+        map.set(node.path, node)
+        if (node.isDirectory) visit(node.children)
+      }
+    }
+    visit(nodes)
+    return map
+  }
+
   async function readFolder(dirPath: string): Promise<boolean> {
     try {
       if (!window.electronAPI) return false
@@ -38,16 +51,21 @@ export function useFolder(deps: FolderDeps) {
           await window.electronAPI.authorizeWorkspaceRoot(dirPath)
         }
 
-        // 同步更新 fileTree 根节点的子节点，使侧边栏文件树即时刷新
+        // 同步更新 fileTree 根节点的子节点，使侧边栏文件树即时刷新；
+        // 保留原有节点的展开状态与已加载的子节点，避免刷新后文件树收起
         if (fileTree.value.length > 0 && fileTree.value[0].path === dirPath) {
-          fileTree.value[0].children = result.data.map((item: FolderItem) => ({
-            name: item.name,
-            path: item.path,
-            isDirectory: item.isDirectory,
-            isExpanded: false,
-            isLoading: false,
-            children: []
-          }))
+          const oldNodes = collectOldNodes(fileTree.value[0].children)
+          fileTree.value[0].children = result.data.map((item: FolderItem) => {
+            const old = oldNodes.get(item.path)
+            return {
+              name: item.name,
+              path: item.path,
+              isDirectory: item.isDirectory,
+              isExpanded: old ? old.isExpanded : false,
+              isLoading: false,
+              children: old ? old.children : []
+            }
+          })
         }
 
         return true
@@ -225,12 +243,30 @@ export function useFolder(deps: FolderDeps) {
     await visit(fileTree.value)
   }
 
+  /** 将新建的文件/文件夹节点增量插入树中；父目录尚未加载时回退到全量刷新根节点。 */
+  function insertCreatedNode(parentPath: string, node: FileTreeNode): void {
+    const parent = findNodeInTree(fileTree.value, parentPath)
+    if (!parent) {
+      void readFolder(openedFolderPath.value!)
+      return
+    }
+    insertNodeSorted(parent.children, node)
+    if (parent.path === openedFolderPath.value) syncRootItems()
+  }
+
   async function createFile(dirPath: string, name: string): Promise<boolean> {
     try {
       if (!window.electronAPI) return false
       const result = await window.electronAPI.createFile(dirPath, name)
       if (result.success && result.data?.path) {
-        await readFolder(openedFolderPath.value!)
+        insertCreatedNode(dirPath, {
+          name,
+          path: result.data.path,
+          isDirectory: false,
+          isExpanded: false,
+          isLoading: false,
+          children: []
+        })
         return await deps.openFile(result.data.path, { addToRecent: false })
       }
       return false
@@ -243,8 +279,15 @@ export function useFolder(deps: FolderDeps) {
     try {
       if (!window.electronAPI) return false
       const result = await window.electronAPI.createFolder(parentPath, name)
-      if (result.success) {
-        await readFolder(openedFolderPath.value!)
+      if (result.success && result.data?.path) {
+        insertCreatedNode(parentPath, {
+          name,
+          path: result.data.path,
+          isDirectory: true,
+          isExpanded: false,
+          isLoading: false,
+          children: []
+        })
         return true
       }
       return false
@@ -265,9 +308,20 @@ export function useFolder(deps: FolderDeps) {
             tab.fileInfo.name = newName
           }
         }
-        await readFolder(openedFolderPath.value!)
+        // 增量更新树节点（目录需同步其子节点路径前缀），保持展开状态
+        const isRoot = fileTree.value[0]?.path === oldPath
+        const node = findNodeInTree(fileTree.value, oldPath)
+        if (node) {
+          relocateNodePaths(node, oldPath, result.data!.path)
+          node.name = newName
+          if (isRoot) openedFolderPath.value = result.data!.path
+          syncRootItems()
+        } else {
+          await readFolder(openedFolderPath.value!)
+        }
         return true
       }
+      deps.error.value = result.error || '重命名失败'
       return false
     } catch {
       return false
@@ -422,7 +476,13 @@ export function useFolder(deps: FolderDeps) {
           deps.persistSession()
         }
 
-        await readFolder(openedFolderPath.value!)
+        // 增量移除树节点，保持其余节点展开状态；节点未加载时回退到全量刷新
+        const removed = removeNodeFromTree(fileTree.value, targetPath)
+        if (removed) {
+          syncRootItems()
+        } else {
+          await readFolder(openedFolderPath.value!)
+        }
         return true
       }
       return false

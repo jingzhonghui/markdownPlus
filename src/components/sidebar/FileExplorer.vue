@@ -155,7 +155,7 @@ function onFileContextMenu(event: MouseEvent, node: FileTreeNode): void {
     { label: '打开', action: () => fileStore.openFile(node.path, { addToRecent: false }) },
     { label: '保存', action: () => saveFileNode(node) },
     { label: '另存为', action: () => saveFileNodeAs(node) },
-    ...(/\.(md|mdx)$/i.test(node.name)
+    ...(/\.(md|mdx|txt)$/i.test(node.name)
       ? [{ label: '导出 PDF', action: () => { void fileStore.exportFileToPdf(node.path) } }]
       : []),
     { label: '重命名', action: () => promptRename(node) },
@@ -207,6 +207,47 @@ function openInputDialog(title: string, initialValue: string, placeholder: strin
   })
 }
 
+// ========== 新建文件对话框（文件名 + 后缀下拉框） ==========
+const showCreateFileDialog = ref(false)
+const createFileName = ref('')
+const createFileExt = ref('.mdx')
+const createFileError = ref(false)
+const createFileInputRef = ref<HTMLInputElement | null>(null)
+const FILE_EXTENSIONS = ['.mdx', '.md', '.txt'] as const
+let createFileResolve: ((value: string | null) => void) | null = null
+
+function openCreateFileDialog(): Promise<string | null> {
+  return new Promise((resolve) => {
+    createFileName.value = ''
+    createFileExt.value = '.mdx'
+    createFileError.value = false
+    showCreateFileDialog.value = true
+    createFileResolve = resolve
+    nextTick(() => createFileInputRef.value?.focus())
+  })
+}
+
+function confirmCreateFile(): void {
+  let base = createFileName.value.trim()
+  // 若用户直接输入了完整文件名，剥离已有后缀再按选择的扩展名拼接
+  base = base.replace(/\.(mdx?|md|txt)$/i, '')
+  if (!base) {
+    createFileError.value = true
+    createFileInputRef.value?.focus()
+    return
+  }
+  createFileError.value = false
+  showCreateFileDialog.value = false
+  createFileResolve?.(base + createFileExt.value)
+  createFileResolve = null
+}
+
+function cancelCreateFile(): void {
+  showCreateFileDialog.value = false
+  createFileResolve?.(null)
+  createFileResolve = null
+}
+
 function confirmInput(): void {
   const val = inputValue.value.trim()
   if (!val) return
@@ -238,7 +279,7 @@ function resolveConfirmDialog(value: boolean): void {
 
 // ========== 操作函数 ==========
 async function promptCreateFile(dirPath: string): Promise<void> {
-  const name = await openInputDialog('新建文件', '未命名.mdx', '文件名 (.mdx / .md)')
+  const name = await openCreateFileDialog()
   if (!name) return
   await fileStore.createFile(dirPath, name)
 }
@@ -252,7 +293,14 @@ async function promptCreateFolder(dirPath: string): Promise<void> {
 async function promptRename(node: FileTreeNode): Promise<void> {
   const name = await openInputDialog('重命名', node.name, '新名称')
   if (!name || name === node.name) return
-  await fileStore.renameItem(node.path, name)
+  const ok = await fileStore.renameItem(node.path, name)
+  if (!ok) {
+    await requestDialog({
+      title: '重命名失败',
+      message: fileStore.error || '重命名失败，请检查目标名称是否已存在或文件夹是否被占用',
+      buttons: [{ label: '确定', value: 0, primary: true }]
+    })
+  }
 }
 
 async function promptDelete(node: FileTreeNode): Promise<void> {
@@ -448,7 +496,7 @@ onUnmounted(() => {
       </div>
     </teleport>
 
-    <!-- ====== 输入对话框（新建/重命名） ====== -->
+    <!-- ====== 输入对话框（新建文件夹/重命名） ====== -->
     <teleport to="body">
       <div
         v-if="showInputDialog"
@@ -480,6 +528,63 @@ onUnmounted(() => {
             <button
               class="dialog-btn dialog-btn-confirm"
               @click="confirmInput"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- ====== 新建文件对话框（文件名 + 后缀下拉框） ====== -->
+    <teleport to="body">
+      <div
+        v-if="showCreateFileDialog"
+        class="dialog-overlay"
+        @keyup.esc="cancelCreateFile"
+      >
+        <div
+          class="dialog"
+          @click.stop
+        >
+          <h3 class="dialog-title">
+            新建文件
+          </h3>
+          <div class="create-file-row">
+            <input
+              ref="createFileInputRef"
+              v-model="createFileName"
+              type="text"
+              spellcheck="false"
+              class="dialog-input dialog-input-flex"
+              :class="{ 'dialog-input-error': createFileError }"
+              placeholder="请输入文件名"
+              @keyup.enter="confirmCreateFile"
+              @input="createFileError = false"
+            >
+            <select
+              v-model="createFileExt"
+              class="dialog-select"
+            >
+              <option
+                v-for="ext in FILE_EXTENSIONS"
+                :key="ext"
+                :value="ext"
+              >
+                {{ ext }}
+              </option>
+            </select>
+          </div>
+          <div class="dialog-actions">
+            <button
+              class="dialog-btn dialog-btn-cancel"
+              @click="cancelCreateFile"
+            >
+              取消
+            </button>
+            <button
+              class="dialog-btn dialog-btn-confirm"
+              @click="confirmCreateFile"
             >
               确定
             </button>
@@ -755,6 +860,38 @@ onUnmounted(() => {
 }
 
 .dialog-input:focus {
+  border-color: var(--color-primary);
+}
+
+.dialog-input-error {
+  border-color: var(--color-error);
+}
+
+.dialog-input-error:focus {
+  border-color: var(--color-error);
+}
+
+.create-file-row {
+  display: flex;
+  gap: 8px;
+}
+
+.dialog-input-flex {
+  flex: 1;
+}
+
+.dialog-select {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+}
+
+.dialog-select:focus {
   border-color: var(--color-primary);
 }
 

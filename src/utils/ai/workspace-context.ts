@@ -58,7 +58,7 @@ export function createExecutionSnapshot(fileStore: FileStore): AiExecutionSnapsh
       id: tab.id,
       title: tab.document?.metadata.title || tab.fileInfo?.name || '',
       path: tab.fileInfo?.path ?? null,
-      format: tab.fileInfo?.format ?? 'mdx',
+      format: tab.fileInfo?.format === 'markdown' ? 'markdown' : 'mdx',
       content: tab.content,
       revision: tab.revision,
       contentHash: hashDocumentContent(tab.content),

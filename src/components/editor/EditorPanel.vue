@@ -6,6 +6,7 @@ import AiPanel from '../ai/AiPanel.vue'
 import SourceEditor from './SourceEditor.vue'
 import IrEditor from './IrEditor.vue'
 import PreviewPanel from './PreviewPanel.vue'
+import ImageViewer from './ImageViewer.vue'
 import TabBar from './TabBar.vue'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
@@ -18,6 +19,7 @@ const emit = defineEmits<{ openAiSettings: [] }>()
 const showPreview = computed(() => fileStore.editorMode === 'split')
 const isIrMode = computed(() => fileStore.editorMode === 'ir')
 const hasOpenFile = computed(() => fileStore.tabs.length > 0 && fileStore.activeTabId !== null)
+const isImageTab = computed(() => fileStore.activeTab?.fileInfo?.format === 'image')
 
 // 组件引用
 const sourceEditorRef = ref<InstanceType<typeof SourceEditor>>()
@@ -181,9 +183,15 @@ function onPreviewScroll(ratio: number): void {
       v-show="!aiStore.panelActive"
       class="document-view"
     >
+      <!-- 图片文件：只读查看 -->
+      <ImageViewer
+        v-if="isImageTab"
+        :key="fileStore.activeTabId || 'image-viewer'"
+      />
+
       <!-- 即时渲染模式 -->
       <IrEditor
-        v-if="isIrMode"
+        v-else-if="isIrMode"
         :key="fileStore.activeTabId || 'ir-editor'"
       />
 

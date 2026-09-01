@@ -60,6 +60,77 @@ describe('folder:read', () => {
     expect(names).toContain('readme.md')
     expect(names).not.toContain('.markdownPlus')
   })
+
+  it('lists all regular files regardless of extension', async () => {
+    const dir = path.join(tmpDir, 'ws-all')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'a.md'), 'x', 'utf8')
+    fs.writeFileSync(path.join(dir, 'b.mdx'), 'x', 'utf8')
+    fs.writeFileSync(path.join(dir, 'c.txt'), 'x', 'utf8')
+    fs.writeFileSync(path.join(dir, 'd.json'), '{}', 'utf8')
+    fs.writeFileSync(path.join(dir, 'LICENSE'), 'x', 'utf8')
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FOLDER.READ)!
+    const result = (await handler({}, dir)) as { success: boolean; data: Array<{ name: string; isDirectory: boolean }> }
+
+    expect(result.success).toBe(true)
+    const names = result.data.map((item) => item.name)
+    expect(names).toHaveLength(5)
+    for (const expected of ['LICENSE', 'a.md', 'b.mdx', 'c.txt', 'd.json']) {
+      expect(names).toContain(expected)
+    }
+  })
+})
+
+describe('file:rename', () => {
+  beforeEach(async () => {
+    await registerHandlersFresh()
+  })
+
+  it('renames a folder on disk and keeps its contents', async () => {
+    const dir = path.join(tmpDir, 'rename-folder')
+    fs.mkdirSync(path.join(dir, 'A'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'A', 'x.mdx'), 'x', 'utf8')
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RENAME)!
+    const result = (await handler({}, { oldPath: path.join(dir, 'A'), newName: 'B' })) as { success: boolean }
+
+    expect(result.success).toBe(true)
+    expect(fs.existsSync(path.join(dir, 'B'))).toBe(true)
+    expect(fs.existsSync(path.join(dir, 'A'))).toBe(false)
+    expect(fs.existsSync(path.join(dir, 'B', 'x.mdx'))).toBe(true)
+  })
+
+  it('rejects renaming to an existing path', async () => {
+    const dir = path.join(tmpDir, 'rename-folder-conflict')
+    fs.mkdirSync(path.join(dir, 'A'), { recursive: true })
+    fs.mkdirSync(path.join(dir, 'B'), { recursive: true })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RENAME)!
+    const result = (await handler({}, { oldPath: path.join(dir, 'A'), newName: 'B' })) as {
+      success: boolean
+      error?: string
+    }
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('目标已存在')
+  })
+
+  it('allows renaming a folder to a different-cased name (Windows case-insensitive)', async () => {
+    const dir = path.join(tmpDir, 'rename-folder-case')
+    fs.mkdirSync(path.join(dir, 'Docs'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'Docs', 'x.mdx'), 'x', 'utf8')
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.RENAME)!
+    const result = (await handler({}, { oldPath: path.join(dir, 'Docs'), newName: 'docs' })) as {
+      success: boolean
+      error?: string
+    }
+
+    // Windows NTFS 不区分大小写：仅大小写变化时 fs.existsSync 会误判“目标已存在”
+    expect(result.success).toBe(true)
+    expect(fs.existsSync(path.join(dir, 'docs', 'x.mdx'))).toBe(true)
+  })
 })
 
 describe('recent files', () => {

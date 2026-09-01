@@ -37,7 +37,7 @@ export function usePdf(deps: PdfDeps) {
       filePath,
       fileName,
       title: tab.document?.metadata.title || fileName.replace(/\.(mdx|md)$/i, ''),
-      format: tab.fileInfo?.format || 'mdx',
+      format: tab.fileInfo?.format === 'markdown' ? 'markdown' : 'mdx',
       content: tab.content,
       images: {}
     }
@@ -81,6 +81,7 @@ export function usePdf(deps: PdfDeps) {
   async function exportTabToPdf(tabId: string): Promise<boolean> {
     const tab = tabs.value.find((item) => item.id === tabId)
     if (!tab?.document) return false
+    if (tab.fileInfo?.format === 'image') return false
     try {
       const outputPath = await printPdfSource(pdfSourceFromTab(tab))
       if (outputPath) {

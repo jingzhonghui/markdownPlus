@@ -74,6 +74,27 @@ describe('mdx file handlers', () => {
     expect(result.error).toContain('二进制')
   })
 
+  it('opens a png file as a read-only image with a data URL', async () => {
+    registerMdxHandlers()
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d])
+    const filePath = makeFile('pic.png', png)
+    const result = await call(IPC_CHANNELS.FILE.OPEN, filePath, false)
+    expect(result.success).toBe(true)
+    const data = result.data as { format?: string; imageDataUrl?: string }
+    expect(data.format).toBe('image')
+    expect(data.imageDataUrl).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('opens an svg file as an image instead of plain text', async () => {
+    registerMdxHandlers()
+    const filePath = makeFile('drawing.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+    const result = await call(IPC_CHANNELS.FILE.OPEN, filePath, false)
+    expect(result.success).toBe(true)
+    const data = result.data as { format?: string; imageDataUrl?: string }
+    expect(data.format).toBe('image')
+    expect(data.imageDataUrl).toMatch(/^data:image\/svg\+xml;base64,/)
+  })
+
   it('still routes .mdx files through the MDX reader', async () => {
     registerMdxHandlers()
     // 纯文本冒充 .mdx：openMdx 应失败（非 ZIP），证明 .mdx 未走纯文本分支

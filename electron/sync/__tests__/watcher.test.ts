@@ -22,8 +22,6 @@ describe('createWorkspaceWatcher', () => {
       { debounceMs: 150 }
     )
     try {
-      // 等待 chokidar 完成初始扫描（ignoreInitial 会吞掉就绪前创建的文件事件），
-      // 避免同步创建文件与异步初始化之间的竞态。
       await new Promise((r) => setTimeout(r, 200))
       fs.mkdirSync(path.join(dir, 'docs'), { recursive: true })
       fs.writeFileSync(path.join(dir, 'docs', 'a.md'), '# a', 'utf-8')
@@ -35,6 +33,28 @@ describe('createWorkspaceWatcher', () => {
       await waitFor(() => collected.some((p) => p.endsWith('a.md')))
       expect(collected.some((p) => p.includes('.git'))).toBe(false)
       expect(collected.some((p) => p.includes('.markdownPlus'))).toBe(false)
+      // 上报的路径必须是绝对路径
+      expect(collected.some((p) => p.endsWith(path.join('docs', 'a.md')))).toBe(true)
+    } finally {
+      handle.dispose()
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('allows renaming a watched subdirectory (no EPERM from watcher handles)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'markdown-plus-watcher-rename-'))
+    const collected: string[] = []
+    const handle = createWorkspaceWatcher(dir, (files) => collected.push(...files), { debounceMs: 150 })
+    try {
+      await new Promise((r) => setTimeout(r, 200))
+      fs.mkdirSync(path.join(dir, 'other'), { recursive: true })
+      fs.writeFileSync(path.join(dir, 'other', 'a.md'), '# a', 'utf-8')
+      await waitFor(() => collected.some((p) => p.endsWith('a.md')))
+
+      // 关键验证：子目录已被 watcher 覆盖（产生过事件），此刻重命名不应抛 EPERM
+      fs.renameSync(path.join(dir, 'other'), path.join(dir, 'renamed'))
+      expect(fs.existsSync(path.join(dir, 'renamed', 'a.md'))).toBe(true)
+      expect(fs.existsSync(path.join(dir, 'other'))).toBe(false)
     } finally {
       handle.dispose()
       fs.rmSync(dir, { recursive: true, force: true })

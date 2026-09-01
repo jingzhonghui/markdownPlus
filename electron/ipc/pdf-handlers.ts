@@ -67,7 +67,7 @@ export function registerPdfHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.PDF.READ_SOURCE, async (_, filePath: string) => {
     try {
       const extension = path.extname(filePath).toLowerCase()
-      if (extension === '.md') {
+      if (extension === '.md' || extension === '.txt') {
         return {
           success: true,
           data: {
@@ -140,7 +140,7 @@ export function registerPdfHandlers(): void {
         requestedPath = result.filePath.toLowerCase().endsWith('.pdf') ? result.filePath : `${result.filePath}.pdf`
       }
 
-      const outputPath = uniquePdfPath(requestedPath)
+      const outputPath = outputDir ? uniquePdfPath(requestedPath) : requestedPath
       const pdf = await event.sender.printToPDF({
         pageSize: 'A4',
         landscape: false,

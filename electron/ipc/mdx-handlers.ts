@@ -49,6 +49,22 @@ function normalizeFilePath(filePath: string): string {
   return path.normalize(path.resolve(filePath))
 }
 
+/** 图片扩展名 → MIME 类型映射；非图片返回 null */
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon'
+}
+
+function getImageMimeType(filePath: string): string | null {
+  return IMAGE_MIME_TYPES[path.extname(filePath).toLowerCase()] ?? null
+}
+
 function registerTempDir(filePath: string, tempDir: string): void {
   tempDirsByFile.set(normalizeFilePath(filePath), tempDir)
 }
@@ -139,6 +155,7 @@ export function registerMdxHandlers(): void {
       }
 
       const isMdx = path.extname(targetPath).toLowerCase() === '.mdx'
+      const imageMime = getImageMimeType(targetPath)
 
       const MAX_FILE_SIZE = 20 * 1024 * 1024
       const WARN_FILE_SIZE = 5 * 1024 * 1024
@@ -159,6 +176,18 @@ export function registerMdxHandlers(): void {
         return {
           success: true,
           data: { document, filePath: targetPath, format: 'mdx', isNew: false, largeFileWarning }
+        }
+      }
+
+      // 图片文件：以 Data URL 形式返回，由渲染进程只读查看
+      if (imageMime) {
+        const buf = fs.readFileSync(targetPath)
+        const imageDataUrl = `data:${imageMime};base64,${buf.toString('base64')}`
+        const document = createMdxDocument(path.basename(targetPath, path.extname(targetPath)), '')
+        if (addToRecent) addRecent(targetPath)
+        return {
+          success: true,
+          data: { document, filePath: targetPath, format: 'image', isNew: false, largeFileWarning, imageDataUrl }
         }
       }
 

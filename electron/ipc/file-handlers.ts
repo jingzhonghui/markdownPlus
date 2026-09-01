@@ -248,14 +248,11 @@ export function registerFileHandlers(): void {
 
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name)
+        if (entry.name.startsWith('.')) continue
         if (entry.isDirectory()) {
-          if (entry.name.startsWith('.')) continue
           items.push({ name: entry.name, path: fullPath, isDirectory: true })
         } else if (entry.isFile()) {
-          const ext = path.extname(entry.name).toLowerCase()
-          if (ext === '.mdx' || ext === '.md') {
-            items.push({ name: entry.name, path: fullPath, isDirectory: false })
-          }
+          items.push({ name: entry.name, path: fullPath, isDirectory: false })
         }
       }
 
@@ -342,6 +339,15 @@ export function registerFileHandlers(): void {
       const dir = path.dirname(oldPath)
       const newPath = path.join(dir, newName)
       if (fs.existsSync(newPath)) {
+        // Windows NTFS 不区分大小写：新旧路径仅大小写不同时指向同一路径，允许仅大小写重命名
+        if (process.platform === 'win32' && fs.existsSync(oldPath)) {
+          const oldReal = path.normalize(fs.realpathSync(oldPath))
+          const newReal = path.normalize(fs.realpathSync(newPath))
+          if (oldReal.toLowerCase() === newReal.toLowerCase()) {
+            fs.renameSync(oldPath, newPath)
+            return { success: true, data: { path: newPath } }
+          }
+        }
         return { success: false, error: '目标已存在' }
       }
       fs.renameSync(oldPath, newPath)

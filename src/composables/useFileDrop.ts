@@ -32,6 +32,8 @@ export function classifyDropItem(name: string, isDirectory: boolean): DropItemKi
 const isDragging = ref(false)
 let dragDepth = 0
 let mounted = false
+// 应用内部元素（文件树、图片拖拽等）发起的拖拽，不显示「松开以打开」覆盖层
+let internalDrag = false
 
 function hasFiles(e: DragEvent): boolean {
   return !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
@@ -68,15 +70,23 @@ async function processDrop(e: DragEvent): Promise<void> {
   }
 }
 
+function handleDragStart(): void {
+  internalDrag = true
+}
+
+function handleDragEnd(): void {
+  internalDrag = false
+}
+
 function handleDragEnter(e: DragEvent): void {
-  if (!hasFiles(e)) return
+  if (internalDrag || !hasFiles(e)) return
   e.preventDefault()
   dragDepth++
   isDragging.value = true
 }
 
 function handleDragOver(e: DragEvent): void {
-  if (!hasFiles(e)) return
+  if (internalDrag || !hasFiles(e)) return
   e.preventDefault()
   if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
   isDragging.value = true
@@ -95,7 +105,7 @@ function handleDragLeave(e: DragEvent): void {
 function handleDrop(e: DragEvent): void {
   dragDepth = 0
   isDragging.value = false
-  if (!hasFiles(e)) return
+  if (internalDrag || !hasFiles(e)) return
   e.preventDefault()
   void processDrop(e)
 }
@@ -104,6 +114,8 @@ export function useFileDrop() {
   function init(): void {
     if (mounted) return
     mounted = true
+    document.addEventListener('dragstart', handleDragStart)
+    document.addEventListener('dragend', handleDragEnd)
     document.addEventListener('dragenter', handleDragEnter)
     document.addEventListener('dragover', handleDragOver)
     document.addEventListener('dragleave', handleDragLeave)
@@ -113,11 +125,14 @@ export function useFileDrop() {
   function dispose(): void {
     if (!mounted) return
     mounted = false
+    document.removeEventListener('dragstart', handleDragStart)
+    document.removeEventListener('dragend', handleDragEnd)
     document.removeEventListener('dragenter', handleDragEnter)
     document.removeEventListener('dragover', handleDragOver)
     document.removeEventListener('dragleave', handleDragLeave)
     document.removeEventListener('drop', handleDrop)
     dragDepth = 0
+    internalDrag = false
     isDragging.value = false
   }
 

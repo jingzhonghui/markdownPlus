@@ -233,3 +233,67 @@ describe('recent files', () => {
     expect(getResult.data).toHaveLength(0)
   })
 })
+
+describe('file:search', () => {
+  beforeEach(async () => {
+    await registerHandlersFresh()
+  })
+
+  it('recursively lists files only, with full nested paths', async () => {
+    const dir = path.join(tmpDir, 'search-ws')
+    fs.mkdirSync(path.join(dir, 'docs', 'nested'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'root.md'), 'x', 'utf8')
+    fs.writeFileSync(path.join(dir, 'docs', 'guide.md'), 'x', 'utf8')
+    fs.writeFileSync(path.join(dir, 'docs', 'nested', 'deep.txt'), 'x', 'utf8')
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.SEARCH)!
+    const result = (await handler({}, dir)) as { success: boolean; data: Array<{ name: string; path: string }> }
+
+    expect(result.success).toBe(true)
+    const paths = result.data.map((item) => item.path)
+    expect(paths).toContain(path.join(dir, 'root.md'))
+    expect(paths).toContain(path.join(dir, 'docs', 'guide.md'))
+    expect(paths).toContain(path.join(dir, 'docs', 'nested', 'deep.txt'))
+    expect(result.data).toHaveLength(3)
+  })
+
+  it('skips dot-prefixed directories like .git and .markdownPlus', async () => {
+    const dir = path.join(tmpDir, 'search-ignore')
+    fs.mkdirSync(path.join(dir, '.git', 'hooks'), { recursive: true })
+    fs.mkdirSync(path.join(dir, '.markdownPlus'), { recursive: true })
+    fs.mkdirSync(path.join(dir, 'node_modules', 'pkg'), { recursive: true })
+    fs.writeFileSync(path.join(dir, '.git', 'config'), 'x', 'utf8')
+    fs.writeFileSync(path.join(dir, '.markdownPlus', 'sync.json'), 'x', 'utf8')
+    fs.writeFileSync(path.join(dir, 'node_modules', 'pkg', 'index.js'), 'x', 'utf8')
+    fs.writeFileSync(path.join(dir, 'keep.md'), 'x', 'utf8')
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.SEARCH)!
+    const result = (await handler({}, dir)) as { success: boolean; data: Array<{ name: string }> }
+
+    expect(result.success).toBe(true)
+    expect(result.data).toHaveLength(1)
+    expect(result.data[0].name).toBe('keep.md')
+  })
+
+  it('truncates results when the limit is reached', async () => {
+    const dir = path.join(tmpDir, 'search-limit')
+    fs.mkdirSync(dir, { recursive: true })
+    for (let i = 0; i < 5; i++) {
+      fs.writeFileSync(path.join(dir, `f${i}.md`), 'x', 'utf8')
+    }
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.SEARCH)!
+    const result = (await handler({}, dir, 3)) as { success: boolean; data: unknown[] }
+
+    expect(result.success).toBe(true)
+    expect(result.data).toHaveLength(3)
+  })
+
+  it('returns a failure for a non-existent directory', async () => {
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.SEARCH)!
+    const result = (await handler({}, path.join(tmpDir, 'no-such-dir'))) as { success: boolean; error?: string }
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBeTruthy()
+  })
+})

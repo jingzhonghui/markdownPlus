@@ -133,18 +133,23 @@ export const useSyncStore = defineStore('sync', () => {
     return res
   }
 
+  /** 从主进程读取持久化配置，同步三个自动开关的勾选框状态（未配置时保持默认） */
+  async function loadConfigFlags(): Promise<void> {
+    const cfg = await window.electronAPI.getSyncConfig()
+    if (cfg.success && cfg.data) {
+      autoCommit.value = cfg.data.autoCommit
+      autoPull.value = cfg.data.autoPull
+      autoPush.value = cfg.data.autoPush
+    }
+  }
+
   async function enable(options: EnableSyncOptions): Promise<{ success: boolean; error?: string }> {
     const fileStore = useFileStore()
     if (!fileStore.openedFolderPath) return { success: false, error: '请先打开工作区文件夹' }
     const res = await window.electronAPI.enableSync(fileStore.openedFolderPath, options)
     if (res.success) {
       await refresh()
-      const cfg = await window.electronAPI.getSyncConfig()
-      if (cfg.success && cfg.data) {
-        autoCommit.value = cfg.data.autoCommit
-        autoPull.value = cfg.data.autoPull
-        autoPush.value = cfg.data.autoPush
-      }
+      await loadConfigFlags()
     }
     return res
   }
@@ -178,6 +183,8 @@ export const useSyncStore = defineStore('sync', () => {
       async (path) => {
         if (path) {
           await window.electronAPI.syncAttachFolder(path)
+          // attach 后同步持久化的自动开关状态，避免重启后勾选框与引擎配置脱节
+          await loadConfigFlags()
         } else {
           await window.electronAPI.syncDetachFolder()
         }

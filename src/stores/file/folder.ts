@@ -39,6 +39,32 @@ export function useFolder(deps: FolderDeps) {
     return map
   }
 
+  /**
+   * 递归重读已展开的目录节点，使磁盘上直接新增/删除的文件能同步到树中。
+   * 重读子层时保留各节点的展开状态；逐层异步进行，不阻塞 readFolder 本身。
+   */
+  async function refreshExpandedChildren(nodes: FileTreeNode[]): Promise<void> {
+    for (const node of nodes) {
+      if (!node.isDirectory || !node.isExpanded) continue
+      const oldChildren = collectOldNodes(node.children)
+      const result = await window.electronAPI?.readFolder(node.path)
+      if (result?.success && result.data) {
+        node.children = result.data.map((item: FolderItem) => {
+          const old = oldChildren.get(item.path)
+          return {
+            name: item.name,
+            path: item.path,
+            isDirectory: item.isDirectory,
+            isExpanded: old ? old.isExpanded : false,
+            isLoading: false,
+            children: old ? old.children : []
+          }
+        })
+        await refreshExpandedChildren(node.children)
+      }
+    }
+  }
+
   async function readFolder(dirPath: string): Promise<boolean> {
     try {
       if (!window.electronAPI) return false
@@ -66,6 +92,9 @@ export function useFolder(deps: FolderDeps) {
               children: old ? old.children : []
             }
           })
+          // 已展开的子目录重新读取，让磁盘上直接新增/删除的文件也能显示
+          // （watcher 与手动"刷新"都只走根目录 readFolder，不会触发 loadChildren）
+          void refreshExpandedChildren(fileTree.value[0].children)
         }
 
         return true

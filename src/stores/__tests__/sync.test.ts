@@ -94,6 +94,36 @@ describe('sync store', () => {
     expect(api.setSyncConfig).toHaveBeenCalledWith({ autoPush: true })
   })
 
+  it('syncs checkbox flags from persisted config when attaching a folder', async () => {
+    const api = window.electronAPI as unknown as ReturnType<typeof createMockElectronAPI>
+    api.getSyncConfig.mockResolvedValue({
+      success: true,
+      data: { version: 1, provider: 'git', autoCommit: false, autoPull: false, autoPush: true }
+    })
+    const { useFileStore } = await import('../file')
+    useFileStore().openedFolderPath = 'C:/ws'
+    const store = useSyncStore()
+    expect(store.autoCommit).toBe(true)
+    await store.init()
+    await vi.waitFor(() => expect(api.syncAttachFolder).toHaveBeenCalledWith('C:/ws'))
+    expect(store.autoCommit).toBe(false)
+    expect(store.autoPull).toBe(false)
+    expect(store.autoPush).toBe(true)
+  })
+
+  it('keeps default flags when no persisted config exists', async () => {
+    const api = window.electronAPI as unknown as ReturnType<typeof createMockElectronAPI>
+    api.getSyncConfig.mockResolvedValue({ success: true, data: null })
+    const { useFileStore } = await import('../file')
+    useFileStore().openedFolderPath = 'C:/ws'
+    const store = useSyncStore()
+    await store.init()
+    await vi.waitFor(() => expect(api.syncAttachFolder).toHaveBeenCalledWith('C:/ws'))
+    expect(store.autoCommit).toBe(true)
+    expect(store.autoPull).toBe(true)
+    expect(store.autoPush).toBe(false)
+  })
+
   it('handleFileChanged refreshes the file tree', async () => {
     const { useFileStore } = await import('../file')
     const fs = useFileStore()

@@ -19,7 +19,8 @@ export const IPC_CHANNELS = {
     RENAME: 'file:rename',
     MOVE: 'file:move',
     DELETE: 'file:delete',
-    REVEAL_IN_EXPLORER: 'file:revealInExplorer'
+    REVEAL_IN_EXPLORER: 'file:revealInExplorer',
+    SEARCH: 'file:search'
   },
   MDX: {
     READ: 'mdx:read',

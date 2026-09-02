@@ -120,11 +120,16 @@ function insertLink(href = '', title = ''): Command {
 
     if (empty) {
       // 没有选中文本，插入链接文本
+      // 注意：不能用 replaceSelectionWith，它会按插入点上下文的 marks
+      // 规范化插入节点，导致新节点的 link mark 被剥掉（插入为纯文本）
       const linkMark = state.schema.marks.link.create({ href, title })
       const text = state.schema.text(href || '链接', [linkMark])
 
       if (dispatch) {
-        dispatch(state.tr.replaceSelectionWith(text))
+        const { from } = state.selection
+        const tr = state.tr.insert(from, text)
+        tr.setSelection(TextSelection.create(tr.doc, from + text.nodeSize))
+        dispatch(tr)
       }
       return true
     } else {

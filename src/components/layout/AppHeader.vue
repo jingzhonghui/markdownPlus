@@ -7,6 +7,7 @@ import { useAiStore } from '../../stores/ai'
 import { useSyncStore } from '../../stores/sync'
 import { requestDialog } from '../../utils/dialog'
 import SyncPanel from './SyncPanel.vue'
+import QuickOpenPalette from '../common/QuickOpenPalette.vue'
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
@@ -14,6 +15,24 @@ const updateStore = useUpdateStore()
 const aiStore = useAiStore()
 const syncStore = useSyncStore()
 const isMaximized = ref(false)
+const quickOpenVisible = ref(false)
+
+/** 快速打开文件（Ctrl+P）：未打开文件夹时给出提示 */
+async function openQuickOpen(): Promise<void> {
+  if (!fileStore.openedFolderPath) {
+    await requestDialog({
+      title: '快速打开文件',
+      message: '请先打开文件夹后再搜索文件',
+      buttons: [{ label: '确定', value: 0, primary: true }]
+    })
+    return
+  }
+  quickOpenVisible.value = true
+}
+
+function handleQuickOpenEvent(): void {
+  void openQuickOpen()
+}
 
 // ===== 菜单状态 =====
 interface MenuItem {
@@ -55,6 +74,7 @@ const fileMenu = computed<MenuItem[]>(() => {
     { kind: 'item', label: '新建文件', action: 'new', shortcut: 'Ctrl+N' },
     { kind: 'item', label: '打开文件', action: 'open', shortcut: 'Ctrl+O' },
     { kind: 'item', label: '打开文件夹', action: 'open-folder' },
+    { kind: 'item', label: '快速打开文件', action: 'quick-open', shortcut: 'Ctrl+P' },
     ...(fileStore.openedFolderPath
       ? [{ kind: 'item', label: '关闭文件夹', action: 'close-folder' } as MenuItem]
       : []),
@@ -140,6 +160,7 @@ const helpMenu: MenuItem[] = [
 const shortcuts = [
   { keys: 'Ctrl+N', label: '新建文件' },
   { keys: 'Ctrl+O', label: '打开文件' },
+  { keys: 'Ctrl+P', label: '快速打开文件' },
   { keys: 'Ctrl+S', label: '保存文件' },
   { keys: 'Ctrl+Shift+S', label: '另存为' },
   { keys: 'Ctrl+Z', label: '撤销' },
@@ -296,6 +317,9 @@ async function runMenuItem(item: MenuItem): Promise<void> {
     case 'open-folder':
       await fileStore.openFolder()
       break
+    case 'quick-open':
+      await openQuickOpen()
+      break
     case 'close-folder':
       await fileStore.closeFolder()
       break
@@ -350,14 +374,10 @@ async function runMenuItem(item: MenuItem): Promise<void> {
       settingsOpen.value = true
       break
     case 'insert-image':
-      imageSrc.value = ''
-      imageAlt.value = ''
-      imageDialogOpen.value = true
+      openImageDialog()
       break
     case 'insert-link':
-      linkHref.value = ''
-      linkTitle.value = ''
-      linkDialogOpen.value = true
+      openLinkDialog()
       break
     case 'insert-table':
       window.dispatchEvent(new CustomEvent('editor:format', { detail: 'table' }))
@@ -429,6 +449,18 @@ function chooseFile(accept?: string): Promise<File | null> {
     input.addEventListener('cancel', () => resolve(null), { once: true })
     input.click()
   })
+}
+
+function openImageDialog(): void {
+  imageSrc.value = ''
+  imageAlt.value = ''
+  imageDialogOpen.value = true
+}
+
+function openLinkDialog(): void {
+  linkHref.value = ''
+  linkTitle.value = ''
+  linkDialogOpen.value = true
 }
 
 function confirmInsertLink(): void {
@@ -551,6 +583,9 @@ function handleKeydown(event: KeyboardEvent): void {
   } else if (event.key === 'o') {
     event.preventDefault()
     openFile()
+  } else if (event.key === 'p') {
+    event.preventDefault()
+    void openQuickOpen()
   } else if (event.key === 's') {
     event.preventDefault()
     if (event.shiftKey) {
@@ -574,6 +609,9 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   document.addEventListener('mousedown', handleDocumentMousedown)
   window.addEventListener('editor:toggleMode', handleToggleModeEvent)
+  window.addEventListener('editor:showLinkDialog', openLinkDialog)
+  window.addEventListener('editor:showImageDialog', openImageDialog)
+  window.addEventListener('markdown-plus:quick-open', handleQuickOpenEvent)
 
   const maximized = await window.electronAPI?.windowIsMaximized()
   isMaximized.value = maximized ?? false
@@ -593,6 +631,9 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('mousedown', handleDocumentMousedown)
   window.removeEventListener('editor:toggleMode', handleToggleModeEvent)
+  window.removeEventListener('editor:showLinkDialog', openLinkDialog)
+  window.removeEventListener('editor:showImageDialog', openImageDialog)
+  window.removeEventListener('markdown-plus:quick-open', handleQuickOpenEvent)
   removeMaximizedListener?.()
   removeUnmaximizedListener?.()
 })
@@ -1101,6 +1142,10 @@ onUnmounted(() => {
     </teleport>
 
     <SyncPanel v-if="syncStore.panelOpen" />
+    <QuickOpenPalette
+      :visible="quickOpenVisible"
+      @close="quickOpenVisible = false"
+    />
   </header>
 </template>
 

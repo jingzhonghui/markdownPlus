@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
 import { useFileStore, type FileTreeNode } from '../../stores/file'
+import { requestDialog } from '../../utils/dialog'
 
 interface DragState {
   sourcePath: string | null
@@ -62,7 +63,16 @@ async function onClick(): Promise<void> {
   if (props.node.isDirectory) {
     await fileStore.toggleNode(props.node)
   } else {
-    await fileStore.openFile(props.node.path, { addToRecent: false })
+    const ok = await fileStore.openFile(props.node.path, { addToRecent: false })
+    if (!ok && fileStore.error) {
+      // 不支持打开的文件（二进制/过大等）：明确告知用户原因，而非静默失败
+      const ext = props.node.name.includes('.') ? props.node.name.split('.').pop()!.toUpperCase() : props.node.name
+      await requestDialog({
+        title: '无法打开文件',
+        message: `暂不支持 ${ext} 类型文件打开`,
+        buttons: [{ label: '确定', value: 0, primary: true }]
+      })
+    }
   }
 }
 

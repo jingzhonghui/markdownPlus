@@ -505,6 +505,16 @@ describe('SyncEngine', () => {
     expect(provider.push).not.toHaveBeenCalled()
   })
 
+  it('autoCommit disabled does not commit on watcher changes', async () => {
+    const { engine, provider, triggerWatcher, dir } = makeEngine()
+    await engine.attach(dir)
+    engine.setConfig({ autoCommit: false })
+    ;(provider.status as ReturnType<typeof vi.fn>).mockResolvedValue('pendingCommit')
+    triggerWatcher(['C:/ws/a.md'])
+    await new Promise((r) => setTimeout(r, 50))
+    expect(provider.commit).not.toHaveBeenCalled()
+  })
+
   it('attach entering conflict emits conflicted files to renderer', async () => {
     const { engine, provider, dir } = makeEngine()
     const changed: string[][] = []

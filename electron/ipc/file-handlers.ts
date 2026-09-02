@@ -322,6 +322,36 @@ export function registerFileHandlers(): void {
     }
   })
 
+  // 递归枚举目录下所有文件（跳过点前缀目录），供快速打开面板模糊搜索
+  ipcMain.handle(IPC_CHANNELS.FILE.SEARCH, async (_, dirPath: string, limit?: number) => {
+    try {
+      const maxFiles = typeof limit === 'number' && limit > 0 ? limit : 10000
+      const files: Array<{ name: string; path: string }> = []
+      const isIgnoredDir = (name: string): boolean => name.startsWith('.') || name === 'node_modules'
+
+      const walk = (dir: string): boolean => {
+        const entries = fs.readdirSync(dir, { withFileTypes: true })
+        for (const entry of entries) {
+          if (files.length >= maxFiles) return false
+          if (entry.isDirectory() ? isIgnoredDir(entry.name) : entry.name.startsWith('.')) continue
+          const fullPath = path.join(dir, entry.name)
+          if (entry.isDirectory()) {
+            if (!walk(fullPath)) return false
+          } else if (entry.isFile()) {
+            files.push({ name: entry.name, path: fullPath })
+          }
+        }
+        return true
+      }
+
+      walk(dirPath)
+      return { success: true, data: files }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
   // 在系统文件管理器中打开文件所在位置
   ipcMain.handle(IPC_CHANNELS.FILE.REVEAL_IN_EXPLORER, async (_, filePath: string) => {
     try {

@@ -110,10 +110,13 @@ function onTabContextMenu(event: MouseEvent, tab: TabInfo): void {
       label: '关闭全部',
       action: () => { void fileStore.closeAllTabs() }
     },
-    {
-      label: '打开文件所在位置',
-      action: () => { tab.fileInfo?.path && fileStore.revealInExplorer(tab.fileInfo.path) }
-    }
+    // 未保存的临时文档没有磁盘路径，显示该项只会静默无反应
+    ...(tab.fileInfo?.path
+      ? [{
+          label: '打开文件所在位置',
+          action: () => { void fileStore.revealInExplorer(tab.fileInfo!.path) }
+        }]
+      : [])
   ]
   showContextMenu(event, items)
 }

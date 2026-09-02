@@ -141,6 +141,10 @@ function onPreviewScroll(ratio: number): void {
               <span>打开文件</span>
             </div>
             <div class="shortcut-item">
+              <kbd>Ctrl+P</kbd>
+              <span>快速打开文件</span>
+            </div>
+            <div class="shortcut-item">
               <kbd>Ctrl+S</kbd>
               <span>保存文件</span>
             </div>

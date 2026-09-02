@@ -108,7 +108,7 @@ const emit = defineEmits<{
   left: 100%;
   display: none;
   min-width: 130px;
-  margin-left: 2px;
+  /* 无 margin：与触发项右缘贴合，避免鼠标斜移穿过空隙时 :hover 丢失 */
   padding: 4px;
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border);

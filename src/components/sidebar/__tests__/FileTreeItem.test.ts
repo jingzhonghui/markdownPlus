@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick, reactive } from 'vue'
 import FileTreeItem from '../FileTreeItem.vue'
+import { dialogState, resolveDialogRequest } from '../../../utils/dialog'
 import type { FileTreeNode } from '../../../stores/file/types'
 
 function makeDir(path: string, name: string, children: FileTreeNode[] = []): FileTreeNode {
@@ -108,5 +109,68 @@ describe('FileTreeItem drag & drop', () => {
     dragState.sourcePath = 'C:/docs/A/A-1.md'
     await dispatchDrag(wrapper, 'C:/docs/A', 'drop')
     expect(onDropToFolder).not.toHaveBeenCalled()
+  })
+})
+
+describe('FileTreeItem click unsupported file', () => {
+  const originalElectronAPI = (window as { electronAPI?: unknown }).electronAPI
+
+  beforeEach(() => setActivePinia(createPinia()))
+  afterEach(() => {
+    if (dialogState.visible) resolveDialogRequest(0)
+    ;(window as { electronAPI?: unknown }).electronAPI = originalElectronAPI
+  })
+
+  function mountFileNode(node: FileTreeNode) {
+    return mount(FileTreeItem, {
+      props: { node },
+      global: { plugins: [createPinia()] }
+    })
+  }
+
+  function stubElectronAPI(electronAPI: unknown): void {
+    ;(window as { electronAPI?: unknown }).electronAPI = electronAPI
+  }
+
+  it('shows a dialog when clicking a file the app cannot open', async () => {
+    stubElectronAPI({
+      openFile: vi.fn(async () => ({ success: false, error: '二进制文件无法在编辑器中打开' }))
+    })
+
+    const wrapper = mountFileNode(makeFile('C:/docs/app.exe', 'app.exe'))
+    await wrapper.find('[data-file-path="C:/docs/app.exe"]').trigger('click')
+    await nextTick()
+
+    expect(dialogState.visible).toBe(true)
+    expect(dialogState.title).toBe('无法打开文件')
+    expect(dialogState.message).toBe('暂不支持 EXE 类型文件打开')
+  })
+
+  it('does not show a dialog for a normal successful open', async () => {
+    stubElectronAPI({
+      openFile: vi.fn(async () => ({
+        success: true,
+        data: {
+          document: { metadata: { title: 'x' }, content: { text: '', assets: { images: [] } } },
+          filePath: 'C:/docs/a.md',
+          format: 'markdown',
+          isNew: false
+        }
+      }))
+    })
+
+    const wrapper = mountFileNode(makeFile('C:/docs/a.md', 'a.md'))
+    await wrapper.find('[data-file-path="C:/docs/a.md"]').trigger('click')
+    await nextTick()
+
+    expect(dialogState.visible).toBe(false)
+  })
+
+  it('does not show a dialog when clicking a directory', async () => {
+    const wrapper = mountFileNode(makeDir('C:/docs/A', 'A'))
+    await wrapper.find('[data-file-path="C:/docs/A"]').trigger('click')
+    await nextTick()
+
+    expect(dialogState.visible).toBe(false)
   })
 })

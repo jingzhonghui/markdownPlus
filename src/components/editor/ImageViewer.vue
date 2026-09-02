@@ -13,7 +13,7 @@ const containerSize = ref<{ w: number; h: number } | null>(null)
 const zoom = ref(1)
 
 const MIN_ZOOM = 0.25
-const MAX_ZOOM = 3
+const MAX_ZOOM = 8
 const ZOOM_STEP = 0.25
 const STAGE_PADDING = 24
 

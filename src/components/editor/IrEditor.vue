@@ -514,10 +514,7 @@ function deleteCurrentTable(view: EditorView): void {
 }
 
 // 计算菜单位置，确保在屏幕边界内
-function calculateMenuPosition(x: number, y: number, menuHeight: number = 80): { x: number; y: number } {
-  // 菜单预估尺寸
-  const menuWidth = 140
-
+function calculateMenuPosition(x: number, y: number, menuHeight: number = 80, menuWidth: number = 170): { x: number; y: number } {
   // 视口尺寸
   const viewportWidth = window.innerWidth
   const viewportHeight = window.innerHeight
@@ -770,7 +767,7 @@ function createContextMenuPlugin(): ProseMirrorPlugin {
 
             contextMenu.items = buildTableMenuItems(view)
             contextMenu.type = 'table'
-            const pos = calculateMenuPosition(event.clientX, event.clientY, 240)
+            const pos = calculateMenuPosition(event.clientX, event.clientY, 240, 200)
             contextMenu.x = pos.x
             contextMenu.y = pos.y
             contextMenu.visible = true
@@ -1360,7 +1357,12 @@ function handleAttachmentEvent(e: Event): void {
   const { path, name } = (e as CustomEvent).detail as { path: string; name: string }
   const link = view.state.schema.marks.link.create({ href: path, title: name })
   const text = view.state.schema.text(name, [link])
-  view.dispatch(view.state.tr.replaceSelectionWith(text))
+  // 不能用 replaceSelectionWith：它会按插入点上下文的 marks 规范化节点，
+  // 导致新文本的 link mark 被剥掉（插入为纯文本）
+  const { from } = view.state.selection
+  const tr = view.state.tr.insert(from, text)
+  tr.setSelection(TextSelection.create(tr.doc, from + text.nodeSize))
+  view.dispatch(tr)
   view.focus()
 }
 
@@ -1757,15 +1759,8 @@ defineExpose({
   margin: 0.5em 0; padding-left: 1.5em;
 }
 .ir-editor-wrapper :deep(.ProseMirror li) { margin: 0.25em 0; }
-/* IR 模式：列表标记 */
-.ir-editor-wrapper :deep(.ProseMirror ul) { list-style: none; }
-.ir-editor-wrapper :deep(.ProseMirror ul > li) { position: relative; }
-.ir-editor-wrapper :deep(.ProseMirror ul > li::before) {
-  content: '- ';
-  position: absolute; left: -1.2em;
-  opacity: 0.4; font-family: var(--font-mono); font-size: 0.85em;
-  user-select: none; pointer-events: none;
-}
+/* IR 模式：列表标记（无序用标准圆点，有序用计数器显示源码序号） */
+.ir-editor-wrapper :deep(.ProseMirror ul) { list-style-type: disc; }
 .ir-editor-wrapper :deep(.ProseMirror ol) { counter-reset: ir-ordered; list-style: none; }
 .ir-editor-wrapper :deep(.ProseMirror ol > li) { counter-increment: ir-ordered; position: relative; }
 .ir-editor-wrapper :deep(.ProseMirror ol > li::before) {

@@ -126,7 +126,17 @@ async function onOpenConflictFile(index: number): Promise<void> {
         title="关闭"
         @click="onClosePanel"
       >
-        ×
+        <svg
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-width="1.5"
+            stroke-linecap="round"
+            d="M3 3l6 6M9 3l-6 6"
+          />
+        </svg>
       </button>
     </div>
 
@@ -361,11 +371,34 @@ async function onOpenConflictFile(index: number): Promise<void> {
 
 .sync-panel-close {
   margin-left: auto;
-  border: none;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--color-danger, #ef4444);
   background: transparent;
   cursor: pointer;
-  font-size: 16px;
-  color: var(--color-text-tertiary);
+  color: var(--color-danger, #ef4444);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.sync-panel-close svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.sync-panel-close:hover {
+  color: #fff;
+  background-color: rgba(239, 68, 68, 0.45);
+}
+
+.sync-panel-close:active {
+  color: #fff;
+  background-color: rgba(239, 68, 68, 0.75);
 }
 
 .sync-panel-hint {

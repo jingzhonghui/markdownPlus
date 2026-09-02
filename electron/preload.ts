@@ -122,6 +122,7 @@ export interface ElectronAPI {
 
   // 文件夹操作
   readFolder: (dirPath: string) => Promise<{ success: boolean; data?: FolderItem[]; error?: string }>
+  searchFiles: (dirPath: string, limit?: number) => Promise<{ success: boolean; data?: Array<{ name: string; path: string }>; error?: string }>
   createFile: (dirPath: string, name: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
   createFolder: (parentPath: string, name: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
   renameFile: (oldPath: string, newName: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
@@ -247,6 +248,7 @@ const api: ElectronAPI = {
 
   // 文件夹操作
   readFolder: (dirPath) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.READ, dirPath),
+  searchFiles: (dirPath, limit?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SEARCH, dirPath, limit),
   createFile: (dirPath, name) => ipcRenderer.invoke(IPC_CHANNELS.FILE.CREATE, { dirPath, name }),
   createFolder: (parentPath, name) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.CREATE, { parentPath, name }),
   renameFile: (oldPath, newName) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RENAME, { oldPath, newName }),

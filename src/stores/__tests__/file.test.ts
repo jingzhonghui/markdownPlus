@@ -312,6 +312,95 @@ describe('file store', () => {
       expect(refreshedA.isExpanded).toBe(true)
       expect(refreshedA.children.some((c) => c.path === 'C:/docs/A/x.mdx')).toBe(true)
     })
+
+    it('re-reads expanded subfolders when the tree refreshes so disk-level changes show up', async () => {
+      let subFolderContents = [
+        { name: 'x.mdx', path: 'C:/docs/A/x.mdx', isDirectory: false }
+      ]
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async (dirPath: string) => {
+          if (dirPath === 'C:/docs') {
+            return {
+              success: true,
+              data: [
+                { name: 'A', path: 'C:/docs/A', isDirectory: true },
+                { name: 'b.md', path: 'C:/docs/b.md', isDirectory: false }
+              ]
+            }
+          }
+          if (dirPath === 'C:/docs/A') {
+            return { success: true, data: subFolderContents }
+          }
+          return { success: false }
+        })
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      const root = store.fileTree[0]
+      const nodeA = root.children.find((c) => c.name === 'A')!
+      await store.expandNode(nodeA)
+      expect(nodeA.children.some((c) => c.path === 'C:/docs/A/x.mdx')).toBe(true)
+
+      // 模拟用户直接在磁盘上往 A 里添加了 y.mdx（watcher 只会触发根目录 readFolder）
+      subFolderContents = [
+        { name: 'x.mdx', path: 'C:/docs/A/x.mdx', isDirectory: false },
+        { name: 'y.mdx', path: 'C:/docs/A/y.mdx', isDirectory: false }
+      ]
+      await store.readFolder('C:/docs')
+
+      const refreshedA = store.fileTree[0].children.find((c) => c.name === 'A')!
+      expect(refreshedA.isExpanded).toBe(true)
+      expect(refreshedA.children.some((c) => c.path === 'C:/docs/A/y.mdx')).toBe(true)
+    })
+
+    it('re-reads nested expanded subfolders recursively after an external rename', async () => {
+      let innerContents = [
+        { name: 'i1.md', path: 'C:/docs/A/inner/i1.md', isDirectory: false }
+      ]
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async (dirPath: string) => {
+          if (dirPath === 'C:/docs') {
+            return {
+              success: true,
+              data: [{ name: 'A', path: 'C:/docs/A', isDirectory: true }]
+            }
+          }
+          if (dirPath === 'C:/docs/A') {
+            return {
+              success: true,
+              data: [{ name: 'inner', path: 'C:/docs/A/inner', isDirectory: true }]
+            }
+          }
+          if (dirPath === 'C:/docs/A/inner') {
+            return { success: true, data: innerContents }
+          }
+          return { success: false }
+        })
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      const nodeA = store.fileTree[0].children.find((c) => c.name === 'A')!
+      await store.expandNode(nodeA)
+      const nodeInner = nodeA.children.find((c) => c.name === 'inner')!
+      await store.expandNode(nodeInner)
+      expect(nodeInner.children.some((c) => c.path === 'C:/docs/A/inner/i1.md')).toBe(true)
+
+      // 模拟磁盘上 inner 里新增 i2.md，随后根目录刷新（watcher/手动刷新场景）
+      innerContents = [
+        { name: 'i1.md', path: 'C:/docs/A/inner/i1.md', isDirectory: false },
+        { name: 'i2.md', path: 'C:/docs/A/inner/i2.md', isDirectory: false }
+      ]
+      await store.readFolder('C:/docs')
+
+      const refreshedA = store.fileTree[0].children.find((c) => c.name === 'A')!
+      const refreshedInner = refreshedA.children.find((c) => c.name === 'inner')!
+      expect(refreshedInner.isExpanded).toBe(true)
+      expect(refreshedInner.children.some((c) => c.path === 'C:/docs/A/inner/i2.md')).toBe(true)
+    })
   })
 
   describe('tree CRUD updates', () => {

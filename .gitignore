@@ -53,3 +53,6 @@ dev-app-update.yml
 
 # Superpowers 计划/规格文档
 docs/superpowers/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

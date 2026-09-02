@@ -138,6 +138,7 @@ function onEmptyContextMenu(event: MouseEvent): void {
         { label: '导入文件夹', action: () => fileStore.importFolder() },
         { label: '打开文件', action: () => openFile() },
         { label: '打开文件夹', action: () => openFolder() },
+        { label: '快速打开文件', action: () => window.dispatchEvent(new Event('markdown-plus:quick-open')) },
         { label: '刷新', action: () => fileStore.readFolder(folderPath) },
         { label: '关闭文件夹', action: () => { void fileStore.closeFolder() } }
       ]

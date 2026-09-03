@@ -85,7 +85,12 @@ export interface MdxDocument {
   settings: MdxSettings
 }
 
-export type DocumentFormat = 'mdx' | 'markdown' | 'image'
+export type DocumentFormat = 'mdx' | 'markdown' | 'image' | 'pdf'
+
+/** 只有 Markdown 文档格式支持编辑和保存；新增格式默认按只读处理。 */
+export function isEditableMarkdownFormat(format?: DocumentFormat | null): boolean {
+  return format === 'mdx' || format === 'markdown'
+}
 
 /** MDX 文件操作结果 */
 export interface MdxResult<T = unknown> {

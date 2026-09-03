@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
+import { IconX } from '@tabler/icons-vue'
 import type { AiConfigInput, AiConnectionTestResult } from '../../../shared/ai/types'
 
 const props = defineProps<{ open: boolean }>()
@@ -116,7 +117,7 @@ watch(
             aria-label="关闭设置"
             @click="emit('close')"
           >
-            ×
+            <IconX :size="18" />
           </button>
         </header>
         <form

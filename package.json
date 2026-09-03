@@ -30,6 +30,7 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.68",
     "@electron-toolkit/utils": "^3.0.0",
+    "@tabler/icons-vue": "^3.46.0",
     "adm-zip": "^0.5.16",
     "ai": "^6.0.256",
     "chokidar": "^5.0.0",
@@ -75,6 +76,7 @@
     "jsdom": "^30.0.1",
     "katex": "^0.16.46",
     "markdown-it": "^14.1.1",
+    "pdfjs-dist": "^5.4.296",
     "pinia": "^2.3.0",
     "postcss": "^8.5.3",
     "prettier": "^3.5.1",

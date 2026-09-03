@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
+import { IconArrowDown, IconArrowUp, IconX } from '@tabler/icons-vue'
+import Tooltip from '../common/Tooltip.vue'
 
 const props = defineProps<{
   open: boolean
@@ -71,31 +73,34 @@ function emitReplaceAll(): void {
         @keydown.shift.enter.exact.prevent="emit('prev')"
         @keydown.escape.stop.prevent="emit('close')"
       >
-      <button
-        class="find-replace-btn"
-        title="上一个"
-        aria-label="上一个"
-        @click="emit('prev')"
-      >
-        ↑
-      </button>
-      <button
-        class="find-replace-btn"
-        title="下一个"
-        aria-label="下一个"
-        @click="emit('next')"
-      >
-        ↓
-      </button>
+      <Tooltip content="上一个">
+        <button
+          class="find-replace-btn"
+          aria-label="上一个"
+          @click="emit('prev')"
+        >
+          <IconArrowUp :size="14" />
+        </button>
+      </Tooltip>
+      <Tooltip content="下一个">
+        <button
+          class="find-replace-btn"
+          aria-label="下一个"
+          @click="emit('next')"
+        >
+          <IconArrowDown :size="14" />
+        </button>
+      </Tooltip>
       <span class="find-replace-count">{{ matchCount > 0 ? currentIndex + 1 : 0 }}/{{ matchCount }}</span>
-      <button
-        class="find-replace-btn"
-        title="关闭"
-        aria-label="关闭"
-        @click="emit('close')"
-      >
-        ✕
-      </button>
+      <Tooltip content="关闭">
+        <button
+          class="find-replace-btn"
+          aria-label="关闭"
+          @click="emit('close')"
+        >
+          <IconX :size="14" />
+        </button>
+      </Tooltip>
     </div>
     <div
       v-if="replaceMode"
@@ -110,22 +115,24 @@ function emitReplaceAll(): void {
         @keydown.enter.exact.prevent="emitReplace"
         @keydown.escape.stop.prevent="emit('close')"
       >
-      <button
-        class="find-replace-btn"
-        title="替换"
-        aria-label="替换"
-        @click="emitReplace"
-      >
-        替换
-      </button>
-      <button
-        class="find-replace-btn"
-        title="全部替换"
-        aria-label="全部替换"
-        @click="emitReplaceAll"
-      >
-        全部替换
-      </button>
+      <Tooltip content="替换">
+        <button
+          class="find-replace-btn"
+          aria-label="替换"
+          @click="emitReplace"
+        >
+          替换
+        </button>
+      </Tooltip>
+      <Tooltip content="全部替换">
+        <button
+          class="find-replace-btn"
+          aria-label="全部替换"
+          @click="emitReplaceAll"
+        >
+          全部替换
+        </button>
+      </Tooltip>
     </div>
     <label class="find-replace-options">
       <input

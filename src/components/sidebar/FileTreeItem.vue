@@ -1,7 +1,22 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
+import {
+  IconBraces,
+  IconChevronRight,
+  IconFile,
+  IconFileCode,
+  IconFileDescription,
+  IconFileText,
+  IconFileTypePdf,
+  IconFileTypeZip,
+  IconFolder,
+  IconPhoto,
+  type Icon
+} from '@tabler/icons-vue'
 import { useFileStore, type FileTreeNode } from '../../stores/file'
 import { requestDialog } from '../../utils/dialog'
+import { getFileIconType } from '../../utils/file-icons'
+import Tooltip from '../common/Tooltip.vue'
 
 interface DragState {
   sourcePath: string | null
@@ -28,6 +43,21 @@ const onDropToFolder = inject<((targetDir: string) => void) | null>('fileTreeOnD
 const isDragOver = computed(() => dragState?.hoverPath === props.node.path)
 
 const depth = computed(() => props.depth ?? 0)
+
+const fileIcons: Record<string, Icon> = {
+  folder: IconFolder,
+  markdown: IconFileText,
+  pdf: IconFileTypePdf,
+  image: IconPhoto,
+  archive: IconFileTypeZip,
+  data: IconBraces,
+  code: IconFileCode,
+  text: IconFileDescription,
+  file: IconFile
+}
+
+const iconType = computed(() => getFileIconType(props.node.name, props.node.isDirectory))
+const iconComponent = computed(() => fileIcons[iconType.value])
 
 function normalizePath(value: string): string {
   return value.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
@@ -165,14 +195,10 @@ function onDrop(event: DragEvent): void {
         :class="{ 'is-expanded': node.isExpanded }"
         @click.stop="onExpandClick"
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path d="M9 18l6-6-6-6" />
-        </svg>
+        <IconChevronRight
+          :size="12"
+          stroke="2"
+        />
       </span>
       <span
         v-else
@@ -180,31 +206,21 @@ function onDrop(event: DragEvent): void {
       />
 
       <!-- 文件夹/文件图标 -->
-      <span class="node-icon">
-        <svg
-          v-if="node.isDirectory"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          class="folder-icon"
-        >
-          <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-        </svg>
-        <svg
-          v-else
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-          <path d="M14 2v6h6" />
-        </svg>
+      <span
+        class="node-icon"
+        :class="`node-icon-${iconType}`"
+      >
+        <component
+          :is="iconComponent"
+          :size="16"
+          stroke="1.8"
+        />
       </span>
 
       <!-- 名称 -->
-      <span class="node-name">{{ node.name }}</span>
+      <Tooltip :content="node.path">
+        <span class="node-name">{{ node.name }}</span>
+      </Tooltip>
 
       <!-- 加载中指示器 -->
       <span
@@ -317,9 +333,14 @@ function onDrop(event: DragEvent): void {
   height: 16px;
 }
 
-.node-icon .folder-icon {
-  color: var(--color-accent-yellow, #d4a017);
-}
+.node-icon-folder { color: var(--color-accent-yellow, #d4a017); }
+.node-icon-markdown { color: #2387a8; }
+.node-icon-pdf { color: var(--color-error); }
+.node-icon-image { color: #9b6dcc; }
+.node-icon-archive { color: #d97706; }
+.node-icon-data { color: #0f9d8a; }
+.node-icon-code { color: #3b82f6; }
+.node-icon-text { color: var(--color-text-secondary); }
 
 .item-content.is-active .node-icon {
   color: var(--color-primary);

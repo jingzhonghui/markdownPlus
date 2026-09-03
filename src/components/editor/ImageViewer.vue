@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import Tooltip from '../common/Tooltip.vue'
 import { useFileStore } from '../../stores/file'
 
 const fileStore = useFileStore()
@@ -171,21 +172,24 @@ onUnmounted(() => {
         class="image-size"
       >{{ naturalSize.w }} × {{ naturalSize.h }} px</span>
       <div class="image-zoom-controls">
-        <button
-          class="zoom-btn"
-          title="缩小"
-          @click="zoomOut"
-        >−</button>
-        <button
-          class="zoom-btn zoom-reset"
-          title="重置缩放"
-          @click="resetZoom"
-        >{{ zoomPercent }}</button>
-        <button
-          class="zoom-btn"
-          title="放大"
-          @click="zoomIn"
-        >+</button>
+        <Tooltip content="缩小">
+          <button
+            class="zoom-btn"
+            @click="zoomOut"
+          >−</button>
+        </Tooltip>
+        <Tooltip content="重置缩放">
+          <button
+            class="zoom-btn zoom-reset"
+            @click="resetZoom"
+          >{{ zoomPercent }}</button>
+        </Tooltip>
+        <Tooltip content="放大">
+          <button
+            class="zoom-btn"
+            @click="zoomIn"
+          >+</button>
+        </Tooltip>
       </div>
     </div>
   </div>

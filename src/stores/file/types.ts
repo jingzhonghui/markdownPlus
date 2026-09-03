@@ -39,6 +39,8 @@ export interface TabInfo {
   revision: number
   /** 图片文件（format='image'）的 Data URL，用于只读查看 */
   imageDataUrl?: string
+  /** PDF 文件（format='pdf'）的 base64 内容，用于只读查看 */
+  pdfBase64?: string
 }
 
 /**

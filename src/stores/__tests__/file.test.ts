@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { createMdxDocument } from '../../types/mdx'
+import { createMdxDocument, isEditableMarkdownFormat } from '../../types/mdx'
 import type { MdxDocument } from '../../types/mdx'
 import { useFileStore } from '../file'
 import type { FileTreeNode } from '../file/types'
@@ -22,6 +22,16 @@ vi.mock('../../utils/pdf-export', () => ({
 function makeDoc(title = 'Document', content = ''): MdxDocument {
   return createMdxDocument(title, content)
 }
+
+describe('document format capabilities', () => {
+  it('allows editing only for mdx and markdown formats', () => {
+    expect(isEditableMarkdownFormat('mdx')).toBe(true)
+    expect(isEditableMarkdownFormat('markdown')).toBe(true)
+    expect(isEditableMarkdownFormat('image')).toBe(false)
+    expect(isEditableMarkdownFormat('pdf')).toBe(false)
+    expect(isEditableMarkdownFormat(null)).toBe(false)
+  })
+})
 
 function createMockElectronAPI(overrides: Record<string, unknown> = {}) {
   return {
@@ -176,6 +186,34 @@ describe('file store', () => {
       // 图片 tab 拒绝保存，避免破坏图片
       const saved = await store.saveFile()
       expect(saved).toBe(false)
+      expect(store.tabs[0].fileInfo?.modified).toBe(false)
+    })
+
+    it('opens a pdf file as a read-only pdf tab', async () => {
+      const doc = makeDoc('doc', '')
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: doc, filePath: 'C:/docs/doc.pdf', format: 'pdf', pdfBase64: 'JVBERi0xLjQ=' }
+      })
+
+      const store = useFileStore()
+      const ok = await store.openFile('C:/docs/doc.pdf')
+
+      expect(ok).toBe(true)
+      expect(store.tabs).toHaveLength(1)
+      const tab = store.tabs[0]
+      expect(tab.fileInfo?.format).toBe('pdf')
+      expect(tab.pdfBase64).toBe('JVBERi0xLjQ=')
+      expect(tab.content).toBe('')
+      expect(store.isModified).toBe(false)
+      expect(store.isDirty).toBe(false)
+      expect(store.canSwitchEditorMode).toBe(false)
+      expect(store.fileName).toBe('doc.pdf')
+
+      // PDF tab 拒绝保存，避免破坏文件
+      const saved = await store.saveFile()
+      expect(saved).toBe(false)
+      expect(store.error).toBe('该文件类型不支持编辑或保存')
       expect(store.tabs[0].fileInfo?.modified).toBe(false)
     })
 
@@ -970,14 +1008,14 @@ describe('file store', () => {
   })
 
   describe('getters', () => {
-    it('computes fileName from the document title', async () => {
+    it('uses the actual pending filename instead of the document title', async () => {
       const doc = makeDoc('My Title', 'content')
       electronAPI.newFile.mockResolvedValue({ success: true, data: { document: doc, isNew: true } })
 
       const store = useFileStore()
       await store.newFile()
 
-      expect(store.fileName).toBe('My Title.mdx')
+      expect(store.fileName).toBe('未命名.mdx')
     })
 
     it('falls back to 未命名.mdx when there is no active tab', () => {

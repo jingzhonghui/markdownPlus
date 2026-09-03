@@ -95,6 +95,25 @@ describe('mdx file handlers', () => {
     expect(data.imageDataUrl).toMatch(/^data:image\/svg\+xml;base64,/)
   })
 
+  it('opens a pdf file as a read-only pdf with base64 content', async () => {
+    registerMdxHandlers()
+    const pdf = Buffer.from('%PDF-1.4\n%fake pdf content')
+    const filePath = makeFile('doc.pdf', pdf)
+    const result = await call(IPC_CHANNELS.FILE.OPEN, filePath, false)
+    expect(result.success).toBe(true)
+    const data = result.data as { format?: string; pdfBase64?: string }
+    expect(data.format).toBe('pdf')
+    expect(data.pdfBase64).toBe(pdf.toString('base64'))
+  })
+
+  it('rejects a .pdf file without the %PDF header', async () => {
+    registerMdxHandlers()
+    const filePath = makeFile('fake.pdf', 'not a pdf at all')
+    const result = await call(IPC_CHANNELS.FILE.OPEN, filePath, false)
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('PDF')
+  })
+
   it('still routes .mdx files through the MDX reader', async () => {
     registerMdxHandlers()
     // 纯文本冒充 .mdx：openMdx 应失败（非 ZIP），证明 .mdx 未走纯文本分支

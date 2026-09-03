@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { EditorContextMenuItem } from '../../types/editor-context-menu'
+import { IconChevronRight } from '@tabler/icons-vue'
 
 const props = defineProps<{
   visible: boolean
@@ -35,7 +36,10 @@ const emit = defineEmits<{
           class="context-menu-item submenu-trigger"
         >
           <span>{{ item.label }}</span>
-          <span class="submenu-arrow">›</span>
+          <IconChevronRight
+            class="submenu-arrow"
+            :size="14"
+          />
           <div class="submenu">
             <template
               v-for="(child, childIndex) in item.children"

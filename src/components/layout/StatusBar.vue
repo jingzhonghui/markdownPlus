@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { IconCode, IconColumns, IconFileText } from '@tabler/icons-vue'
 import { useFileStore, type EditorMode } from '../../stores/file'
+import Tooltip from '../common/Tooltip.vue'
 
 const fileStore = useFileStore()
 const appVersion = ref('')
@@ -88,74 +90,22 @@ const modeTooltip = computed(() => {
 
     <div class="status-right">
       <!-- 编辑模式切换按钮 -->
-      <button
-        class="mode-toggle-btn"
-        :class="fileStore.editorMode"
-        :title="modeTooltip"
-        :disabled="!fileStore.canSwitchEditorMode"
-        @click="toggleEditorMode"
-      >
-        <!-- 分屏预览图标 -->
-        <svg
-          v-if="modeIcon === 'split'"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+      <Tooltip :content="modeTooltip">
+        <button
+          class="mode-toggle-btn"
+          :class="fileStore.editorMode"
+          :disabled="!fileStore.canSwitchEditorMode"
+          @click="toggleEditorMode"
         >
-          <rect
-            x="3"
-            y="3"
-            width="18"
-            height="18"
-            rx="2"
-            stroke-width="2"
-          />
-          <path
-            stroke-width="2"
-            d="M12 3v18"
-          />
-        </svg>
-        <!-- 即时渲染图标 -->
-        <svg
-          v-else-if="modeIcon === 'ir'"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-        >
-          <path
-            stroke-width="2"
-            d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
-          />
-          <polyline
-            points="14 2 14 8 20 8"
-            stroke-width="2"
-          />
-          <line
-            x1="9"
-            y1="15"
-            x2="15"
-            y2="15"
-            stroke-width="2"
-          />
-        </svg>
-        <!-- 源码编辑图标 -->
-        <svg
-          v-else
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-        >
-          <polyline
-            points="16 18 22 12 16 6"
-            stroke-width="2"
-          />
-          <polyline
-            points="8 6 2 12 8 18"
-            stroke-width="2"
-          />
-        </svg>
-        <span class="mode-label">{{ modeTooltip.split(' ')[0] }}</span>
-      </button>
+          <!-- 分屏预览图标 -->
+          <IconColumns v-if="modeIcon === 'split'" />
+          <!-- 即时渲染图标 -->
+          <IconFileText v-else-if="modeIcon === 'ir'" />
+          <!-- 源码编辑图标 -->
+          <IconCode v-else />
+          <span class="mode-label">{{ modeTooltip.split(' ')[0] }}</span>
+        </button>
+      </Tooltip>
 
       <span class="status-separator">|</span>
 
@@ -192,6 +142,10 @@ const modeTooltip = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+}
+
+.status-right > :deep(.tooltip-trigger) {
+  flex: 0 0 auto;
 }
 
 .status-item {

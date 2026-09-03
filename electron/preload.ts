@@ -55,10 +55,11 @@ export interface ImageAssetInfo {
 export interface MdxOpenResult {
   document: MdxDocument
   filePath?: string
-  format?: 'mdx' | 'markdown' | 'image'
+  format?: 'mdx' | 'markdown' | 'image' | 'pdf'
   isNew?: boolean
   largeFileWarning?: boolean
   imageDataUrl?: string
+  pdfBase64?: string
 }
 
 export interface PdfSource {

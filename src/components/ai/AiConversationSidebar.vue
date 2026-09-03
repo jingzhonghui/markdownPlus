@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from 'vue'
+import { IconPencil, IconTrash } from '@tabler/icons-vue'
 import { useAiStore } from '../../stores/ai'
 import { requestDialog } from '../../utils/dialog'
+import Tooltip from '../common/Tooltip.vue'
 
 const store = useAiStore()
 
@@ -133,42 +135,26 @@ function formatTime(ts: number): string {
             {{ formatTime(conv.updatedAt) }}
           </div>
           <div class="item-actions">
-            <button
-              type="button"
-              class="item-action"
-              title="重命名"
-              data-testid="ai-conversation-rename"
-              @click.stop="startRename(conv.id)"
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              ><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
-            </button>
-            <button
-              type="button"
-              class="item-action"
-              title="删除"
-              data-testid="ai-conversation-delete"
-              @click.stop="confirmDelete(conv.id)"
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              ><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
-            </button>
+            <Tooltip content="重命名">
+              <button
+                type="button"
+                class="item-action"
+                data-testid="ai-conversation-rename"
+                @click.stop="startRename(conv.id)"
+              >
+                <IconPencil :size="12" />
+              </button>
+            </Tooltip>
+            <Tooltip content="删除">
+              <button
+                type="button"
+                class="item-action"
+                data-testid="ai-conversation-delete"
+                @click.stop="confirmDelete(conv.id)"
+              >
+                <IconTrash :size="12" />
+              </button>
+            </Tooltip>
           </div>
         </template>
       </li>
@@ -214,6 +200,7 @@ function formatTime(ts: number): string {
 .conv-title { padding-right: 40px; font-size: 12px; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .conv-time { font-size: 10px; color: var(--color-text-tertiary); }
 .item-actions { position: absolute; top: 50%; right: 6px; display: flex; gap: 2px; transform: translateY(-50%); opacity: 0; transition: opacity .12s; }
+.item-actions :deep(.tooltip-trigger) { flex: none; }
 .conversation-item:hover .item-actions { opacity: 1; }
 .item-action { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--color-text-secondary); cursor: pointer; }
 .item-action:hover { background: var(--color-bg-tertiary); color: var(--color-text); }

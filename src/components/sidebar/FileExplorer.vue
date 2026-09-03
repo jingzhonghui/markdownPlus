@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, reactive, provide, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { IconChevronsLeft, IconFolderOpen } from '@tabler/icons-vue'
 import { useFileStore, type FileTreeNode } from '../../stores/file'
 import { requestDialog } from '../../utils/dialog'
+import Tooltip from '../common/Tooltip.vue'
+import { validateWindowsFolderName } from '../../utils/windows-filename'
 import FileTreeItem from './FileTreeItem.vue'
 
 const fileStore = useFileStore()
@@ -63,24 +66,63 @@ async function onListDrop(): Promise<void> {
 provide('fileTreeDragState', dragState)
 provide('fileTreeOnDropToFolder', handleDropToFolder)
 
-async function scrollToActiveFile(): Promise<void> {
+async function scrollToActiveFile(): Promise<boolean> {
   await nextTick()
   const filePath = fileStore.currentFile?.path
-  if (!filePath) return
-  const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+  if (!filePath) return false
+  const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
   const targetPath = normalize(filePath)
 
   const nodes = document.querySelectorAll<HTMLElement>('[data-file-path]')
   for (const node of nodes) {
     if (node.dataset.filePath && normalize(node.dataset.filePath) === targetPath) {
       node.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-      return
+      return true
     }
+  }
+  return false
+}
+
+// 标签激活后需要把文件树定位到激活文件。父目录可能尚未展开
+//（setActiveTab 会异步 revealFileInTree），定位期间文件树会变化多次；
+// 通过“待定位”标志只在激活后尚未命中前响应树变化，命中一次即解除，
+// 避免用户手动折叠/展开目录时视图被拉回当前文件。
+let scrollRevealPending = false
+let scrollRevealTimer: number | undefined
+
+function isInsideOpenedFolder(filePath: string): boolean {
+  const folderPath = fileStore.openedFolderPath
+  if (!folderPath) return false
+  const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
+  return normalize(filePath).startsWith(`${normalize(folderPath)}/`)
+}
+
+async function tryScrollToActiveFile(): Promise<void> {
+  if (await scrollToActiveFile()) {
+    scrollRevealPending = false
+    clearTimeout(scrollRevealTimer)
   }
 }
 
-watch([() => fileStore.activeTabId, () => fileStore.fileTree], () => {
-  void scrollToActiveFile()
+function armScrollReveal(): void {
+  clearTimeout(scrollRevealTimer)
+  const filePath = fileStore.currentFile?.path
+  // 未打开文件夹或文件不在其中时，树中不存在对应行，无需等待定位
+  if (!filePath || !isInsideOpenedFolder(filePath)) return
+  scrollRevealPending = true
+  void tryScrollToActiveFile()
+  // 兜底：目标行始终未出现（如目录加载失败）时解除待命，避免后续树变化误触发滚动
+  scrollRevealTimer = window.setTimeout(() => {
+    scrollRevealPending = false
+  }, 3000)
+}
+
+watch(() => fileStore.activeTabId, () => {
+  armScrollReveal()
+})
+
+watch(() => fileStore.fileTree, () => {
+  if (scrollRevealPending) void tryScrollToActiveFile()
 }, { deep: true })
 
 const emit = defineEmits<{
@@ -189,6 +231,7 @@ const showInputDialog = ref(false)
 const inputDialogTitle = ref('')
 const inputValue = ref('')
 const inputPlaceholder = ref('')
+const inputError = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
 let inputResolve: ((value: string | null) => void) | null = null
 
@@ -202,6 +245,7 @@ function openInputDialog(title: string, initialValue: string, placeholder: strin
     inputDialogTitle.value = title
     inputValue.value = initialValue
     inputPlaceholder.value = placeholder
+    inputError.value = ''
     showInputDialog.value = true
     inputResolve = resolve
     nextTick(() => inputRef.value?.focus())
@@ -250,8 +294,13 @@ function cancelCreateFile(): void {
 }
 
 function confirmInput(): void {
+  const validationError = validateWindowsFolderName(inputValue.value)
+  if (validationError) {
+    inputError.value = validationError
+    return
+  }
   const val = inputValue.value.trim()
-  if (!val) return
+  inputError.value = ''
   showInputDialog.value = false
   inputResolve?.(val)
   inputResolve = null
@@ -286,7 +335,7 @@ async function promptCreateFile(dirPath: string): Promise<void> {
 }
 
 async function promptCreateFolder(dirPath: string): Promise<void> {
-  const name = await openInputDialog('新建文件夹', '新建文件夹', '文件夹名称')
+  const name = await openInputDialog('新建文件夹', '', '请输入文件夹名称')
   if (!name) return
   await fileStore.createFolder(dirPath, name)
 }
@@ -349,7 +398,7 @@ function handleNodeContextMenu(event: MouseEvent, node: FileTreeNode): void {
 }
 
 onMounted(() => {
-  void scrollToActiveFile()
+  armScrollReveal()
   document.addEventListener('click', closeContextMenu)
   document.addEventListener('contextmenu', closeContextMenu, true)
   window.addEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
@@ -357,6 +406,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  clearTimeout(scrollRevealTimer)
   document.removeEventListener('click', closeContextMenu)
   document.removeEventListener('contextmenu', closeContextMenu, true)
   window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
@@ -369,24 +419,16 @@ onUnmounted(() => {
     <!-- 资源管理器标题栏 -->
     <div class="explorer-titlebar">
       <span class="explorer-title">资源管理器</span>
-      <button
-        class="explorer-collapse-btn"
-        type="button"
-        title="收起侧边栏"
-        aria-label="收起侧边栏"
-        @click="emit('collapse')"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+      <Tooltip content="收起侧边栏">
+        <button
+          class="explorer-collapse-btn"
+          type="button"
+          aria-label="收起侧边栏"
+          @click="emit('collapse')"
         >
-          <path
-            stroke-width="2"
-            d="M11 17l-5-5 5-5M18 17l-5-5 5-5"
-          />
-        </svg>
-      </button>
+          <IconChevronsLeft />
+        </button>
+      </Tooltip>
     </div>
 
     <!-- 文件列表 -->
@@ -420,17 +462,11 @@ onUnmounted(() => {
         v-if="!fileStore.openedFolderPath"
         class="empty-state"
       >
-        <svg
+        <IconFolderOpen
           class="empty-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-        >
-          <path
-            stroke-width="1.5"
-            d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
-          />
-        </svg>
+          :size="48"
+          stroke="1.5"
+        />
         <p class="empty-text">
           打开文件夹以浏览文件
         </p>
@@ -516,9 +552,16 @@ onUnmounted(() => {
             type="text"
             spellcheck="false"
             class="dialog-input"
+            :class="{ 'dialog-input-error': inputError }"
             :placeholder="inputPlaceholder"
             @keyup.enter="confirmInput"
           >
+          <p
+            v-if="inputError"
+            class="dialog-error"
+          >
+            {{ inputError }}
+          </p>
           <div class="dialog-actions">
             <button
               class="dialog-btn dialog-btn-cancel"
@@ -618,6 +661,10 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--color-text-secondary);
   letter-spacing: 0.3px;
+}
+
+.explorer-titlebar :deep(.tooltip-trigger) {
+  flex: none;
 }
 
 .explorer-collapse-btn {
@@ -870,6 +917,13 @@ onUnmounted(() => {
 
 .dialog-input-error:focus {
   border-color: var(--color-error);
+}
+
+.dialog-error {
+  margin: 6px 0 0;
+  color: var(--color-error);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .create-file-row {

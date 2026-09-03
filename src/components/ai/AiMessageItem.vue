@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { IconArrowBackUp } from '@tabler/icons-vue'
 import type { AiConversationMessage, ToolExecutionResult } from '../../../shared/ai/types'
 import { renderAiMarkdown } from '../../utils/ai/markdown'
 import { extractAnalysisBlock, ANALYSIS_START_RE, hasAnalysisEnd } from '../../utils/ai/analysis-block'
+import Tooltip from '../common/Tooltip.vue'
 import AiAnalysisCard from './AiAnalysisCard.vue'
 import AiToolCallGroup from './AiToolCallGroup.vue'
 
@@ -47,26 +49,20 @@ const showRecall = computed(() => props.canRecall && props.message.role === 'use
         class="message-body"
         v-html="answerHtml"
       />
-      <button
+      <Tooltip
         v-if="showRecall"
-        type="button"
-        class="recall-btn"
-        data-testid="ai-recall"
-        title="撤回"
-        aria-label="撤回"
-        @click="emit('recall', message.id)"
+        content="撤回"
       >
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        ><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 5 5v0a5 5 0 0 1-5 5H9" /></svg>
-      </button>
+        <button
+          type="button"
+          class="recall-btn"
+          data-testid="ai-recall"
+          aria-label="撤回"
+          @click="emit('recall', message.id)"
+        >
+          <IconArrowBackUp :size="15" />
+        </button>
+      </Tooltip>
     </template>
     <template v-else>
       <AiAnalysisCard

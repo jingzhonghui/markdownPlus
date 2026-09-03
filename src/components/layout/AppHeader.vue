@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { IconChevronRight, IconCopy, IconFile, IconFolder, IconMessageChatbot, IconMinus, IconMoon, IconRefresh, IconSquare, IconSun, IconX } from '@tabler/icons-vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { useUpdateStore } from '../../stores/update'
@@ -8,6 +9,7 @@ import { useSyncStore } from '../../stores/sync'
 import { requestDialog } from '../../utils/dialog'
 import SyncPanel from './SyncPanel.vue'
 import QuickOpenPalette from '../common/QuickOpenPalette.vue'
+import Tooltip from '../common/Tooltip.vue'
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
@@ -663,138 +665,76 @@ onUnmounted(() => {
     <div class="window-drag-region" />
 
     <div class="header-right">
-      <button
-        class="icon-btn sync-btn"
-        :data-status="syncStore.status"
-        :title="syncTooltip"
-        :disabled="!fileStore.openedFolderPath"
-        @click="syncStore.openPanel()"
-      >
-        <svg
-          class="icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+      <Tooltip :content="syncTooltip">
+        <button
+          class="icon-btn sync-btn"
+          :data-status="syncStore.status"
+          :disabled="!fileStore.openedFolderPath"
+          @click="syncStore.openPanel()"
         >
-          <path
-            stroke-width="2"
-            d="M21 12a9 9 0 1 1-2.64-6.36"
-          />
-          <path
-            stroke-width="2"
-            d="M21 3v6h-6"
-          />
-        </svg>
-      </button>
+          <IconRefresh class="icon" />
+        </button>
+      </Tooltip>
 
-      <button
-        class="icon-btn"
-        :class="{ active: aiStore.panelOpen }"
-        :title="aiStore.panelOpen ? '关闭 AI 助手' : 'AI 助手'"
-        @click="toggleAiPanel"
-      >
-        <svg
-          class="icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+      <Tooltip :content="aiStore.panelOpen ? '关闭 AI 助手' : 'AI 助手'">
+        <button
+          class="icon-btn"
+          :aria-label="aiStore.panelOpen ? '关闭 AI 助手' : 'AI 助手'"
+          :class="{ active: aiStore.panelOpen }"
+          @click="toggleAiPanel"
         >
-          <path
-            stroke-width="2"
-            d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3z"
-          />
-          <path
-            stroke-width="2"
-            d="M19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"
-          />
-        </svg>
-      </button>
+          <IconMessageChatbot class="icon" />
+        </button>
+      </Tooltip>
 
-      <button
-        class="icon-btn"
-        :title="themeStore.isDark ? '切换到浅色主题' : '切换到深色主题'"
-        @click="toggleTheme"
-      >
-        <svg
-          v-if="themeStore.isDark"
-          class="icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+      <Tooltip :content="themeStore.isDark ? '切换到浅色主题' : '切换到深色主题'">
+        <button
+          class="icon-btn"
+          @click="toggleTheme"
         >
-          <circle
-            cx="12"
-            cy="12"
-            r="5"
-            stroke-width="2"
+          <IconSun
+            v-if="themeStore.isDark"
+            class="icon"
           />
-          <path
-            stroke-width="2"
-            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          <IconMoon
+            v-else
+            class="icon"
           />
-        </svg>
-        <svg
-          v-else
-          class="icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-        >
-          <path
-            stroke-width="2"
-            d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-          />
-        </svg>
-      </button>
+        </button>
+      </Tooltip>
 
       <div class="window-controls">
-        <button
-          class="window-btn"
-          title="最小化"
-          @click="handleMinimize"
-        >
-          <svg
-            viewBox="0 0 16 16"
-            fill="currentColor"
+        <Tooltip content="最小化">
+          <button
+            class="window-btn"
+            @click="handleMinimize"
           >
-            <path d="M3 8h10v1H3z" />
-          </svg>
-        </button>
-        <button
-          class="window-btn"
-          :title="isMaximized ? '还原' : '最大化'"
-          @click="handleMaximize"
-        >
-          <svg
-            v-if="isMaximized"
-            viewBox="0 0 16 16"
-            fill="currentColor"
+            <IconMinus :size="14" />
+          </button>
+        </Tooltip>
+        <Tooltip :content="isMaximized ? '还原' : '最大化'">
+          <button
+            class="window-btn"
+            @click="handleMaximize"
           >
-            <path d="M3 3h8v2H5v6H3V3zm2 2h8v8H5V5zm2 2v4h4V7H7z" />
-          </svg>
-          <svg
-            v-else
-            viewBox="0 0 16 16"
-            fill="currentColor"
+            <IconCopy
+              v-if="isMaximized"
+              :size="14"
+            />
+            <IconSquare
+              v-else
+              :size="14"
+            />
+          </button>
+        </Tooltip>
+        <Tooltip content="关闭">
+          <button
+            class="window-btn close"
+            @click="handleClose"
           >
-            <path d="M3 3h10v10H3V3zm1 1v8h8V4H4z" />
-          </svg>
-        </button>
-        <button
-          class="window-btn close"
-          title="关闭"
-          @click="handleClose"
-        >
-          <svg
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-          >
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </button>
+            <IconX :size="14" />
+          </button>
+        </Tooltip>
       </div>
     </div>
 
@@ -819,7 +759,10 @@ onUnmounted(() => {
             :class="{ disabled: item.disabled }"
           >
             <span>{{ item.label }}</span>
-            <span class="sub-indicator">▸</span>
+            <IconChevronRight
+              class="sub-indicator"
+              :size="12"
+            />
             <div class="submenu">
               <template
                 v-for="(sub, subIndex) in item.children"
@@ -829,46 +772,37 @@ onUnmounted(() => {
                   v-if="sub.kind === 'divider'"
                   class="menu-divider"
                 />
-                <div
+                <Tooltip
                   v-else
-                  class="menu-entry"
-                  :class="{ disabled: sub.disabled || sub.action === 'none' }"
-                  :title="sub.payload || undefined"
-                  @click="runMenuItem(sub)"
+                  :content="sub.payload || ''"
                 >
-                  <span class="menu-entry-label">
-                    <span
-                      v-if="sub.icon"
-                      class="menu-icon"
-                    >
-                      <svg
-                        v-if="sub.icon === 'folder'"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linejoin="round"
+                  <div
+                    class="menu-entry"
+                    :class="{ disabled: sub.disabled || sub.action === 'none' }"
+                    @click="runMenuItem(sub)"
+                  >
+                    <span class="menu-entry-label">
+                      <span
+                        v-if="sub.icon"
+                        class="menu-icon"
                       >
-                        <path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h5.5a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1V4z" />
-                      </svg>
-                      <svg
-                        v-else-if="sub.icon === 'file'"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M4 1.5h5l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.5a1 1 0 0 1 1-1z" />
-                      </svg>
+                        <IconFolder
+                          v-if="sub.icon === 'folder'"
+                          :size="14"
+                        />
+                        <IconFile
+                          v-else-if="sub.icon === 'file'"
+                          :size="14"
+                        />
+                      </span>
+                      <span
+                        v-if="sub.checked !== undefined"
+                        class="menu-check"
+                      >{{ sub.checked ? '✓' : '' }}</span>
+                      {{ sub.label }}
                     </span>
-                    <span
-                      v-if="sub.checked !== undefined"
-                      class="menu-check"
-                    >{{ sub.checked ? '✓' : '' }}</span>
-                    {{ sub.label }}
-                  </span>
-                </div>
+                  </div>
+                </Tooltip>
               </template>
             </div>
           </div>
@@ -1201,6 +1135,12 @@ onUnmounted(() => {
   align-items: center;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+}
+
+.header-right > :deep(.tooltip-trigger),
+.window-controls > :deep(.tooltip-trigger),
+.submenu > :deep(.tooltip-trigger) {
+  flex: 0 0 auto;
 }
 
 .window-drag-region {

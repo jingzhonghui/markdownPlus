@@ -156,12 +156,13 @@ export function registerMdxHandlers(): void {
 
       const isMdx = path.extname(targetPath).toLowerCase() === '.mdx'
       const imageMime = getImageMimeType(targetPath)
+      const isPdf = path.extname(targetPath).toLowerCase() === '.pdf'
 
-      const MAX_FILE_SIZE = 20 * 1024 * 1024
-      const WARN_FILE_SIZE = 5 * 1024 * 1024
+      const MAX_FILE_SIZE = 500 * 1024 * 1024
+      const WARN_FILE_SIZE = 50 * 1024 * 1024
       const fileSize = fs.statSync(targetPath).size
       if (fileSize > MAX_FILE_SIZE) {
-        return { success: false, error: '文件过大（超过 20 MB），无法打开' }
+        return { success: false, error: '文件过大（超过 500 MB），无法打开' }
       }
       const largeFileWarning = fileSize > WARN_FILE_SIZE
 
@@ -176,6 +177,20 @@ export function registerMdxHandlers(): void {
         return {
           success: true,
           data: { document, filePath: targetPath, format: 'mdx', isNew: false, largeFileWarning }
+        }
+      }
+
+      // PDF 文件：以 base64 形式返回，由渲染进程只读查看
+      if (isPdf) {
+        const buf = fs.readFileSync(targetPath)
+        if (buf.subarray(0, 5).toString('ascii') !== '%PDF-') {
+          return { success: false, error: '无效的 PDF 文件（缺少 %PDF 头）' }
+        }
+        const document = createMdxDocument(path.basename(targetPath, path.extname(targetPath)), '')
+        if (addToRecent) addRecent(targetPath)
+        return {
+          success: true,
+          data: { document, filePath: targetPath, format: 'pdf', isNew: false, largeFileWarning, pdfBase64: buf.toString('base64') }
         }
       }
 

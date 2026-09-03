@@ -8,6 +8,13 @@ import {
   onUnmounted,
   nextTick,
 } from 'vue'
+import {
+  IconAlignCenter,
+  IconAlignLeft,
+  IconAlignRight,
+  IconCopy,
+  IconTrash
+} from '@tabler/icons-vue'
 import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { storeToRefs } from 'pinia'
@@ -39,6 +46,7 @@ import katex from 'katex'
 import type { NodeView, ViewMutationRecord } from 'prosemirror-view'
 import { getHighlighter, type Highlighter } from '../../utils/shiki'
 import EditorContextMenu from '../common/EditorContextMenu.vue'
+import Tooltip from '../common/Tooltip.vue'
 import FindReplacePanel from './FindReplacePanel.vue'
 import type { EditorContextMenuItem } from '../../types/editor-context-menu'
 import {
@@ -1545,92 +1553,55 @@ defineExpose({
       :style="{ left: `${tableToolbar.x}px`, top: `${tableToolbar.y}px` }"
       @mousedown.stop.prevent
     >
-      <button
-        class="table-toolbar-btn"
-        :class="{ active: tableToolbar.align === 'left' }"
-        title="整张表格左对齐"
-        aria-label="整张表格左对齐"
-        @click="viewRef && setTableAlign(viewRef, 'left')"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+      <Tooltip content="整张表格左对齐">
+        <button
+          class="table-toolbar-btn"
+          :class="{ active: tableToolbar.align === 'left' }"
+          aria-label="整张表格左对齐"
+          @click="viewRef && setTableAlign(viewRef, 'left')"
         >
-          <path d="M4 6h16M4 10h11M4 14h16M4 18h11" />
-        </svg>
-      </button>
-      <button
-        class="table-toolbar-btn"
-        :class="{ active: tableToolbar.align === 'center' }"
-        title="整张表格居中对齐"
-        aria-label="整张表格居中对齐"
-        @click="viewRef && setTableAlign(viewRef, 'center')"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+          <IconAlignLeft />
+        </button>
+      </Tooltip>
+      <Tooltip content="整张表格居中对齐">
+        <button
+          class="table-toolbar-btn"
+          :class="{ active: tableToolbar.align === 'center' }"
+          aria-label="整张表格居中对齐"
+          @click="viewRef && setTableAlign(viewRef, 'center')"
         >
-          <path d="M4 6h16M7 10h10M4 14h16M7 18h10" />
-        </svg>
-      </button>
-      <button
-        class="table-toolbar-btn"
-        :class="{ active: tableToolbar.align === 'right' }"
-        title="整张表格右对齐"
-        aria-label="整张表格右对齐"
-        @click="viewRef && setTableAlign(viewRef, 'right')"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+          <IconAlignCenter />
+        </button>
+      </Tooltip>
+      <Tooltip content="整张表格右对齐">
+        <button
+          class="table-toolbar-btn"
+          :class="{ active: tableToolbar.align === 'right' }"
+          aria-label="整张表格右对齐"
+          @click="viewRef && setTableAlign(viewRef, 'right')"
         >
-          <path d="M4 6h16M9 10h11M4 14h16M9 18h11" />
-        </svg>
-      </button>
+          <IconAlignRight />
+        </button>
+      </Tooltip>
       <span class="table-toolbar-divider" />
-      <button
-        class="table-toolbar-btn"
-        title="复制整张表格"
-        aria-label="复制整张表格"
-        @click="viewRef && void copyCurrentTable(viewRef)"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+      <Tooltip content="复制整张表格">
+        <button
+          class="table-toolbar-btn"
+          aria-label="复制整张表格"
+          @click="viewRef && void copyCurrentTable(viewRef)"
         >
-          <rect
-            x="9"
-            y="9"
-            width="11"
-            height="11"
-            rx="2"
-          />
-          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-        </svg>
-      </button>
-      <button
-        class="table-toolbar-btn danger"
-        title="删除整张表格"
-        aria-label="删除整张表格"
-        @click="viewRef && deleteCurrentTable(viewRef)"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+          <IconCopy />
+        </button>
+      </Tooltip>
+      <Tooltip content="删除整张表格">
+        <button
+          class="table-toolbar-btn danger"
+          aria-label="删除整张表格"
+          @click="viewRef && deleteCurrentTable(viewRef)"
         >
-          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" />
-        </svg>
-      </button>
+          <IconTrash />
+        </button>
+      </Tooltip>
     </div>
     <FindReplacePanel
       :open="searchOpen"

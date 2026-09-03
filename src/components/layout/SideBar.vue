@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
+import {
+  IconChevronsRight,
+  IconFile,
+  IconFolder,
+  IconPlus
+} from '@tabler/icons-vue'
 import FileExplorer from '../sidebar/FileExplorer.vue'
+import Tooltip from '../common/Tooltip.vue'
 import { useFileStore } from '../../stores/file'
 
 const fileStore = useFileStore()
@@ -101,75 +108,39 @@ function openFolder(): void {
       v-if="props.collapsed"
       class="collapsed-bar"
     >
-      <button
-        class="collapsed-btn"
-        title="新建文件"
-        @click="fileStore.newFile()"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+      <Tooltip content="新建文件">
+        <button
+          class="collapsed-btn"
+          @click="fileStore.newFile()"
         >
-          <path
-            stroke-width="2"
-            d="M12 4v16m8-8H4"
-          />
-        </svg>
-      </button>
-      <button
-        class="collapsed-btn"
-        title="打开文件"
-        @click="fileStore.openFile()"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+          <IconPlus />
+        </button>
+      </Tooltip>
+      <Tooltip content="打开文件">
+        <button
+          class="collapsed-btn"
+          @click="fileStore.openFile()"
         >
-          <path
-            stroke-width="2"
-            d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
-          />
-          <path
-            stroke-width="2"
-            d="M14 2v6h6"
-          />
-        </svg>
-      </button>
-      <button
-        class="collapsed-btn"
-        title="打开文件夹"
-        @click="openFolder"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+          <IconFile />
+        </button>
+      </Tooltip>
+      <Tooltip content="打开文件夹">
+        <button
+          class="collapsed-btn"
+          @click="openFolder"
         >
-          <path
-            stroke-width="2"
-            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-          />
-        </svg>
-      </button>
+          <IconFolder />
+        </button>
+      </Tooltip>
       <div class="collapsed-divider" />
-      <button
-        class="collapsed-btn"
-        title="展开侧边栏"
-        @click="toggleSidebar"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+      <Tooltip content="展开侧边栏">
+        <button
+          class="collapsed-btn"
+          @click="toggleSidebar"
         >
-          <path
-            stroke-width="2"
-            d="M13 17l5-5-5-5M6 17l5-5-5-5"
-          />
-        </svg>
-      </button>
+          <IconChevronsRight />
+        </button>
+      </Tooltip>
     </div>
 
     <!-- 展开状态：显示资源管理器 -->
@@ -220,6 +191,10 @@ function openFolder(): void {
   align-items: center;
   padding: 8px 0;
   gap: 4px;
+}
+
+.collapsed-bar > :deep(.tooltip-trigger) {
+  flex: 0 0 auto;
 }
 
 .collapsed-btn {

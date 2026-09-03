@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { isEditableMarkdownFormat } from '../../types/mdx'
 import type { DocumentFormat, MdxDocument } from '../../types/mdx'
 import { createMdxDocument } from '../../types/mdx'
 import { loadSessionState, saveSessionState } from '../session'
@@ -418,7 +419,7 @@ export const useFileStore = defineStore('file', () => {
         if (result.data.largeFileWarning) {
           const choice = await requestDialog({
             title: '大文件警告',
-            message: '此文件超过 5 MB，打开和编辑可能会变慢。',
+            message: '此文件超过 50 MB，打开和编辑可能会变慢。',
             detail: '建议在外部编辑器中处理大文件。',
             buttons: [
               { label: '取消', value: 1 },
@@ -447,9 +448,11 @@ export const useFileStore = defineStore('file', () => {
         // 创建新 tab
         const tab = tabState.createTab()
         const format = (result.data.format as DocumentFormat) || (fPath.toLowerCase().endsWith('.md') ? 'markdown' : 'mdx')
+        const isReadOnlyMedia = !isEditableMarkdownFormat(format)
         tab.document = doc
-        tab.content = format === 'image' ? '' : doc.content
+        tab.content = isReadOnlyMedia ? '' : doc.content
         if (format === 'image') tab.imageDataUrl = result.data.imageDataUrl
+        if (format === 'pdf') tab.pdfBase64 = result.data.pdfBase64
         tab.fileInfo = {
           path: fPath,
           name: fPath.split(/[/\\]/).pop() || '未命名.mdx',
@@ -491,8 +494,8 @@ export const useFileStore = defineStore('file', () => {
         error.value = '没有打开的文档'
         return false
       }
-      if (tab.fileInfo?.format === 'image') {
-        error.value = '图片文件不支持编辑或保存'
+      if (!isEditableMarkdownFormat(tab.fileInfo?.format)) {
+        error.value = '该文件类型不支持编辑或保存'
         return false
       }
 
@@ -535,8 +538,8 @@ export const useFileStore = defineStore('file', () => {
         error.value = '没有打开的文档'
         return false
       }
-      if (tab.fileInfo?.format === 'image') {
-        error.value = '图片文件不支持编辑或保存'
+      if (!isEditableMarkdownFormat(tab.fileInfo?.format)) {
+        error.value = '该文件类型不支持编辑或保存'
         return false
       }
 

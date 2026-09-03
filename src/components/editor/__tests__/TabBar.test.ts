@@ -85,6 +85,64 @@ describe('TabBar closing with many tabs', () => {
   })
 })
 
+describe('TabBar label for read-only media', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    stubElectronAPI()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.clearAllMocks()
+  })
+
+  it('shows the original filename for a pdf tab instead of a .mdx title', async () => {
+    ;(window.electronAPI.openFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: {
+        document: createMdxDocument('季度报告', ''),
+        filePath: 'C:/ws/季度报告.pdf',
+        format: 'pdf',
+        isNew: false,
+        largeFileWarning: false,
+        pdfBase64: 'data'
+      }
+    })
+    const store = useFileStore()
+    await store.openFile('C:/ws/季度报告.pdf')
+    expect(store.activeTab?.fileInfo?.format).toBe('pdf')
+
+    const wrapper = mount(TabBar)
+    expect(wrapper.find('.tab-label').text()).toBe('季度报告.pdf')
+    vi.useFakeTimers()
+    await wrapper.find('.tab-label').trigger('mouseover')
+    vi.advanceTimersByTime(400)
+    await nextTick()
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('季度报告.pdf')
+    vi.useRealTimers()
+  })
+
+  it('shows the original filename for an image tab instead of a .mdx title', async () => {
+    ;(window.electronAPI.openFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: {
+        document: createMdxDocument('截图', ''),
+        filePath: 'C:/ws/截图.png',
+        format: 'image',
+        isNew: false,
+        largeFileWarning: false,
+        imageDataUrl: 'data:image/png;base64,'
+      }
+    })
+    const store = useFileStore()
+    await store.openFile('C:/ws/截图.png')
+    expect(store.activeTab?.fileInfo?.format).toBe('image')
+
+    const wrapper = mount(TabBar)
+    expect(wrapper.find('.tab-label').text()).toBe('截图.png')
+  })
+})
+
 function clickMenuItem(label: string): boolean {
   const items = Array.from(document.querySelectorAll('.context-menu-item'))
   const item = items.find((el) => el.textContent?.includes(label))

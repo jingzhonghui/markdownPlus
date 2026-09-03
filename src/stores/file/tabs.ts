@@ -68,10 +68,6 @@ export function createTabState(): TabState {
     stateVersion.value
     const tab = activeTab.value
     if (!tab) return '未命名.mdx'
-    if (tab.fileInfo?.format === 'image') return tab.fileInfo?.name ?? '未命名'
-    if (tab.fileInfo?.format !== 'markdown' && tab.document?.metadata.title && tab.document.metadata.title !== '未命名文档') {
-      return `${tab.document.metadata.title}.mdx`
-    }
     return tab.fileInfo?.name ?? '未命名.mdx'
   })
   const displayTitle = computed(() => {

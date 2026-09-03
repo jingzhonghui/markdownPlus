@@ -1,8 +1,24 @@
 <script setup lang="ts">
 import { reactive, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import {
+  IconBraces,
+  IconFile,
+  IconFileCode,
+  IconFileDescription,
+  IconFileText,
+  IconFileTypePdf,
+  IconFileTypeZip,
+  IconFolder,
+  IconPhoto,
+  IconMessageChatbot,
+  IconX,
+  type Icon
+} from '@tabler/icons-vue'
 import { useFileStore } from '../../stores/file'
 import { useAiStore } from '../../stores/ai'
 import type { TabInfo } from '../../stores/file'
+import { getFileIconType } from '../../utils/file-icons'
+import Tooltip from '../common/Tooltip.vue'
 
 const fileStore = useFileStore()
 const aiStore = useAiStore()
@@ -48,10 +64,23 @@ async function handleCloseTab(tabId: string, event: MouseEvent): Promise<void> {
 }
 
 function getTabLabel(tab: TabInfo): string {
-  if (tab.fileInfo?.format !== 'markdown' && tab.document?.metadata?.title && tab.document.metadata.title !== '未命名文档') {
-    return `${tab.document.metadata.title}.mdx`
-  }
   return tab.fileInfo?.name || '未命名.mdx'
+}
+
+const fileIcons: Record<string, Icon> = {
+  folder: IconFolder,
+  markdown: IconFileText,
+  pdf: IconFileTypePdf,
+  image: IconPhoto,
+  archive: IconFileTypeZip,
+  data: IconBraces,
+  code: IconFileCode,
+  text: IconFileDescription,
+  file: IconFile
+}
+
+function getTabIcon(tab: TabInfo): Icon {
+  return fileIcons[getFileIconType(getTabLabel(tab), false)]
 }
 
 const CLOSE_ALL_CONTEXT_MENUS_EVENT = 'markdown-plus:close-context-menus'
@@ -152,19 +181,16 @@ onUnmounted(() => {
       @contextmenu.prevent.stop="onTabContextMenu($event, tab)"
     >
       <!-- 文件图标 -->
-      <svg
+      <component
+        :is="getTabIcon(tab)"
         class="tab-icon"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-      >
-        <path
-          stroke-width="2"
-          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-        />
-      </svg>
+        :size="16"
+        stroke="1.8"
+      />
 
-      <span class="tab-label">{{ getTabLabel(tab) }}</span>
+      <Tooltip :content="getTabLabel(tab)">
+        <span class="tab-label">{{ getTabLabel(tab) }}</span>
+      </Tooltip>
 
       <!-- 修改指示器（未保存时显示圆点） -->
       <span
@@ -177,15 +203,7 @@ onUnmounted(() => {
         class="tab-close-btn"
         @click="handleCloseTab(tab.id, $event)"
       >
-        <svg
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-        >
-          <path d="M4 4l8 8M12 4l-8 8" />
-        </svg>
+        <IconX :size="14" />
       </button>
     </div>
 
@@ -197,46 +215,39 @@ onUnmounted(() => {
       @click="aiStore.activatePanel()"
       @mousedown="handleAiMiddleClick"
     >
-      <svg
+      <IconMessageChatbot
         class="tab-icon"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-      >
-        <path
-          stroke-width="2"
-          d="M12 3l1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3zm6 10l.8 2.2L21 16l-2.2.8L18 19l-.8-2.2L15 16l2.2-.8L18 13z"
-        />
-      </svg>
-      <span class="tab-label">AI 助手</span>
-      <span
-        v-if="aiStore.pendingApprovals.length > 0"
-        class="ai-status-marker approval"
-        data-testid="ai-approval-marker"
-        title="等待审批"
-      >!</span>
-      <span
-        v-else-if="aiStore.running"
-        class="ai-status-marker running"
-        data-testid="ai-running-marker"
-        title="正在生成"
+        :size="16"
+        stroke="1.8"
       />
-      <button
-        class="tab-close-btn"
-        data-testid="ai-tab-close"
-        title="关闭 AI 助手"
-        @click="handleAiClose"
+      <span class="tab-label">AI 助手</span>
+      <Tooltip
+        v-if="aiStore.pendingApprovals.length > 0"
+        content="等待审批"
       >
-        <svg
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
+        <span
+          class="ai-status-marker approval"
+          data-testid="ai-approval-marker"
+        >!</span>
+      </Tooltip>
+      <Tooltip
+        v-else-if="aiStore.running"
+        content="正在生成"
+      >
+        <span
+          class="ai-status-marker running"
+          data-testid="ai-running-marker"
+        />
+      </Tooltip>
+      <Tooltip content="关闭 AI 助手">
+        <button
+          class="tab-close-btn"
+          data-testid="ai-tab-close"
+          @click="handleAiClose"
         >
-          <path d="M4 4l8 8M12 4l-8 8" />
-        </svg>
-      </button>
+          <IconX :size="14" />
+        </button>
+      </Tooltip>
     </div>
   </div>
 
@@ -338,6 +349,10 @@ onUnmounted(() => {
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+
+.ai-tab > .tooltip-trigger {
+  flex: 0 0 auto;
 }
 
 .tab-modified-dot {

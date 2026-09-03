@@ -3,6 +3,7 @@ import type { PdfBatchProgress, PdfSource } from '../../types/pdf'
 import type { TabInfo } from './types'
 import { requestDialog } from '../../utils/dialog'
 import { clearPdfView, preparePdfView } from '../../utils/pdf-export'
+import { isEditableMarkdownFormat } from '../../types/mdx'
 
 export interface PdfDeps {
   tabs: Ref<TabInfo[]>
@@ -81,7 +82,7 @@ export function usePdf(deps: PdfDeps) {
   async function exportTabToPdf(tabId: string): Promise<boolean> {
     const tab = tabs.value.find((item) => item.id === tabId)
     if (!tab?.document) return false
-    if (tab.fileInfo?.format === 'image') return false
+    if (!isEditableMarkdownFormat(tab.fileInfo?.format)) return false
     try {
       const outputPath = await printPdfSource(pdfSourceFromTab(tab))
       if (outputPath) {

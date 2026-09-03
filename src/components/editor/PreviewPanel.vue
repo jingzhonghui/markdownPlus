@@ -4,6 +4,7 @@ import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { renderMarkdown } from '../../utils/markdown'
 import { getHighlighter, type Highlighter } from '../../utils/shiki'
+import Tooltip from '../common/Tooltip.vue'
 
 interface Props {
   enableScrollSync?: boolean
@@ -247,13 +248,12 @@ defineExpose({
       class="preview-header"
     >
       <div class="preview-actions">
-        <button
-          class="preview-status"
-          title="代码高亮加载中"
-        >
-          <span class="loading-dot" />
-          加载中
-        </button>
+        <Tooltip content="代码高亮加载中">
+          <button class="preview-status">
+            <span class="loading-dot" />
+            加载中
+          </button>
+        </Tooltip>
       </div>
     </div>
     <div

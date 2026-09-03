@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { IconX } from '@tabler/icons-vue'
 import { useSyncStore } from '../../stores/sync'
 import { useFileStore } from '../../stores/file'
+import Tooltip from '../common/Tooltip.vue'
 
 const syncStore = useSyncStore()
 const fileStore = useFileStore()
@@ -121,23 +123,14 @@ async function onOpenConflictFile(index: number): Promise<void> {
         v-if="syncStore.branch"
         class="sync-panel-branch"
       >{{ syncStore.branch }}</span>
-      <button
-        class="sync-panel-close"
-        title="关闭"
-        @click="onClosePanel"
-      >
-        <svg
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
+      <Tooltip content="关闭">
+        <button
+          class="sync-panel-close"
+          @click="onClosePanel"
         >
-          <path
-            stroke-width="1.5"
-            stroke-linecap="round"
-            d="M3 3l6 6M9 3l-6 6"
-          />
-        </svg>
-      </button>
+          <IconX :size="12" />
+        </button>
+      </Tooltip>
     </div>
 
     <!-- 操作错误提示 -->
@@ -345,10 +338,19 @@ async function onOpenConflictFile(index: number): Promise<void> {
 }
 
 .sync-panel-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+  padding-right: 26px;
+}
+
+.sync-panel-header > :deep(.tooltip-trigger) {
+  position: absolute;
+  top: 0;
+  right: 0;
+  flex: 0 0 auto;
 }
 
 .sync-panel-title {
@@ -359,6 +361,10 @@ async function onOpenConflictFile(index: number): Promise<void> {
 .sync-panel-status {
   font-size: 12px;
   color: var(--color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sync-panel-branch {
@@ -367,10 +373,13 @@ async function onOpenConflictFile(index: number): Promise<void> {
   border-radius: var(--radius-sm);
   background-color: var(--color-bg-secondary);
   color: var(--color-text-tertiary);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sync-panel-close {
-  margin-left: auto;
   width: 22px;
   height: 22px;
   display: flex;

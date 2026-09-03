@@ -208,9 +208,7 @@ describe('AI header entry', () => {
     const close = vi.spyOn(aiStore, 'requestClosePanel').mockResolvedValue()
     expect(aiStore.panelOpen).toBe(false)
 
-    const aiButton = wrapper
-      .findAll('.icon-btn')
-      .find((button) => button.attributes('title') === 'AI 助手')!
+    const aiButton = wrapper.find('[aria-label="AI 助手"]')
     await aiButton.trigger('click')
 
     expect(aiStore.panelOpen).toBe(true)

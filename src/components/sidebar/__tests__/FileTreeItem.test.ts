@@ -112,6 +112,41 @@ describe('FileTreeItem drag & drop', () => {
   })
 })
 
+describe('FileTreeItem icons', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('uses a Tabler chevron for directory expansion', () => {
+    const wrapper = mount(FileTreeItem, {
+      props: { node: makeDir('C:/docs', 'docs') },
+      global: { plugins: [createPinia()] }
+    })
+
+    expect(wrapper.find('.expand-icon .tabler-icon-chevron-right').exists()).toBe(true)
+  })
+
+  it('renders a Tabler folder icon for a directory row', () => {
+    const wrapper = mount(FileTreeItem, {
+      props: { node: makeDir('C:/docs', 'docs') },
+      global: { plugins: [createPinia()] }
+    })
+
+    const icon = wrapper.find('.node-icon svg')
+    expect(icon.exists()).toBe(true)
+    expect(icon.attributes('class')).toContain('tabler-icon-folder')
+  })
+
+  it('renders a Tabler file icon for a plain file row', () => {
+    const wrapper = mount(FileTreeItem, {
+      props: { node: makeFile('C:/docs/readme.md', 'readme.md') },
+      global: { plugins: [createPinia()] }
+    })
+
+    const icon = wrapper.find('.node-icon svg')
+    expect(icon.exists()).toBe(true)
+    expect(icon.attributes('class')).toContain('tabler-icon-file-text')
+  })
+})
+
 describe('FileTreeItem click unsupported file', () => {
   const originalElectronAPI = (window as { electronAPI?: unknown }).electronAPI
 
@@ -172,5 +207,45 @@ describe('FileTreeItem click unsupported file', () => {
     await nextTick()
 
     expect(dialogState.visible).toBe(false)
+  })
+})
+
+describe('FileTreeItem path tooltip', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    document.body.innerHTML = ''
+  })
+
+  it('shows the full file path when hovering a file name', async () => {
+    const wrapper = mount(FileTreeItem, {
+      props: { node: makeFile('C:/workspace/docs/report.pdf', 'report.pdf') },
+      attachTo: document.body,
+      global: { plugins: [createPinia()] }
+    })
+
+    await wrapper.find('.node-name').trigger('mouseover')
+    vi.advanceTimersByTime(400)
+    await nextTick()
+
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('C:/workspace/docs/report.pdf')
+  })
+
+  it('shows the full folder path when hovering a folder name', async () => {
+    const wrapper = mount(FileTreeItem, {
+      props: { node: makeDir('C:/workspace/docs/assets', 'assets') },
+      attachTo: document.body,
+      global: { plugins: [createPinia()] }
+    })
+
+    await wrapper.find('.node-name').trigger('mouseover')
+    vi.advanceTimersByTime(400)
+    await nextTick()
+
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('C:/workspace/docs/assets')
   })
 })

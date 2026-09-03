@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { IconFile, IconFolder, IconPlus } from '@tabler/icons-vue'
 import { useFileStore } from '../../stores/file'
 import { useAiStore } from '../../stores/ai'
 import AiPanel from '../ai/AiPanel.vue'
@@ -7,6 +8,7 @@ import SourceEditor from './SourceEditor.vue'
 import IrEditor from './IrEditor.vue'
 import PreviewPanel from './PreviewPanel.vue'
 import ImageViewer from './ImageViewer.vue'
+import PdfViewer from './PdfViewer.vue'
 import TabBar from './TabBar.vue'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
@@ -20,6 +22,7 @@ const showPreview = computed(() => fileStore.editorMode === 'split')
 const isIrMode = computed(() => fileStore.editorMode === 'ir')
 const hasOpenFile = computed(() => fileStore.tabs.length > 0 && fileStore.activeTabId !== null)
 const isImageTab = computed(() => fileStore.activeTab?.fileInfo?.format === 'image')
+const isPdfTab = computed(() => fileStore.activeTab?.fileInfo?.format === 'pdf')
 
 // 组件引用
 const sourceEditorRef = ref<InstanceType<typeof SourceEditor>>()
@@ -77,52 +80,21 @@ function onPreviewScroll(ratio: number): void {
             class="welcome-btn primary"
             @click="fileStore.newFile()"
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
-              <path
-                stroke-width="2"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
+            <IconPlus />
             新建文件
           </button>
           <button
             class="welcome-btn"
             @click="fileStore.openFile()"
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
-              <path
-                stroke-width="2"
-                d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
-              />
-              <path
-                stroke-width="2"
-                d="M14 2v6h6"
-              />
-            </svg>
+            <IconFile />
             打开文件
           </button>
           <button
             class="welcome-btn"
             @click="fileStore.openFolder()"
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
-              <path
-                stroke-width="2"
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-              />
-            </svg>
+            <IconFolder />
             打开文件夹
           </button>
         </div>
@@ -191,6 +163,12 @@ function onPreviewScroll(ratio: number): void {
       <ImageViewer
         v-if="isImageTab"
         :key="fileStore.activeTabId || 'image-viewer'"
+      />
+
+      <!-- PDF 文件：只读查看 -->
+      <PdfViewer
+        v-else-if="isPdfTab"
+        :key="fileStore.activeTabId || 'pdf-viewer'"
       />
 
       <!-- 即时渲染模式 -->

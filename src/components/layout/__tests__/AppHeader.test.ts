@@ -5,6 +5,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import AppHeader from '../AppHeader.vue'
 import { useFileStore } from '../../../stores/file'
+import { useSyncStore } from '../../../stores/sync'
 import { dialogState, resolveDialogRequest } from '../../../utils/dialog'
 
 function mountHeader() {
@@ -110,5 +111,67 @@ describe('AppHeader 快速打开（Ctrl+P）', () => {
 
     expect((window.electronAPI as { searchFiles: ReturnType<typeof vi.fn> }).searchFiles).toHaveBeenCalledWith('C:/ws')
     expect(document.body.querySelectorAll('.quick-open-item').length).toBe(1)
+  })
+})
+
+describe('AppHeader 同步按钮', () => {
+  const originalElectronAPI = window.electronAPI
+
+  afterEach(() => {
+    ;(window as { electronAPI?: unknown }).electronAPI = originalElectronAPI
+    document.body.innerHTML = ''
+    if (dialogState.visible) resolveDialogRequest(0)
+  })
+
+  function mockSyncStatus(status: string): void {
+    ;(window as { electronAPI?: unknown }).electronAPI = {
+      getSyncStatus: vi.fn(async () => ({
+        success: true,
+        data: {
+          status,
+          error: null,
+          configured: true,
+          isGitRepo: true,
+          branch: 'main',
+          upstream: 'origin/main'
+        }
+      })),
+      windowIsMaximized: vi.fn(async () => false),
+      getVersion: vi.fn(async () => 'test'),
+      onWindowMaximized: vi.fn(() => () => {}),
+      onWindowUnmaximized: vi.fn(() => () => {})
+    }
+  }
+
+  it('同步进行中（syncing）时同步按钮图标带旋转样式', async () => {
+    mockSyncStatus('syncing')
+    const wrapper = mountHeader()
+    const fileStore = useFileStore()
+    fileStore.openedFolderPath = 'C:/ws'
+    await wrapper.vm.$nextTick()
+
+    const syncStore = useSyncStore()
+    await syncStore.refresh()
+    await wrapper.vm.$nextTick()
+
+    const icon = wrapper.find('.sync-btn svg')
+    expect(icon.exists()).toBe(true)
+    expect(icon.classes()).toContain('spinning')
+  })
+
+  it('非同步中（upToDate）时同步按钮图标无旋转样式', async () => {
+    mockSyncStatus('upToDate')
+    const wrapper = mountHeader()
+    const fileStore = useFileStore()
+    fileStore.openedFolderPath = 'C:/ws'
+    await wrapper.vm.$nextTick()
+
+    const syncStore = useSyncStore()
+    await syncStore.refresh()
+    await wrapper.vm.$nextTick()
+
+    const icon = wrapper.find('.sync-btn svg')
+    expect(icon.exists()).toBe(true)
+    expect(icon.classes()).not.toContain('spinning')
   })
 })

@@ -424,10 +424,47 @@ describe('SyncEngine', () => {
     expect(view.error).toBe('Authentication failed')
   })
 
+  it('manual push commits pending local changes before pushing when autoCommit disabled', async () => {
+    const { engine, provider, dir } = makeEngine()
+    await engine.attach(dir)
+    engine.setConfig({ autoCommit: false })
+    ;(provider.status as ReturnType<typeof vi.fn>).mockResolvedValueOnce('pendingCommit')
+    const result = await engine.push()
+    expect(result.success).toBe(true)
+    expect(provider.commit).toHaveBeenCalledTimes(1)
+    expect(provider.push).toHaveBeenCalledTimes(1)
+    const commitOrder = (provider.commit as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
+    const pushOrder = (provider.push as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
+    expect(commitOrder).toBeLessThan(pushOrder)
+  })
+
+  it('manual push does not commit when no pending changes', async () => {
+    const { engine, provider, dir } = makeEngine()
+    await engine.attach(dir)
+    ;(provider.status as ReturnType<typeof vi.fn>).mockResolvedValueOnce('upToDate')
+    const result = await engine.push()
+    expect(result.success).toBe(true)
+    expect(provider.commit).not.toHaveBeenCalled()
+    expect(provider.push).toHaveBeenCalledTimes(1)
+  })
+
+  it('manual push surfaces commit failure when pending changes cannot be committed', async () => {
+    const { engine, provider, dir } = makeEngine()
+    await engine.attach(dir)
+    ;(provider.status as ReturnType<typeof vi.fn>).mockResolvedValueOnce('pendingCommit')
+    ;(provider.commit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('git commit failed'))
+    const result = await engine.push()
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('git commit failed')
+    expect(provider.push).not.toHaveBeenCalled()
+  })
+
   it('push failure surfaces conflict status when status reports conflict', async () => {
     const { engine, provider, dir } = makeEngine()
     await engine.attach(dir)
     ;(provider.push as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ success: false, error: 'CONFLICT' })
+    // push 前状态检查与失败后 refreshStatus 各消耗一次 conflict
+    ;(provider.status as ReturnType<typeof vi.fn>).mockResolvedValueOnce('conflict')
     ;(provider.status as ReturnType<typeof vi.fn>).mockResolvedValueOnce('conflict')
     ;(provider.conflictedFiles as ReturnType<typeof vi.fn>).mockResolvedValueOnce(['C:/ws/docs/a.md'])
     ;(provider.rebaseInProgress as ReturnType<typeof vi.fn>).mockResolvedValueOnce(true)
@@ -513,6 +550,18 @@ describe('SyncEngine', () => {
     triggerWatcher(['C:/ws/a.md'])
     await new Promise((r) => setTimeout(r, 50))
     expect(provider.commit).not.toHaveBeenCalled()
+  })
+
+  it('autoCommit disabled still refreshes status to pendingCommit on watcher changes', async () => {
+    const { engine, provider, triggerWatcher, dir } = makeEngine()
+    await engine.attach(dir)
+    engine.setConfig({ autoCommit: false })
+    ;(provider.status as ReturnType<typeof vi.fn>).mockResolvedValue('pendingCommit')
+    const events: string[] = []
+    engine.onEvent((v) => events.push(v.status))
+    triggerWatcher(['C:/ws/a.md'])
+    await vi.waitFor(() => expect(engine.getStatusView().status).toBe('pendingCommit'))
+    expect(events).toContain('pendingCommit')
   })
 
   it('attach entering conflict emits conflicted files to renderer', async () => {

@@ -9,30 +9,33 @@ Markdown+ 是一款 Electron + Vue 3 桌面端 Markdown 编辑器，核心创新
 ## Build/Dev Commands
 
 ```bash
+# 安装依赖（使用 pnpm）
+pnpm install
+
 # 开发模式
-npm run dev
+pnpm run dev
 
 # 类型检查（分别检查 Node 和 Web 端）
-npm run typecheck:node
-npm run typecheck:web
-npm run typecheck
+pnpm run typecheck:node
+pnpm run typecheck:web
+pnpm run typecheck
 
 # 代码检查
-npm run lint
+pnpm run lint
 
 # 格式化
-npm run format
+pnpm run format
 
 # 构建
-npm run build
+pnpm run build
 
 # 打包
-npm run build:win    # Windows
-npm run build:mac    # macOS  
-npm run build:linux  # Linux
+pnpm run build:win    # Windows
+pnpm run build:mac    # macOS  
+pnpm run build:linux  # Linux
 
 # 测试
-npm test             # vitest
+pnpm test             # vitest
 ```
 
 ## Architecture

@@ -176,19 +176,25 @@ onUnmounted(() => {
           <button
             class="zoom-btn"
             @click="zoomOut"
-          >−</button>
+          >
+            −
+          </button>
         </Tooltip>
         <Tooltip content="重置缩放">
           <button
             class="zoom-btn zoom-reset"
             @click="resetZoom"
-          >{{ zoomPercent }}</button>
+          >
+            {{ zoomPercent }}
+          </button>
         </Tooltip>
         <Tooltip content="放大">
           <button
             class="zoom-btn"
             @click="zoomIn"
-          >+</button>
+          >
+            +
+          </button>
         </Tooltip>
       </div>
     </div>

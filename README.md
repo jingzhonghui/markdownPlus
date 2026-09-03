@@ -23,27 +23,27 @@
 
 ```bash
 # 安装依赖
-npm install
+pnpm install
 
 # 开发模式
-npm run dev
+pnpm run dev
 
 # 类型检查
-npm run typecheck
+pnpm run typecheck
 
 # 代码检查
-npm run lint
+pnpm run lint
 
 # 代码格式化
-npm run format
+pnpm run format
 
 # 构建
-npm run build
+pnpm run build
 
 # 打包
-npm run build:win    # Windows
-npm run build:mac    # macOS
-npm run build:linux  # Linux
+pnpm run build:win    # Windows
+pnpm run build:mac    # macOS
+pnpm run build:linux  # Linux
 ```
 
 ## 发布

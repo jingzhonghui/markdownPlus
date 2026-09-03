@@ -27,8 +27,10 @@ export default [
   },
   {
     ignores: [
+      'build/**',
       'dist/**',
       'dist-electron/**',
+      'docs/**',
       'out/**',
       'node_modules/**',
       'public/vditor/dist/**'

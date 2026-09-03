@@ -672,7 +672,10 @@ onUnmounted(() => {
           :disabled="!fileStore.openedFolderPath"
           @click="syncStore.openPanel()"
         >
-          <IconRefresh class="icon" />
+          <IconRefresh
+            class="icon"
+            :class="{ spinning: syncStore.syncing }"
+          />
         </button>
       </Tooltip>
 
@@ -1205,6 +1208,22 @@ onUnmounted(() => {
 .icon {
   width: 16px;
   height: 16px;
+}
+
+.icon.spinning {
+  animation: sync-btn-spin 0.9s linear infinite;
+}
+
+@keyframes sync-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon.spinning {
+    animation: none;
+  }
 }
 
 .window-controls {

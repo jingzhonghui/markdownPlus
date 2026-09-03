@@ -166,6 +166,17 @@ export class SyncEngine {
     this.error = null
     this.emit()
     try {
+      const st = await this.provider.status()
+      if (st === 'pendingCommit') {
+        try {
+          await this.provider.commit(`同步: ${new Date().toISOString()}`)
+        } catch (e) {
+          this.currentStatus = 'error'
+          this.error = e instanceof Error ? e.message : '提交失败'
+          this.emit()
+          return { success: false, error: this.error }
+        }
+      }
       const result = await this.provider.push()
       if (!result.success) {
         const st = await this.refreshStatus()
@@ -456,7 +467,11 @@ export class SyncEngine {
   private async autoCommit(): Promise<void> {
     if (!this.provider || !this.config) return
     if (this.busy) return
-    if (!this.config.autoCommit) return
+    if (!this.config.autoCommit) {
+      await this.refreshStatus()
+      this.emit()
+      return
+    }
     const st = await this.provider.status()
     if (st !== 'pendingCommit') {
       await this.refreshStatus()

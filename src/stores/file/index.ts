@@ -83,6 +83,12 @@ export const useFileStore = defineStore('file', () => {
     return /\.(md|mdx)$/i.test(name)
   })
 
+  /** .txt 专用纯文本模式，不参与 Markdown 编辑模式切换 */
+  const effectiveEditorMode = computed<EditorMode>(() => {
+    const name = activeTab.value?.fileInfo?.name
+    return name && /\.txt$/i.test(name) ? 'plain' : editorMode.value
+  })
+
   // ====== 字数统计 ======
   function updateWordCount(): void {
     const text = fileContent.value
@@ -1009,6 +1015,7 @@ export const useFileStore = defineStore('file', () => {
     activeTabId,
     activeTab: tabState.activeTab,
     canSwitchEditorMode,
+    effectiveEditorMode,
 
     // 向后兼容的状态（computed proxy）
     currentFile: tabState.currentFile,

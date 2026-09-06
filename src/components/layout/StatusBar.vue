@@ -7,6 +7,11 @@ import Tooltip from '../common/Tooltip.vue'
 const fileStore = useFileStore()
 const appVersion = ref('')
 
+/** 当前生效的编辑模式：非 .md/.mdx 文件（如 .txt）实际按源码编辑显示 */
+const effectiveMode = computed<EditorMode>(() =>
+  fileStore.effectiveEditorMode
+)
+
 onMounted(async () => {
   try {
     appVersion.value = await window.electronAPI.getVersion()
@@ -56,9 +61,10 @@ const modeIcon = computed(() => {
   const icons: Record<EditorMode, string> = {
     split: 'split',
     source: 'source',
-    ir: 'ir'
+    ir: 'ir',
+    plain: 'source'
   }
-  return icons[fileStore.editorMode]
+  return icons[effectiveMode.value]
 })
 
 /**
@@ -68,9 +74,10 @@ const modeTooltip = computed(() => {
   const tooltips: Record<EditorMode, string> = {
     split: '分屏预览',
     source: '源码编辑',
-    ir: '即时渲染'
+    ir: '即时渲染',
+    plain: '纯文本'
   }
-  return `${tooltips[fileStore.editorMode]} (点击切换)`
+  return `${tooltips[effectiveMode.value]} (点击切换)`
 })
 </script>
 
@@ -93,7 +100,7 @@ const modeTooltip = computed(() => {
       <Tooltip :content="modeTooltip">
         <button
           class="mode-toggle-btn"
-          :class="fileStore.editorMode"
+          :class="effectiveMode"
           :disabled="!fileStore.canSwitchEditorMode"
           @click="toggleEditorMode"
         >

@@ -1,6 +1,6 @@
 import type { DocumentFormat, MdxDocument } from '../../types/mdx'
 
-export type EditorMode = 'split' | 'source' | 'ir'
+export type EditorMode = 'split' | 'source' | 'ir' | 'plain'
 
 export interface FileInfo {
   path: string

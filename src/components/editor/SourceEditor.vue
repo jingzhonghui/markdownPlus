@@ -17,9 +17,12 @@ import type { EditorContextMenuItem } from '../../types/editor-context-menu'
 // Props
 interface Props {
   class?: string
+  plainText?: boolean
 }
 
-defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  plainText: false
+})
 
 // Emits
 const emit = defineEmits<{
@@ -105,22 +108,25 @@ function createExtensions(): Extension[] {
     highlightSelectionMatches(),
     closeBrackets(),
 
-    // Markdown 语言支持（仅预载常用语法，减少初始化体积）
-    markdown({
-      base: markdownLanguage,
-      codeLanguages: languages.filter(
-        (d) =>
-          ['javascript', 'typescript', 'python', 'go', 'rust', 'java',
-           'c', 'cpp', 'csharp', 'html', 'css', 'json', 'yaml', 'xml', 'sql',
-           'bash', 'powershell', 'ruby', 'php', 'swift', 'kotlin', 'markdown'].includes(d.name)
-      )
-    }),
-
-    // 自动补全
-    autocompletion({
-      override: [markdownCompletions],
-      closeOnBlur: true
-    }),
+    ...(props.plainText
+      ? [EditorView.lineWrapping]
+      : [
+          // Markdown 语言支持（仅预载常用语法，减少初始化体积）
+          markdown({
+            base: markdownLanguage,
+            codeLanguages: languages.filter(
+              (d) =>
+                ['javascript', 'typescript', 'python', 'go', 'rust', 'java',
+                 'c', 'cpp', 'csharp', 'html', 'css', 'json', 'yaml', 'xml', 'sql',
+                 'bash', 'powershell', 'ruby', 'php', 'swift', 'kotlin', 'markdown'].includes(d.name)
+            )
+          }),
+          // 自动补全
+          autocompletion({
+            override: [markdownCompletions],
+            closeOnBlur: true
+          })
+        ]),
 
     // 按键映射
     keymap.of([
@@ -130,14 +136,16 @@ function createExtensions(): Extension[] {
       ...defaultKeymap.filter((binding) => binding.key !== 'Mod-/'),
       ...historyKeymap,
       ...completionKeymap,
-      ...customKeymap
+      ...(props.plainText
+        ? customKeymap.filter((binding) => ['Mod-f', 'Mod-h', 'Escape'].includes(binding.key))
+        : customKeymap)
     ]),
 
     // 查找高亮（面板由 FindReplacePanel 统一提供）
     searchDecoField,
 
-    // git 冲突标记行高亮
-    conflictDecoField,
+    // Markdown 模式高亮 Git 冲突标记；纯文本必须原样显示
+    ...(props.plainText ? [] : [conflictDecoField]),
 
     // 主题（使用 compartment）
     themeCompartment.of(getThemeExtension()),
@@ -185,6 +193,13 @@ function runHistoryCommand(command: (view: EditorView) => boolean): void {
 }
 
 function buildSourceContextMenuItems(view: EditorView): EditorContextMenuItem[] {
+  if (props.plainText) {
+    return [
+      { label: '撤销', action: () => runHistoryCommand(undo) },
+      { label: '重做', action: () => runHistoryCommand(redo) }
+    ]
+  }
+
   return [
     { label: '撤销', action: () => runHistoryCommand(undo) },
     { label: '重做', action: () => runHistoryCommand(redo) },
@@ -778,6 +793,7 @@ function updateTheme(): void {
 // ========== 工具栏事件处理 ==========
 
 function handleFormatEvent(e: Event): void {
+  if (props.plainText) return
   const view = editorView.value
   if (!view) return
 
@@ -814,6 +830,7 @@ function handleFormatEvent(e: Event): void {
 }
 
 function handleHeadingEvent(e: Event): void {
+  if (props.plainText) return
   const view = editorView.value
   if (!view) return
 
@@ -839,6 +856,7 @@ function handleHeadingEvent(e: Event): void {
 }
 
 function handleLinkEvent(e: Event): void {
+  if (props.plainText) return
   const view = editorView.value
   if (!view) return
 
@@ -856,6 +874,7 @@ function handleLinkEvent(e: Event): void {
 }
 
 function handleImageEvent(e: Event): void {
+  if (props.plainText) return
   const view = editorView.value
   if (!view) return
 
@@ -872,6 +891,7 @@ function handleImageEvent(e: Event): void {
 }
 
 function handleCodeBlockEvent(e: Event): void {
+  if (props.plainText) return
   const view = editorView.value
   if (!view) return
 
@@ -911,6 +931,7 @@ async function handleCopyEvent(): Promise<void> {
 }
 
 function handleAttachmentEvent(e: Event): void {
+  if (props.plainText) return
   const view = editorView.value
   if (!view) return
   const { path, name } = (e as CustomEvent).detail as { path: string; name: string }

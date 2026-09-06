@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { IconChevronRight, IconCopy, IconFile, IconFolder, IconMessageChatbot, IconMinus, IconMoon, IconRefresh, IconSquare, IconSun, IconX } from '@tabler/icons-vue'
-import { useFileStore } from '../../stores/file'
+import { useFileStore, type EditorMode } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { useUpdateStore } from '../../stores/update'
 import { useAiStore } from '../../stores/ai'
@@ -113,15 +113,23 @@ const editMenu: MenuItem[] = [
   { kind: 'item', label: '替换', action: 'replace', shortcut: 'Ctrl+H' }
 ]
 
+/** 当前生效的编辑模式：非 .md/.mdx 文件（如 .txt）实际按源码编辑显示 */
+const effectiveMode = computed<EditorMode>(() =>
+  fileStore.effectiveEditorMode
+)
+
 const viewMenu = computed<MenuItem[]>(() => [
   {
     kind: 'submenu',
     label: '编辑器模式',
     disabled: !fileStore.canSwitchEditorMode,
     children: [
-      { kind: 'item', label: '即时渲染', action: 'mode-ir', checked: fileStore.editorMode === 'ir', disabled: !fileStore.canSwitchEditorMode },
-      { kind: 'item', label: '源码编辑', action: 'mode-source', checked: fileStore.editorMode === 'source', disabled: !fileStore.canSwitchEditorMode },
-      { kind: 'item', label: '分屏预览', action: 'mode-split', checked: fileStore.editorMode === 'split', disabled: !fileStore.canSwitchEditorMode }
+      { kind: 'item', label: '即时渲染', action: 'mode-ir', checked: effectiveMode.value === 'ir', disabled: !fileStore.canSwitchEditorMode },
+      { kind: 'item', label: '源码编辑', action: 'mode-source', checked: effectiveMode.value === 'source', disabled: !fileStore.canSwitchEditorMode },
+      { kind: 'item', label: '分屏预览', action: 'mode-split', checked: effectiveMode.value === 'split', disabled: !fileStore.canSwitchEditorMode },
+      ...(effectiveMode.value === 'plain'
+        ? [{ kind: 'item' as const, label: '纯文本', action: 'mode-plain', checked: true, disabled: true }]
+        : [])
     ]
   },
   {
@@ -558,7 +566,8 @@ function handleClose(): void {
 function handleToggleModeEvent(): void {
   if (!fileStore.canSwitchEditorMode) return
   const modes: Array<'split' | 'source' | 'ir'> = ['split', 'source', 'ir']
-  const currentIndex = modes.indexOf(fileStore.editorMode)
+  const currentMode = fileStore.editorMode === 'plain' ? 'source' : fileStore.editorMode
+  const currentIndex = modes.indexOf(currentMode)
   const nextIndex = (currentIndex + 1) % modes.length
   fileStore.setEditorMode(modes[nextIndex])
 }

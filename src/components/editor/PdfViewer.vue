@@ -21,9 +21,12 @@ let pdfjsLib: PdfjsModule | null = null
 
 async function ensurePdfjs(): Promise<PdfjsModule> {
   if (!pdfjsLib) {
+    // 使用 legacy 构建：其在 Uint8Array.prototype.toHex 缺失时内置 polyfill，
+    // 而默认构建直接依赖该原生方法（Chromium 133 / Electron 35+ 才提供），
+    // 在本应用的 Electron 34（Chromium 132）中打开 PDF 会报 "toHex is not a function"。
     const [lib, workerModule] = await Promise.all([
-      import('pdfjs-dist'),
-      import('pdfjs-dist/build/pdf.worker.min.mjs?worker')
+      import('pdfjs-dist/legacy/build/pdf.mjs'),
+      import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker')
     ])
     lib.GlobalWorkerOptions.workerPort = new workerModule.default()
     pdfjsLib = lib
@@ -525,6 +528,11 @@ onUnmounted(() => {
   padding: 6px 12px;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
+}
+
+/* Tooltip 根元素带 flex:1（给 AppHeader/ToolBar 等使用），在这里会把目录按钮顶到中部；恢复自然宽度使其靠右 */
+.pdf-toolbar > :deep(.tooltip-trigger) {
+  flex: 0 0 auto;
 }
 
 .pdf-file-name {

@@ -18,11 +18,12 @@ const aiStore = useAiStore()
 defineProps<{ aiReady?: boolean }>()
 const emit = defineEmits<{ openAiSettings: [] }>()
 
-const showPreview = computed(() => fileStore.editorMode === 'split')
-const isIrMode = computed(() => fileStore.editorMode === 'ir')
+const showPreview = computed(() => fileStore.effectiveEditorMode === 'split')
+const isIrMode = computed(() => fileStore.effectiveEditorMode === 'ir')
 const hasOpenFile = computed(() => fileStore.tabs.length > 0 && fileStore.activeTabId !== null)
 const isImageTab = computed(() => fileStore.activeTab?.fileInfo?.format === 'image')
 const isPdfTab = computed(() => fileStore.activeTab?.fileInfo?.format === 'pdf')
+const isPlainTextTab = computed(() => fileStore.effectiveEditorMode === 'plain')
 
 // 组件引用
 const sourceEditorRef = ref<InstanceType<typeof SourceEditor>>()
@@ -169,6 +170,13 @@ function onPreviewScroll(ratio: number): void {
       <PdfViewer
         v-else-if="isPdfTab"
         :key="fileStore.activeTabId || 'pdf-viewer'"
+      />
+
+      <!-- 纯文本文件（.txt 等）：源码编辑显示原文，不进入即时渲染/预览 -->
+      <SourceEditor
+        v-else-if="isPlainTextTab"
+        :key="`plain-${fileStore.activeTabId || 'plain'}`"
+        :plain-text="true"
       />
 
       <!-- 即时渲染模式 -->

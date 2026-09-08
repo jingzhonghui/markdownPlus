@@ -103,8 +103,7 @@ export function addRecentFile(filePath: string, type: RecentItemType = 'file'): 
 /**
  * 从最近列表中移除文件
  */
-function removeRecentFile(filePath: string): void {
-  if (!recentFilesCache) {
+function removeRecentFile(filePath: string): void {  if (!recentFilesCache) {
     recentFilesCache = loadRecentFilesFromDisk()
   }
   const normalized = path.resolve(filePath)
@@ -118,6 +117,19 @@ function removeRecentFile(filePath: string): void {
 function clearRecentFiles(): void {
   recentFilesCache = []
   saveRecentFilesToDisk(recentFilesCache)
+}
+
+/** 生成目标目录下不冲突的路径：重名时自动追加 (1)、(2)… */
+function uniqueTargetPath(targetDir: string, baseName: string, isDirectory: boolean): string {
+  const ext = isDirectory ? '' : path.extname(baseName)
+  const stem = isDirectory ? baseName : path.basename(baseName, ext)
+  let candidate = path.join(targetDir, baseName)
+  let i = 1
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(targetDir, `${stem} (${i})${ext}`)
+    i++
+  }
+  return candidate
 }
 
 /**
@@ -440,6 +452,77 @@ export function registerFileHandlers(): void {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
       return { success: false, error: errorMessage }
+    }
+  })
+
+  // 导入外部文件到指定目录（复制，保留源文件，可多选）
+  ipcMain.handle(IPC_CHANNELS.FOLDER.IMPORT_FILES, async (_, targetDir: string) => {
+    try {
+      const window = BrowserWindow.getFocusedWindow()
+      if (!window) return { success: false, error: '没有活动的窗口' }
+      const dialogResult = await dialog.showOpenDialog(window, {
+        title: '选择要导入的文件',
+        properties: ['openFile', 'multiSelections']
+      })
+      if (dialogResult.canceled) {
+        return { success: true, data: { imported: [], failed: [], canceled: true } }
+      }
+      if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+        return { success: false, error: '目标不是文件夹' }
+      }
+      const imported: Array<{ source: string; target: string }> = []
+      const failed: Array<{ source: string; error: string }> = []
+      for (const source of dialogResult.filePaths) {
+        try {
+          if (fs.statSync(source).isDirectory()) {
+            failed.push({ source, error: '不支持导入文件夹' })
+            continue
+          }
+          const target = uniqueTargetPath(targetDir, path.basename(source), false)
+          fs.copyFileSync(source, target)
+          imported.push({ source, target })
+        } catch (error) {
+          failed.push({ source, error: error instanceof Error ? error.message : '未知错误' })
+        }
+      }
+      return { success: true, data: { imported, failed, canceled: false } }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: `导入文件失败: ${errorMessage}` }
+    }
+  })
+
+  // 导入外部文件夹到指定目录（整个目录复制为其子目录，保留源文件夹）
+  ipcMain.handle(IPC_CHANNELS.FOLDER.IMPORT_DIRECTORY, async (_, targetDir: string) => {
+    try {
+      const window = BrowserWindow.getFocusedWindow()
+      if (!window) return { success: false, error: '没有活动的窗口' }
+      const dialogResult = await dialog.showOpenDialog(window, {
+        title: '选择要导入的文件夹',
+        properties: ['openDirectory']
+      })
+      if (dialogResult.canceled) {
+        return { success: true, data: { imported: [], failed: [], canceled: true } }
+      }
+      if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+        return { success: false, error: '目标不是文件夹' }
+      }
+      const source = dialogResult.filePaths[0]
+      if (!source) {
+        return { success: true, data: { imported: [], failed: [], canceled: true } }
+      }
+      // 禁止把目录导入到自身或其子目录内部
+      const normalizedSource = path.resolve(source).replace(/[\\/]+$/, '')
+      const normalizedTarget = path.resolve(targetDir).replace(/[\\/]+$/, '')
+      if (normalizedTarget === normalizedSource || normalizedTarget.startsWith(normalizedSource + path.sep)) {
+        return { success: false, error: '不能导入到自身或其子目录' }
+      }
+      const target = uniqueTargetPath(targetDir, path.basename(source), true)
+      fs.cpSync(source, target, { recursive: true })
+      return { success: true, data: { imported: [{ source, target }], failed: [], canceled: false } }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: `导入文件夹失败: ${errorMessage}` }
     }
   })
 }

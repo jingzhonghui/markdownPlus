@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import * as fs from 'fs'
 import { join, resolve } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -15,6 +15,7 @@ import { SyncEngine } from './sync/engine'
 import { GitSyncProvider } from './sync/git-provider'
 import { createWorkspaceWatcher } from './sync/watcher'
 import { registerSyncHandlers } from './ipc/sync-handlers'
+import { loadWindowState, resolveWindowState, saveWindowState, type WindowState } from './window-state'
 
 // AppImage is mounted via FUSE where the setuid bit cannot take effect, so the
 // SUID sandbox helper is unusable. Disable the Chromium sandbox for AppImage
@@ -86,9 +87,18 @@ function createWindow(): void {
     ? resolve(__dirname, '../../resources/icon.png')
     : join(__dirname, '../resources/icon.png')
 
+  const windowStatePath = join(app.getPath('userData'), 'window-state.json')
+  const savedWindowState = loadWindowState(windowStatePath)
+  const displays = screen.getAllDisplays().map((display) => ({
+    x: display.workArea.x,
+    y: display.workArea.y,
+    width: display.workArea.width,
+    height: display.workArea.height
+  }))
+  const restoredWindowState = resolveWindowState(savedWindowState, displays)
+
   const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    ...restoredWindowState.bounds,
     show: false,
     autoHideMenuBar: true,
     frame: false,
@@ -101,9 +111,32 @@ function createWindow(): void {
   })
   mainWindow = win
 
+  let saveTimer: ReturnType<typeof setTimeout> | null = null
+  const persistWindowState = (): void => {
+    const bounds = win.isMaximized() ? win.getNormalBounds() : win.getBounds()
+    const state: WindowState = {
+      bounds,
+      isMaximized: win.isMaximized()
+    }
+    saveWindowState(windowStatePath, state)
+  }
+  const scheduleWindowStateSave = (): void => {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      saveTimer = null
+      persistWindowState()
+    }, 150)
+  }
+
   win.on('ready-to-show', () => {
+    if (restoredWindowState.isMaximized) win.maximize()
     win.show()
   })
+
+  win.on('move', scheduleWindowStateSave)
+  win.on('resize', scheduleWindowStateSave)
+  win.on('maximize', scheduleWindowStateSave)
+  win.on('unmaximize', scheduleWindowStateSave)
 
   win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
@@ -112,6 +145,9 @@ function createWindow(): void {
 
   // 拦截窗口关闭事件：始终通知渲染进程检查未保存的修改
   win.on('close', (e) => {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = null
+    persistWindowState()
     if (isCloseConfirmed()) {
       setCloseConfirmed(false)
       return

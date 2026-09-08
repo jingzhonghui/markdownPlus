@@ -203,7 +203,8 @@ function onFileContextMenu(event: MouseEvent, node: FileTreeNode): void {
       : []),
     { label: '重命名', action: () => promptRename(node) },
     { label: '删除', action: () => promptDelete(node) },
-    { label: '复制路径', action: () => fileStore.copyPath(node.path) }
+    { label: '复制路径', action: () => fileStore.copyPath(node.path) },
+    { label: '打开文件所在位置', action: () => { void fileStore.revealInExplorer(node.path) } }
   ]
   showContextMenu(event, items)
 }
@@ -212,8 +213,8 @@ function onFolderContextMenu(event: MouseEvent, node: FileTreeNode): void {
   const items: ContextMenuItem[] = [
     { label: '新建文件', action: () => promptCreateFile(node.path) },
     { label: '新建文件夹', action: () => promptCreateFolder(node.path) },
-    { label: '打开文件', action: () => openFile() },
-    { label: '打开文件夹', action: () => openFolder() },
+    { label: '导入文件', action: () => { void importFilesToFolder(node) } },
+    { label: '导入文件夹', action: () => { void importDirectoryToFolder(node) } },
     { label: '批量导出 PDF', action: () => { void fileStore.exportFolderToPdf(node.path) } },
     { label: '刷新', action: () => fileStore.loadChildren(node) },
     { label: '重命名', action: () => promptRename(node) },
@@ -224,6 +225,14 @@ function onFolderContextMenu(event: MouseEvent, node: FileTreeNode): void {
       : [])
   ]
   showContextMenu(event, items)
+}
+
+async function importFilesToFolder(node: FileTreeNode): Promise<void> {
+  if (await fileStore.importFilesInto(node.path)) await fileStore.loadChildren(node)
+}
+
+async function importDirectoryToFolder(node: FileTreeNode): Promise<void> {
+  if (await fileStore.importDirectoryInto(node.path)) await fileStore.loadChildren(node)
 }
 
 // ========== 输入对话框 ==========

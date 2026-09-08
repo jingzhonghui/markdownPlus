@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { dialog } from 'electron'
 import { IPC_CHANNELS } from '../channels'
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'markdown-plus-folder-'))
@@ -27,7 +28,7 @@ vi.mock('electron', () => ({
     removeHandler: electronMocks.removeHandler
   },
   dialog: { showOpenDialog: vi.fn(), showSaveDialog: vi.fn(), showMessageBox: vi.fn() },
-  BrowserWindow: class {},
+  BrowserWindow: { getFocusedWindow: () => ({}) },
   app: { getPath: () => tmpDir },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn() }
 }))
@@ -295,5 +296,102 @@ describe('file:search', () => {
 
     expect(result.success).toBe(false)
     expect(result.error).toBeTruthy()
+  })
+})
+
+describe('folder:importFiles / folder:importDirectory', () => {
+  const showOpenDialog = dialog.showOpenDialog as unknown as ReturnType<typeof vi.fn>
+
+  beforeEach(async () => {
+    showOpenDialog.mockReset()
+    await registerHandlersFresh()
+  })
+
+  it('copies multiple selected files into the target folder', async () => {
+    const srcDir = path.join(tmpDir, 'import-src-files')
+    fs.mkdirSync(srcDir, { recursive: true })
+    fs.writeFileSync(path.join(srcDir, 'a.md'), 'aa', 'utf8')
+    fs.writeFileSync(path.join(srcDir, 'b.txt'), 'bb', 'utf8')
+    const target = path.join(tmpDir, 'import-target-files')
+    fs.mkdirSync(target, { recursive: true })
+
+    showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [path.join(srcDir, 'a.md'), path.join(srcDir, 'b.txt')]
+    })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FOLDER.IMPORT_FILES)!
+    const result = (await handler({}, target)) as {
+      success: boolean
+      data: { imported: Array<{ target: string }>; failed: unknown[] }
+    }
+
+    expect(result.success).toBe(true)
+    expect(result.data.imported).toHaveLength(2)
+    expect(fs.readFileSync(path.join(target, 'a.md'), 'utf8')).toBe('aa')
+    expect(fs.readFileSync(path.join(target, 'b.txt'), 'utf8')).toBe('bb')
+    expect(fs.existsSync(path.join(srcDir, 'a.md'))).toBe(true)
+  })
+
+  it('avoids name conflicts by appending a numeric suffix', async () => {
+    const srcDir = path.join(tmpDir, 'import-src-conflict')
+    fs.mkdirSync(srcDir, { recursive: true })
+    fs.writeFileSync(path.join(srcDir, 'a.md'), 'new', 'utf8')
+    const target = path.join(tmpDir, 'import-target-conflict')
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(target, 'a.md'), 'old', 'utf8')
+
+    showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [path.join(srcDir, 'a.md')]
+    })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FOLDER.IMPORT_FILES)!
+    const result = (await handler({}, target)) as {
+      success: boolean
+      data: { imported: Array<{ target: string }> }
+    }
+
+    expect(result.success).toBe(true)
+    expect(fs.readFileSync(path.join(target, 'a.md'), 'utf8')).toBe('old')
+    expect(fs.readFileSync(path.join(target, 'a (1).md'), 'utf8')).toBe('new')
+  })
+
+  it('copies an external folder as a subdirectory of the target', async () => {
+    const src = path.join(tmpDir, 'import-src-dir')
+    fs.mkdirSync(src, { recursive: true })
+    fs.writeFileSync(path.join(src, 'x.md'), 'x', 'utf8')
+    const target = path.join(tmpDir, 'import-target-dir')
+    fs.mkdirSync(target, { recursive: true })
+
+    showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [src]
+    })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FOLDER.IMPORT_DIRECTORY)!
+    const result = (await handler({}, target)) as { success: boolean; data?: { imported: unknown[] } }
+
+    expect(result.success).toBe(true)
+    expect(result.data?.imported).toHaveLength(1)
+    expect(fs.existsSync(path.join(target, path.basename(src), 'x.md'))).toBe(true)
+    expect(fs.existsSync(src)).toBe(true)
+  })
+
+  it('returns canceled without copying when the dialog is dismissed', async () => {
+    const target = path.join(tmpDir, 'import-target-cancel')
+    fs.mkdirSync(target, { recursive: true })
+
+    showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FOLDER.IMPORT_FILES)!
+    const result = (await handler({}, target)) as {
+      success: boolean
+      data: { imported: unknown[]; failed: unknown[]; canceled: boolean }
+    }
+
+    expect(result.success).toBe(true)
+    expect(result.data.imported).toHaveLength(0)
+    expect(result.data.canceled).toBe(true)
   })
 })

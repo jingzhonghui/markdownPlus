@@ -443,7 +443,12 @@ export function parseMarkdown(content: string): ProseMirrorNode {
     markdownSchema.node('doc', null, [markdownSchema.node('paragraph')])
   )
 
-  if (doc.lastChild?.type.name === 'code_block') {
+  const lastType = doc.lastChild?.type.name
+  // 代码块/表格都是"不透明"的块节点，末尾没有可继续输入/放置光标的段落；
+  // 编辑器依赖末尾空段落（createPlugins 的 appendTransaction 也保证这一点）。
+  // 若这里不补，首次任何 dispatch 都会触发 appendTransaction 追加段落，
+  // 被 createDocumentChangePlugin 当作文档被修改回写 store，导致打开即"未保存"。
+  if (lastType === 'code_block' || lastType === 'table') {
     return doc.copy(doc.content.append(Fragment.from(markdownSchema.node('paragraph'))))
   }
 

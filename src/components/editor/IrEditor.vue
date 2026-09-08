@@ -1053,6 +1053,31 @@ function publishSelectionFromProseMirror(): void {
   })
 }
 
+/** 将 ProseMirror 光标位置换算为 Markdown 行列，供状态栏显示。 */
+function updateCursorPositionFromProseMirror(): void {
+  const view = viewRef.value
+  if (!view) return
+  const cursor = view.state.selection.head
+  let offset = 0
+  try {
+    const fullMarkdown = serializeMarkdown(view.state.doc)
+    const suffixMarkdown = serializeMarkdown(view.state.doc.cut(cursor, view.state.doc.content.size))
+    if (fullMarkdown.endsWith(suffixMarkdown)) {
+      offset = fullMarkdown.length - suffixMarkdown.length
+    } else {
+      offset = serializeMarkdown(view.state.doc.cut(0, cursor)).length
+    }
+  } catch {
+    return
+  }
+  const prefix = fileStore.fileContent.slice(0, offset)
+  const lastNewline = prefix.lastIndexOf('\n')
+  fileStore.setCursorPosition(
+    prefix.split('\n').length,
+    offset - lastNewline
+  )
+}
+
 function initEditor(): void {
   if (!editorRef.value) {
     console.warn('[IrEditor] init skipped: editorRef is null')
@@ -1069,6 +1094,8 @@ function initEditor(): void {
       const selectionChanged = tr.selectionSet
       view.updateState(view.state.apply(tr))
       syncShowMarkers()
+      updateSavedPosition()
+      updateCursorPositionFromProseMirror()
       if (selectionChanged) publishSelectionFromProseMirror()
       nextTick(() => updateTableToolbar(view))
       if (!view.hasFocus() && !searchOpen.value) view.focus()
@@ -1086,6 +1113,92 @@ function initEditor(): void {
       code_block: (node, view, getPos) => new CodeBlockView(node, view, getPos as () => number),
     },
   })
+  restoreEditorPosition()
+}
+
+/**
+ * 切回该标签页时，恢复上次阅读位置（滚动 + 光标）。
+ * EditorPanel 以 activeTabId 作为 :key 重建 IrEditor，若不恢复，
+ * 切换标签后再切回来文档会回到开头。
+ */
+function restoreEditorPosition(): void {
+  const view = viewRef.value
+  const container = containerRef.value
+  if (!view || !container || !editorTabId) return
+  const saved = fileStore.tabs.find((t) => t.id === editorTabId)?.savedEditorPosition
+  if (!saved) return
+
+  // 光标恢复：使用 updateState 直接替换 state，绕过 dispatchTransaction，
+  // 避免恢复动作触发 focus / 选区发布等副作用干扰滚动位置。
+  const docSize = view.state.doc.content.size
+  const from = Math.max(0, Math.min(Math.floor(saved.from), docSize))
+  const to = Math.max(from, Math.min(Math.floor(saved.to), docSize))
+  try {
+    const sel = TextSelection.between(view.state.doc.resolve(from), view.state.doc.resolve(to))
+    view.updateState(view.state.apply(view.state.tr.setSelection(sel)))
+  } catch {
+    // 位置非法时仅恢复滚动
+  }
+  applySavedScroll(saved.scrollTop)
+}
+
+/**
+ * 把容器滚动到上次位置。
+ * 组件刚重建时布局可能尚未就绪（scrollHeight/clientHeight 为 0），
+ * 一次设置会被 clamp 到顶部，因此重试直至滚动真正生效。
+ */
+function applySavedScroll(savedScrollTop: number, attempt = 0): void {
+  const container = containerRef.value
+  const view = viewRef.value
+  if (!container || view?.isDestroyed) return
+  const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+  const target = Math.min(Math.max(0, savedScrollTop), maxScroll)
+  container.scrollTop = target
+
+  const settled = maxScroll > 0 && Math.abs(container.scrollTop - target) < 1
+  if (settled || attempt >= 40) return
+  setTimeout(() => applySavedScroll(savedScrollTop, attempt + 1), 50)
+}
+
+/** 实时把当前阅读位置写回标签（滚动/选区变化时调用） */
+function updateSavedPosition(): void {
+  const view = viewRef.value
+  if (!view || !editorTabId) return
+  const tab = fileStore.tabs.find((t) => t.id === editorTabId)
+  if (!tab) return
+  tab.savedEditorPosition = {
+    scrollTop: containerRef.value?.scrollTop ?? tab.savedEditorPosition?.scrollTop ?? 0,
+    from: view.state.selection.from,
+    to: view.state.selection.to
+  }
+}
+
+let scrollSaveRaf = 0
+function handlePositionScroll(): void {
+  if (scrollSaveRaf) return
+  scrollSaveRaf = requestAnimationFrame(() => {
+    scrollSaveRaf = 0
+    updateSavedPosition()
+  })
+}
+
+/**
+ * 卸载兜底：把当前阅读位置写回标签。
+ * 卸载瞬间容器可能已被 DOM 移除（scrollTop 读到 0），
+ * 若之前已记录过非零滚动位置则保留旧值，避免误把位置重置到顶部。
+ */
+function saveEditorPosition(): void {
+  const view = viewRef.value
+  if (!view || !editorTabId) return
+  const tab = fileStore.tabs.find((t) => t.id === editorTabId)
+  if (!tab) return
+  const scrollTop = containerRef.value?.scrollTop ?? 0
+  const prev = tab.savedEditorPosition
+  tab.savedEditorPosition = {
+    scrollTop: scrollTop > 0 ? scrollTop : (prev?.scrollTop ?? 0),
+    from: view.state.selection.from,
+    to: view.state.selection.to
+  }
 }
 
 function setBlockTypeCommand(type: string, attrs?: Record<string, unknown>): void {
@@ -1449,6 +1562,7 @@ onMounted(() => {
     container.addEventListener('mousedown', handleEditorBlankMouseDown)
     container.addEventListener('contextmenu', handleEditorBlankContextMenu)
     container.addEventListener('scroll', handleTableToolbarLayout, { passive: true })
+    container.addEventListener('scroll', handlePositionScroll, { passive: true })
   }
   window.addEventListener('editor:format', handleFormatEvent)
   window.addEventListener('editor:heading', handleHeadingEvent)
@@ -1483,6 +1597,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  saveEditorPosition()
   // 组件卸载前强制同步内容到 store，防止切换模式时内容丢失
   const view = viewRef.value
   if (view && editorTabId === activeTabId.value) {
@@ -1502,6 +1617,7 @@ onUnmounted(() => {
     container.removeEventListener('mousedown', handleEditorBlankMouseDown)
     container.removeEventListener('contextmenu', handleEditorBlankContextMenu)
     container.removeEventListener('scroll', handleTableToolbarLayout)
+    container.removeEventListener('scroll', handlePositionScroll)
   }
   window.removeEventListener('editor:format', handleFormatEvent)
   window.removeEventListener('editor:heading', handleHeadingEvent)

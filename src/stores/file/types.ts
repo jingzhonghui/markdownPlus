@@ -41,6 +41,15 @@ export interface TabInfo {
   imageDataUrl?: string
   /** PDF 文件（format='pdf'）的 base64 内容，用于只读查看 */
   pdfBase64?: string
+  /** 上次阅读位置（切换标签页时保存、切回时恢复；关闭标签即丢弃） */
+  savedEditorPosition?: {
+    /** 滚动容器纵向偏移 */
+    scrollTop: number
+    /** 选区起点（文档偏移） */
+    from: number
+    /** 选区终点（文档偏移） */
+    to: number
+  }
 }
 
 /**

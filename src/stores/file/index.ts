@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { isEditableMarkdownFormat } from '../../types/mdx'
 import type { DocumentFormat, MdxDocument } from '../../types/mdx'
@@ -75,6 +75,12 @@ export const useFileStore = defineStore('file', () => {
   // ====== Tab 状态（纯状态 + getters） ======
   const tabState = createTabState()
   const { tabs, activeTabId, activeTab, stateVersion, fileContent } = tabState
+
+  // 标签切换时同步状态栏统计，避免继续显示上一个文档的数据。
+  watch(activeTabId, () => {
+    updateWordCount()
+    setCursorPosition(1, 1)
+  })
 
   /** 是否可切换编辑模式：仅 .md/.mdx 文件支持（图片等只读文件不可切换） */
   const canSwitchEditorMode = computed(() => {
@@ -1142,7 +1148,9 @@ export const useFileStore = defineStore('file', () => {
     renameItem: folder.renameItem,
     moveItem: folder.moveItem,
     deleteItem: folder.deleteItem,
-    copyPath: folder.copyPath
+    copyPath: folder.copyPath,
+    importFilesInto: folder.importFilesInto,
+    importDirectoryInto: folder.importDirectoryInto
   }
 })
 

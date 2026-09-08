@@ -520,6 +520,44 @@ export function useFolder(deps: FolderDeps) {
     }
   }
 
+  async function runImportToFolder(kind: 'files' | 'directory', targetDir: string): Promise<boolean> {
+    try {
+      if (!window.electronAPI) return false
+      const result =
+        kind === 'files'
+          ? await window.electronAPI.importFilesIntoFolder(targetDir)
+          : await window.electronAPI.importDirectoryIntoFolder(targetDir)
+      if (!result.success) {
+        deps.error.value = result.error || '导入失败'
+        return false
+      }
+      const data = result.data
+      if (!data || data.canceled) return true
+      const importedCount = data.imported.length
+      const failedCount = data.failed.length
+      if (failedCount > 0) {
+        deps.error.value =
+          importedCount === 0 ? data.failed[0].error : `导入完成：成功 ${importedCount} 个，失败 ${failedCount} 个`
+      } else if (importedCount > 0) {
+        deps.error.value = null
+        console.log(`导入完成：${importedCount} 个`)
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** 选择外部文件（可多选）并复制到指定目录，源文件保留 */
+  async function importFilesInto(targetDir: string): Promise<boolean> {
+    return runImportToFolder('files', targetDir)
+  }
+
+  /** 选择外部文件夹并整体复制为指定目录下的子目录，源文件夹保留 */
+  async function importDirectoryInto(targetDir: string): Promise<boolean> {
+    return runImportToFolder('directory', targetDir)
+  }
+
   function copyPath(filePath: string): void {
     try {
       navigator.clipboard.writeText(filePath)
@@ -548,6 +586,8 @@ export function useFolder(deps: FolderDeps) {
     renameItem,
     moveItem,
     deleteItem,
+    importFilesInto,
+    importDirectoryInto,
     copyPath
   }
 }

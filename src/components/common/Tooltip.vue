@@ -4,8 +4,11 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 const props = withDefaults(defineProps<{
   content: string
   placement?: 'top' | 'bottom'
+  /** 触发元素使用块级布局（默认内联），用于纵向堆叠的场景（如菜单子项） */
+  block?: boolean
 }>(), {
-  placement: 'bottom'
+  placement: 'bottom',
+  block: false
 })
 
 const triggerRef = ref<HTMLElement | null>(null)
@@ -71,6 +74,7 @@ onBeforeUnmount(() => {
   <span
     ref="triggerRef"
     class="tooltip-trigger"
+    :class="{ 'tooltip-trigger--block': props.block }"
     @mouseover="show"
     @mouseleave="hide"
     @focusin="show"
@@ -99,9 +103,14 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.tooltip-trigger--block {
+  display: block;
+}
+
 .app-tooltip {
   position: fixed;
-  z-index: 10000;
+  /* 需高于下拉菜单(.menu-dropdown 10002 / .submenu 10003)，避免被菜单遮挡 */
+  z-index: 10004;
   width: max-content;
   max-width: min(420px, calc(100vw - 24px));
   padding: 6px 9px;

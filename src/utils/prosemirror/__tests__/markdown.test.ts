@@ -38,6 +38,16 @@ describe('Markdown ↔ ProseMirror conversion', () => {
     expect(serializeMarkdown(doc)).toBe(content)
   })
 
+  it('keeps an editable paragraph after a trailing table', () => {
+    const content = '| a | b |\n| --- | --- |\n| c | d |'
+    const doc = parseMarkdown(content)
+
+    expect(doc.childCount).toBe(2)
+    expect(doc.child(0).type.name).toBe('table')
+    expect(doc.child(1).type.name).toBe('paragraph')
+    expect(doc.child(1).content.size).toBe(0)
+  })
+
   it('inserts a newline instead of leaving a code block on Enter', () => {
     const doc = parseMarkdown('```ts\nconst value = 1\n```')
     const codeBlock = doc.child(0)
@@ -64,8 +74,31 @@ describe('Markdown ↔ ProseMirror conversion', () => {
   it('exits table and creates paragraph below on Enter in the last row', () => {
     const content = '| a | b |\n| --- | --- |\n| c | d |'
     const doc = parseMarkdown(content)
-    // 光标放在最后一行第一个单元格的段落末尾
+    // parseMarkdown 会在表格末尾补齐可编辑空段，doc = [table, paragraph]
     const table = doc.child(0)
+    const tableEnd = table.nodeSize
+    // 光标放在最后一行第一个单元格的段落末尾
+    const cellStart = 1 + table.child(0).nodeSize + 1
+    let state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, cellStart + 1)
+    })
+
+    const handled = buildKeymap(markdownSchema).Enter(state, (transaction) => {
+      state = state.apply(transaction)
+    })
+
+    expect(handled).toBe(true)
+    // 复用表格后已有的空段，而不是再插入一个重复段落
+    expect(state.doc.childCount).toBe(2)
+    expect(state.doc.child(0).type.name).toBe('table')
+    expect(state.doc.child(1).type.name).toBe('paragraph')
+    expect(state.selection.from).toBe(tableEnd)
+  })
+
+  it('exits table by inserting a paragraph when no trailing paragraph exists', () => {
+    const table = parseMarkdown('| a | b |\n| --- | --- |\n| c | d |').child(0)
+    const doc = markdownSchema.node('doc', null, [table])
     const cellStart = 1 + table.child(0).nodeSize + 1
     let state = EditorState.create({
       doc,

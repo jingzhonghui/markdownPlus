@@ -37,6 +37,48 @@ describe('AppHeader 插入对话框事件', () => {
   })
 })
 
+describe('AppHeader 最近文件操作', () => {
+  const originalElectronAPI = window.electronAPI
+
+  afterEach(() => {
+    window.electronAPI = originalElectronAPI
+    document.body.innerHTML = ''
+  })
+
+  it('删除按钮仅在悬停最近文件项时显示，并删除对应记录', async () => {
+    const removeRecentFile = vi.fn(async () => ({ success: true }))
+    window.electronAPI = {
+      removeRecentFile,
+      windowIsMaximized: vi.fn(async () => false),
+      getVersion: vi.fn(async () => 'test'),
+      onWindowMaximized: vi.fn(() => () => {}),
+      onWindowUnmaximized: vi.fn(() => () => {})
+    } as unknown as typeof window.electronAPI
+
+    const wrapper = mountHeader()
+    const fileStore = useFileStore()
+    fileStore.recentFiles = [{ path: 'C:/ws/a.md', type: 'file' }]
+
+    await wrapper.find('.menu-item').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const recentItem = document.querySelector('.submenu .menu-entry') as HTMLElement
+    expect(recentItem).toBeTruthy()
+    expect(recentItem.querySelector('.recent-remove')).toBeNull()
+    expect(document.querySelector('.submenu')?.textContent).toContain('清空最近文件')
+
+    await recentItem.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    const removeButton = recentItem.querySelector('.recent-remove') as HTMLButtonElement
+    expect(removeButton).toBeTruthy()
+    removeButton.click()
+
+    await vi.waitFor(() => expect(removeRecentFile).toHaveBeenCalledWith('C:/ws/a.md'))
+    expect(fileStore.recentFiles).toHaveLength(0)
+  })
+})
+
 describe('AppHeader 快速打开（Ctrl+P）', () => {
   const originalElectronAPI = window.electronAPI
 

@@ -76,7 +76,9 @@ export const IPC_CHANNELS = {
   },
   FOLDER: {
     READ: 'folder:read',
-    CREATE: 'folder:create'
+    CREATE: 'folder:create',
+    IMPORT_FILES: 'folder:importFiles',
+    IMPORT_DIRECTORY: 'folder:importDirectory'
   },
   SYNC: {
     ATTACH_FOLDER: 'sync:attachFolder',

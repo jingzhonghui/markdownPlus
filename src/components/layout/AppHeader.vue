@@ -51,6 +51,15 @@ interface MenuItem {
 
 const activeMenu = ref<string | null>(null)
 const menuPosition = ref({ left: 0, top: 0 })
+const hoveredRecentPath = ref<string | null>(null)
+
+function hoverRecentItem(item: MenuItem): void {
+  hoveredRecentPath.value = item.payload ?? null
+}
+
+function clearHoveredRecentItem(): void {
+  hoveredRecentPath.value = null
+}
 
 const fileMenu = computed<MenuItem[]>(() => {
   const recentItems: MenuItem[] = fileStore.recentFiles.map((item) => ({
@@ -286,6 +295,13 @@ async function exportBatchPdf(): Promise<void> {
     if (!opened || !fileStore.openedFolderPath) return
   }
   await fileStore.exportFolderToPdf(fileStore.openedFolderPath)
+}
+
+/** 从最近文件列表中移除单条记录 */
+async function removeRecentItem(item: MenuItem): Promise<void> {
+  if (!item.payload) return
+  hoveredRecentPath.value = null
+  await fileStore.removeRecent(item.payload)
 }
 
 async function clearRecentFiles(): Promise<void> {
@@ -786,11 +802,14 @@ onUnmounted(() => {
                 />
                 <Tooltip
                   v-else
+                  block
                   :content="sub.payload || ''"
                 >
                   <div
                     class="menu-entry"
                     :class="{ disabled: sub.disabled || sub.action === 'none' }"
+                    @mouseenter="hoverRecentItem(sub)"
+                    @mouseleave="clearHoveredRecentItem"
                     @click="runMenuItem(sub)"
                   >
                     <span class="menu-entry-label">
@@ -813,6 +832,14 @@ onUnmounted(() => {
                       >{{ sub.checked ? '✓' : '' }}</span>
                       {{ sub.label }}
                     </span>
+                    <button
+                      v-if="(sub.action === 'recent-file' || sub.action === 'recent-folder') && hoveredRecentPath === sub.payload"
+                      class="recent-remove"
+                      :aria-label="`从最近文件移除 ${sub.label}`"
+                      @click.stop.prevent="removeRecentItem(sub)"
+                    >
+                      <IconX :size="12" />
+                    </button>
                   </div>
                 </Tooltip>
               </template>
@@ -1150,8 +1177,7 @@ onUnmounted(() => {
 }
 
 .header-right > :deep(.tooltip-trigger),
-.window-controls > :deep(.tooltip-trigger),
-.submenu > :deep(.tooltip-trigger) {
+.window-controls > :deep(.tooltip-trigger) {
   flex: 0 0 auto;
 }
 
@@ -1282,6 +1308,8 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   user-select: none;
+  /* 必须保持溢出可见，否则向右展开的二级菜单会被一级菜单裁剪 */
+  overflow: visible;
 }
 
 .menu-entry {
@@ -1311,6 +1339,28 @@ onUnmounted(() => {
 .menu-entry .sub-indicator {
   font-size: 10px;
   color: var(--color-text-tertiary);
+}
+
+/* 最近文件项悬停时显示的移除按钮 */
+.recent-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color 0.12s, background-color 0.12s;
+}
+
+.recent-remove:hover {
+  color: var(--color-danger);
+  background-color: var(--color-bg-tertiary);
 }
 
 .menu-entry-label {
@@ -1372,6 +1422,9 @@ onUnmounted(() => {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   display: none;
   z-index: 10003;
+  /* 子项较多（如最近文件）时允许在菜单内部滚动，避免超出窗口不可见 */
+  max-height: min(480px, calc(100vh - 120px));
+  overflow-y: auto;
 }
 
 .menu-entry.has-sub:hover > .submenu {

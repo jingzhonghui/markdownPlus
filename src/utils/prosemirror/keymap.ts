@@ -277,8 +277,15 @@ function exitTableOnLastRow(schema: Schema): Command {
     if (dispatch) {
       const tableEnd = $from.after(tableDepth)
       const tr = state.tr
-      tr.insert(tableEnd, schema.nodes.paragraph.create())
-      tr.setSelection(TextSelection.create(tr.doc, tableEnd + 1))
+      // 表格后已有可继续输入的段落（parseMarkdown 会为表格/代码块补齐尾部空段），
+      // 此时只需把光标移出表格，而不是再插入一个重复的空段。
+      const next = state.doc.nodeAt(tableEnd)
+      if (next && next.type === schema.nodes.paragraph) {
+        tr.setSelection(TextSelection.create(tr.doc, tableEnd))
+      } else {
+        tr.insert(tableEnd, schema.nodes.paragraph.create())
+        tr.setSelection(TextSelection.create(tr.doc, tableEnd + 1))
+      }
       dispatch(tr)
     }
     return true

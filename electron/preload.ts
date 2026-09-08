@@ -81,6 +81,13 @@ export interface PdfSourceEntry {
   relativePath: string
 }
 
+/** 导入（复制进目录）结果 */
+export interface FolderImportResult {
+  imported: Array<{ source: string; target: string }>
+  failed: Array<{ source: string; error: string }>
+  canceled: boolean
+}
+
 // API 类型定义
 export interface ElectronAPI {
   // 文件操作
@@ -129,6 +136,8 @@ export interface ElectronAPI {
   renameFile: (oldPath: string, newName: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
   moveFile: (sourcePath: string, targetDir: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
   deleteFile: (targetPath: string) => Promise<{ success: boolean; error?: string }>
+  importFilesIntoFolder: (targetDir: string) => Promise<{ success: boolean; data?: FolderImportResult; error?: string }>
+  importDirectoryIntoFolder: (targetDir: string) => Promise<{ success: boolean; data?: FolderImportResult; error?: string }>
 
   // 应用信息
   ping: () => Promise<string>
@@ -255,6 +264,8 @@ const api: ElectronAPI = {
   renameFile: (oldPath, newName) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RENAME, { oldPath, newName }),
   moveFile: (sourcePath, targetDir) => ipcRenderer.invoke(IPC_CHANNELS.FILE.MOVE, { sourcePath, targetDir }),
   deleteFile: (targetPath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.DELETE, { targetPath }),
+  importFilesIntoFolder: (targetDir) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.IMPORT_FILES, targetDir),
+  importDirectoryIntoFolder: (targetDir) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.IMPORT_DIRECTORY, targetDir),
 
   // 应用信息
   ping: () => ipcRenderer.invoke(IPC_CHANNELS.APP.PING),

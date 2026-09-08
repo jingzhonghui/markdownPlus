@@ -84,8 +84,6 @@ const modeTooltip = computed(() => {
 <template>
   <footer class="status-bar">
     <div class="status-left">
-      <span class="status-item">{{ fileStore.fileName }}</span>
-      <span class="status-separator">|</span>
       <span class="status-item">字数: {{ fileStore.wordCount }}</span>
       <span class="status-separator">|</span>
       <span class="status-item">文件大小: {{ fileSize }}</span>

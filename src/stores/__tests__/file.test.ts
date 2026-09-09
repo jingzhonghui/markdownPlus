@@ -141,6 +141,39 @@ describe('file store', () => {
       expect(electronAPI.openFile).toHaveBeenCalledTimes(1)
     })
 
+    it('opens a preview tab and replaces it with the next preview file', async () => {
+      electronAPI.openFile.mockImplementation(async (filePath: string) => ({
+        success: true,
+        data: { document: makeDoc(filePath, 'content'), filePath, format: 'mdx' }
+      }))
+
+      const store = useFileStore()
+      await store.openFile('C:/docs/first.mdx', { preview: true })
+      const firstTabId = store.tabs[0].id
+      await store.openFile('C:/docs/second.mdx', { preview: true })
+
+      expect(store.tabs).toHaveLength(1)
+      expect(store.tabs[0].id).not.toBe(firstTabId)
+      expect(store.tabs[0].fileInfo?.path).toBe('C:/docs/second.mdx')
+      expect(store.tabs[0].isPreview).toBe(true)
+    })
+
+    it('pins an existing preview tab when opened as a permanent tab', async () => {
+      const doc = makeDoc('Opened', 'content')
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: doc, filePath: 'C:/docs/opened.mdx', format: 'mdx' }
+      })
+
+      const store = useFileStore()
+      await store.openFile('C:/docs/opened.mdx', { preview: true })
+      await store.openFile('C:/docs/opened.mdx', { preview: false })
+
+      expect(store.tabs).toHaveLength(1)
+      expect(store.tabs[0].isPreview).toBe(false)
+      expect(electronAPI.openFile).toHaveBeenCalledTimes(1)
+    })
+
     it('does not create a tab when the user cancels', async () => {
       electronAPI.openFile.mockResolvedValue({ success: false, error: '用户取消' })
 
@@ -162,6 +195,21 @@ describe('file store', () => {
       await store.openFile('C:/docs/opened.mdx', { addToRecent: false })
 
       expect(electronAPI.openFile).toHaveBeenCalledWith('C:/docs/opened.mdx', false)
+    })
+
+    it('pins a preview tab after editing its content', async () => {
+      const doc = makeDoc('Opened', 'before')
+      electronAPI.openFile.mockResolvedValue({
+        success: true,
+        data: { document: doc, filePath: 'C:/docs/opened.mdx', format: 'mdx' }
+      })
+
+      const store = useFileStore()
+      await store.openFile('C:/docs/opened.mdx', { preview: true })
+      store.updateContent('after')
+
+      expect(store.tabs[0].isPreview).toBe(false)
+      expect(store.isModified).toBe(true)
     })
 
     it('opens an image file as a read-only image tab', async () => {

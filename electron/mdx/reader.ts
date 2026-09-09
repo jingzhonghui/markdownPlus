@@ -16,15 +16,21 @@ import { validateMdxJson, createDefaultSettings, createDefaultAssets } from './s
 const TEMP_PREFIX = 'mdx_'
 const MAX_INFLATED_ENTRY_BYTES = 50 * 1024 * 1024
 
-/** 临时目录根路径 */
+/**
+ * 当前进程的实例 ID，用于隔离多实例的临时目录。
+ * 同一文件的确定性临时目录只在各自实例根下复用，避免多实例互相清理。
+ */
+const INSTANCE_ID = `${process.pid}_${crypto.randomBytes(4).toString('hex')}`
+
+/** 临时目录根路径（本实例专属） */
 let tempRoot: string
 
 /**
- * 获取系统临时目录路径
+ * 获取本实例的临时目录根路径
  */
 function getTempRoot(): string {
   if (!tempRoot) {
-    tempRoot = path.join(os.tmpdir(), 'markdown-plus')
+    tempRoot = path.join(os.tmpdir(), 'markdown-plus', INSTANCE_ID)
     if (!fs.existsSync(tempRoot)) {
       fs.mkdirSync(tempRoot, { recursive: true })
     }
@@ -90,20 +96,15 @@ export function cleanupTempDir(tempDir: string): void {
 }
 
 /**
- * 清理所有临时目录
- * 在应用退出时调用，删除 markdown-plus 临时根目录下的全部内容
+ * 清理本实例的所有临时目录
+ * 在应用退出时调用，只删除本实例专属根目录，避免误删其他实例正在使用的资源
  */
 export function cleanupAllTempDirs(): void {
   const root = getTempRoot()
-  if (!fs.existsSync(root)) return
-
-  const entries = fs.readdirSync(root)
-  for (const entry of entries) {
-    if (entry.startsWith(TEMP_PREFIX)) {
-      const dirPath = path.join(root, entry)
-      fs.rmSync(dirPath, { recursive: true, force: true })
-    }
+  if (fs.existsSync(root)) {
+    fs.rmSync(root, { recursive: true, force: true })
   }
+  tempRoot = ''
 }
 
 /**

@@ -588,6 +588,29 @@ function handleToggleModeEvent(): void {
   fileStore.setEditorMode(modes[nextIndex])
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null
+  return element?.tagName === 'INPUT' || element?.tagName === 'TEXTAREA' || element?.isContentEditable === true
+}
+
+function handleTabNavigationKeydown(event: KeyboardEvent): boolean {
+  if (
+    !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+    !['ArrowLeft', 'ArrowRight'].includes(event.key) || isEditableTarget(event.target)
+  ) return false
+
+  const tabs = fileStore.tabs
+  if (tabs.length < 2) return false
+
+  const activeIndex = tabs.findIndex((tab) => tab.id === fileStore.activeTabId)
+  const currentIndex = activeIndex === -1 ? 0 : activeIndex
+  const offset = event.key === 'ArrowRight' ? 1 : -1
+  const nextIndex = (currentIndex + offset + tabs.length) % tabs.length
+  event.preventDefault()
+  void fileStore.setActiveTab(tabs[nextIndex].id)
+  return true
+}
+
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     if (settingsOpen.value || linkDialogOpen.value || imageDialogOpen.value || shortcutsOpen.value || aboutOpen.value) {
@@ -602,6 +625,7 @@ function handleKeydown(event: KeyboardEvent): void {
     return
   }
 
+  if (handleTabNavigationKeydown(event)) return
   if (!event.ctrlKey) return
 
   if (event.key === 'n') {

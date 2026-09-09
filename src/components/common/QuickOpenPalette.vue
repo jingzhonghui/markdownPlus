@@ -80,7 +80,7 @@ function highlightText(result: FileSearchResult): { text: string; matched: boole
 
 async function openResult(result: FileSearchResult): Promise<void> {
   close()
-  const ok = await fileStore.openFile(result.file.path, { addToRecent: false })
+  const ok = await fileStore.openFile(result.file.path, { addToRecent: false, preview: true })
   if (!ok && fileStore.error) {
     const { requestDialog } = await import('../../utils/dialog')
     const ext = result.file.name.includes('.')

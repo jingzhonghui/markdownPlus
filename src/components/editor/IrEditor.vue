@@ -16,6 +16,7 @@ import {
   IconTrash
 } from '@tabler/icons-vue'
 import { useFileStore } from '../../stores/file'
+import { findHeadingForAnchor } from '../../utils/prosemirror/anchors'
 import { useThemeStore } from '../../stores/theme'
 import { storeToRefs } from 'pinia'
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view'
@@ -125,6 +126,8 @@ class MathBlockView implements NodeView {
 
 const fileStore = useFileStore()
 const themeStore = useThemeStore()
+const ctrlPressed = ref(false)
+const clearCtrlPressedOnBlur = (): void => { ctrlPressed.value = false }
 const { fileContent, activeTabId } = storeToRefs(fileStore)
 const containerRef = ref<HTMLDivElement>()
 const editorRef = ref<HTMLDivElement>()
@@ -686,6 +689,31 @@ function handleEditorBlankContextMenu(event: MouseEvent): void {
   contextMenu.visible = true
 }
 
+function handleInternalAnchorClick(view: EditorView, event: MouseEvent): boolean {
+  if ((!event.ctrlKey && !event.metaKey) || event.button !== 0) return false
+  const target = event.target as HTMLElement
+  const link = target.closest('a')
+  if (!link?.getAttribute('href')?.startsWith('#')) return false
+
+  const heading = findHeadingForAnchor(
+    Array.from(view.dom.querySelectorAll<HTMLElement>('h1, h2, h3, h4')),
+    link.getAttribute('href') || ''
+  )
+  if (!heading) return false
+
+  event.preventDefault()
+  heading.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  return true
+}
+
+function updateCtrlPressed(event: KeyboardEvent): void {
+  if (event.key === 'Control' || event.key === 'Meta') ctrlPressed.value = true
+}
+
+function clearCtrlPressed(event: KeyboardEvent): void {
+  if (event.key === 'Control' || event.key === 'Meta') ctrlPressed.value = false
+}
+
 // 复制/剪切有序列表时，将带序号的纯文本写入剪贴板
 function handleListCopy(view: EditorView, event: Event, isCut: boolean): boolean {
   const result = getListClipboard(view.state)
@@ -721,6 +749,8 @@ function createContextMenuPlugin(): ProseMirrorPlugin {
           const mouseEvent = event as MouseEvent
           if (mouseEvent.button !== 0) return false
           const target = event.target as HTMLElement
+
+          if (handleInternalAnchorClick(view, mouseEvent)) return true
 
           // 点击图片：选中图片节点
           if (target.closest('img')) {
@@ -1548,6 +1578,9 @@ async function handlePasteEvent(): Promise<void> {
 }
 
 onMounted(() => {
+  window.addEventListener('keydown', updateCtrlPressed)
+  window.addEventListener('keyup', clearCtrlPressed)
+  window.addEventListener('blur', clearCtrlPressedOnBlur)
   initEditor()
   void initShiki()
   const el = editorRef.value
@@ -1632,6 +1665,9 @@ onUnmounted(() => {
   window.removeEventListener('editor:paste', handlePasteEvent)
   window.removeEventListener('editor:find', handleEditorFind)
   window.removeEventListener('editor:replace', handleEditorReplace)
+  window.removeEventListener('keydown', updateCtrlPressed)
+  window.removeEventListener('keyup', clearCtrlPressed)
+  window.removeEventListener('blur', clearCtrlPressedOnBlur)
   document.removeEventListener('click', closeContextMenu)
   document.removeEventListener('contextmenu', closeContextMenu, true)
   window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
@@ -1660,7 +1696,7 @@ defineExpose({
   <div
     ref="containerRef"
     class="ir-container"
-    :class="{ dragging: isDragging, 'ir-show-markers': showMarkers }"
+    :class="{ dragging: isDragging, 'ir-show-markers': showMarkers, 'ir-ctrl-pressed': ctrlPressed }"
   >
     <div
       v-if="tableToolbar.visible"
@@ -1973,6 +2009,9 @@ defineExpose({
 }
 .ir-editor-wrapper :deep(.ProseMirror a) {
   color: var(--color-primary); text-decoration: underline;
+}
+.ir-container.ir-ctrl-pressed .ir-editor-wrapper :deep(.ProseMirror a[href^="#"]) {
+  cursor: pointer;
 }
 .ir-editor-wrapper :deep(.ProseMirror hr) {
   border: none;

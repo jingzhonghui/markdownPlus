@@ -91,7 +91,7 @@ describe('QuickOpenPalette', () => {
     pressKey('Enter')
     await nextTick()
 
-    expect(openFileSpy).toHaveBeenCalledWith('C:/ws/docs/guide.md', { addToRecent: false })
+    expect(openFileSpy).toHaveBeenCalledWith('C:/ws/docs/guide.md', { addToRecent: false, preview: true })
     expect(wrapper.emitted('close')).toBeTruthy()
   })
 
@@ -134,7 +134,7 @@ describe('QuickOpenPalette', () => {
     item.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await nextTick()
 
-    expect(openFileSpy).toHaveBeenCalledWith('C:/ws/src/app.ts', { addToRecent: false })
+    expect(openFileSpy).toHaveBeenCalledWith('C:/ws/src/app.ts', { addToRecent: false, preview: true })
   })
 
   it('shows a hint when no folder is opened', async () => {

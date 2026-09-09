@@ -93,7 +93,7 @@ async function onClick(): Promise<void> {
   if (props.node.isDirectory) {
     await fileStore.toggleNode(props.node)
   } else {
-    const ok = await fileStore.openFile(props.node.path, { addToRecent: false })
+    const ok = await fileStore.openFile(props.node.path, { addToRecent: false, preview: true })
     if (!ok && fileStore.error) {
       // 不支持打开的文件（二进制/过大等）：明确告知用户原因，而非静默失败
       const ext = props.node.name.includes('.') ? props.node.name.split('.').pop()!.toUpperCase() : props.node.name
@@ -104,6 +104,11 @@ async function onClick(): Promise<void> {
       })
     }
   }
+}
+
+async function onDblClick(): Promise<void> {
+  if (props.node.isDirectory) return
+  await fileStore.openFile(props.node.path, { addToRecent: false, preview: false })
 }
 
 function onContextMenu(event: MouseEvent): void {
@@ -184,6 +189,7 @@ function onDrop(event: DragEvent): void {
       :style="{ paddingLeft: `${depth * 12 + 8}px` }"
       draggable="true"
       @click="onClick"
+      @dblclick="onDblClick"
       @contextmenu.prevent.stop="onContextMenu"
       @dragstart="onDragStart"
       @dragend="onDragEnd"

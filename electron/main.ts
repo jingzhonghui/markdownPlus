@@ -61,23 +61,6 @@ function initialLaunchTargets(): LaunchTarget[] {
     .filter((target): target is LaunchTarget => target !== null)
 }
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock()
-if (!hasSingleInstanceLock) {
-  app.quit()
-} else {
-  app.on('second-instance', (_event, commandLine) => {
-    queueOpenTargets(
-      parseLaunchTargets(commandLine)
-        .map((target) => inspectLaunchTarget(target))
-        .filter((target): target is LaunchTarget => target !== null)
-    )
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
-  })
-}
-
 /**
  * 创建主窗口
  */
@@ -187,7 +170,7 @@ function createWindow(): void {
 /**
  * 应用生命周期管理
  */
-if (hasSingleInstanceLock) app.whenReady().then(() => {
+app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.markdown-plus.app')
 
   // 默认打开或关闭开发者工具（仅开发环境）

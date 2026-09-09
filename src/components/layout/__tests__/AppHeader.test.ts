@@ -156,6 +156,56 @@ describe('AppHeader 快速打开（Ctrl+P）', () => {
   })
 })
 
+describe('AppHeader 标签切换快捷键', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('Alt+ArrowRight 和 Alt+ArrowLeft 循环切换当前标签', async () => {
+    const wrapper = mountHeader()
+    const fileStore = useFileStore()
+    const first = fileStore.tabs.push({ id: 'tab-1', fileInfo: null, document: null, content: '', revision: 0 })
+    const second = fileStore.tabs.push({ id: 'tab-2', fileInfo: null, document: null, content: '', revision: 0 })
+    expect(first).toBe(1)
+    expect(second).toBe(2)
+    fileStore.activeTabId = 'tab-1'
+
+    const nextEvent = new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, cancelable: true })
+    window.dispatchEvent(nextEvent)
+    await wrapper.vm.$nextTick()
+    expect(fileStore.activeTabId).toBe('tab-2')
+    expect(nextEvent.defaultPrevented).toBe(true)
+
+    const previousEvent = new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, cancelable: true })
+    window.dispatchEvent(previousEvent)
+    await wrapper.vm.$nextTick()
+    expect(fileStore.activeTabId).toBe('tab-1')
+    expect(previousEvent.defaultPrevented).toBe(true)
+
+    const wrapEvent = new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, cancelable: true })
+    window.dispatchEvent(wrapEvent)
+    await wrapper.vm.$nextTick()
+    expect(fileStore.activeTabId).toBe('tab-2')
+  })
+
+  it('在输入框中不拦截 Alt+方向键', async () => {
+    const wrapper = mountHeader()
+    const fileStore = useFileStore()
+    fileStore.tabs.push({ id: 'tab-1', fileInfo: null, document: null, content: '', revision: 0 })
+    fileStore.tabs.push({ id: 'tab-2', fileInfo: null, document: null, content: '', revision: 0 })
+    fileStore.activeTabId = 'tab-1'
+
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const event = new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, cancelable: true, bubbles: true })
+    input.dispatchEvent(event)
+    await wrapper.vm.$nextTick()
+
+    expect(fileStore.activeTabId).toBe('tab-1')
+    expect(event.defaultPrevented).toBe(false)
+  })
+})
+
 describe('AppHeader 同步按钮', () => {
   const originalElectronAPI = window.electronAPI
 

@@ -215,6 +215,7 @@ export const useFileStore = defineStore('file', () => {
     }
     if (tab.fileInfo) {
       tab.fileInfo.modified = true
+      tab.isPreview = false
     }
     stateVersion.value++
     updateWordCount()
@@ -234,6 +235,7 @@ export const useFileStore = defineStore('file', () => {
     }
     if (tab.fileInfo) {
       tab.fileInfo.modified = true
+      tab.isPreview = false
     }
     tab.revision++
     stateVersion.value++
@@ -393,7 +395,7 @@ export const useFileStore = defineStore('file', () => {
 
   async function openFile(
     filePath?: string,
-    options?: { addToRecent?: boolean; silentLimit?: boolean }
+    options?: { addToRecent?: boolean; silentLimit?: boolean; preview?: boolean }
   ): Promise<boolean> {
     isLoading.value = true
     error.value = null
@@ -408,6 +410,7 @@ export const useFileStore = defineStore('file', () => {
       if (filePath) {
         const existing = tabState.findTabByPath(filePath)
         if (existing) {
+          if (options?.preview === false) existing.isPreview = false
           activeTabId.value = existing.id
           useAiStore().deactivatePanel()
           return true
@@ -423,6 +426,7 @@ export const useFileStore = defineStore('file', () => {
         // 再次检查（IPC 可能解析了路径）
         const existing = tabState.findTabByPath(fPath)
         if (existing) {
+          if (options?.preview === false) existing.isPreview = false
           activeTabId.value = existing.id
           useAiStore().deactivatePanel()
           return true
@@ -445,7 +449,8 @@ export const useFileStore = defineStore('file', () => {
         }
 
         // 创建新 tab 前检查标签上限
-        if (tabs.value.length >= maxOpenTabs.value) {
+        const previewTab = options?.preview === true ? tabs.value.find((tab) => tab.isPreview) : undefined
+        if (tabs.value.length >= maxOpenTabs.value && !previewTab) {
           if (!options?.silentLimit) {
             await requestDialog({
               title: '已达标签上限',
@@ -470,6 +475,12 @@ export const useFileStore = defineStore('file', () => {
           name: fPath.split(/[/\\]/).pop() || '未命名.mdx',
           modified: false,
           format
+        }
+        tab.isPreview = options?.preview === true
+        if (previewTab) {
+          const previewIndex = tabs.value.indexOf(previewTab)
+          tabs.value.splice(tabs.value.indexOf(tab), 1)
+          tabs.value.splice(previewIndex, 1, tab)
         }
         activeTabId.value = tab.id
         useAiStore().deactivatePanel()

@@ -175,7 +175,7 @@ onUnmounted(() => {
       :key="tab.id"
       :data-tab-id="tab.id"
       class="tab"
-      :class="{ active: !aiStore.panelActive && tab.id === fileStore.activeTabId }"
+      :class="{ active: !aiStore.panelActive && tab.id === fileStore.activeTabId, preview: tab.isPreview }"
       @click="handleTabClick(tab.id)"
       @mousedown="handleMiddleClick(tab.id, $event)"
       @contextmenu.prevent.stop="onTabContextMenu($event, tab)"
@@ -341,6 +341,10 @@ onUnmounted(() => {
 
 .tab.active .tab-icon {
   color: var(--color-primary);
+}
+
+.tab.preview .tab-label {
+  font-style: italic;
 }
 
 .tab-label {

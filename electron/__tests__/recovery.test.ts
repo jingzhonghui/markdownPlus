@@ -43,8 +43,12 @@ describe('Recovery module', () => {
 
   it('returns null for a malformed snapshot', () => {
     markAppRunning()
+    writeRecoverySnapshot({ version: 1, createdAt: '', activeTabId: null, tabs: [] })
     const recoveryDir = path.join(userData, 'recovery')
-    fs.writeFileSync(path.join(recoveryDir, 'snapshot.json'), '{broken', 'utf8')
+    const snapshotFile = fs
+      .readdirSync(recoveryDir)
+      .find((name) => name.startsWith('snapshot-') && name.endsWith('.json'))!
+    fs.writeFileSync(path.join(recoveryDir, snapshotFile), '{broken', 'utf8')
     expect(readRecoverySnapshot()).toBeNull()
   })
 

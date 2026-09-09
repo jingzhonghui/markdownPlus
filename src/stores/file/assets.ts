@@ -83,6 +83,7 @@ export function useAssets(deps: AssetsDeps) {
         if (tab.fileInfo?.format !== 'markdown') tab.document.assets.images.push(asset)
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
+          tab.isPreview = false
         }
         deps.scheduleRecoverySnapshot()
         return { success: true, path: relativePath, asset }
@@ -161,6 +162,7 @@ export function useAssets(deps: AssetsDeps) {
         }
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
+          tab.isPreview = false
         }
         deps.scheduleRecoverySnapshot()
         return { success: true }
@@ -204,6 +206,7 @@ export function useAssets(deps: AssetsDeps) {
       if (result.success && result.data) {
         if (tab.fileInfo) {
           tab.fileInfo.modified = true
+          tab.isPreview = false
         }
         deps.scheduleRecoverySnapshot()
         const { relativePath } = result.data as { relativePath: string }
@@ -289,6 +292,7 @@ export function useAssets(deps: AssetsDeps) {
 
       if (tab.fileInfo) {
         tab.fileInfo.modified = true
+        tab.isPreview = false
       }
       stateVersion.value++
       deps.scheduleRecoverySnapshot()

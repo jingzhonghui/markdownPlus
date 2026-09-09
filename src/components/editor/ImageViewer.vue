@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import Tooltip from '../common/Tooltip.vue'
 import { useFileStore } from '../../stores/file'
 
@@ -42,6 +42,20 @@ const imageStyle = computed(() => {
   }
 })
 
+const stageContentStyle = computed(() => {
+  const base = naturalSize.value
+  const box = containerSize.value
+  if (!base || !box) return {}
+
+  const ratio = fitRatio.value
+  const imageWidth = Math.max(1, Math.round(base.w * ratio * zoom.value))
+  const imageHeight = Math.max(1, Math.round(base.h * ratio * zoom.value))
+  return {
+    width: `${Math.max(box.w, imageWidth + STAGE_PADDING * 2)}px`,
+    height: `${Math.max(box.h, imageHeight + STAGE_PADDING * 2)}px`
+  }
+})
+
 const zoomPercent = computed(() => `${Math.round(zoom.value * 100)}%`)
 
 const stageRef = ref<HTMLElement | null>(null)
@@ -75,20 +89,32 @@ function onError(): void {
 
 function zoomIn(): void {
   zoom.value = clampZoom(zoom.value + ZOOM_STEP)
+  void centerStage()
 }
 
 function zoomOut(): void {
   zoom.value = clampZoom(zoom.value - ZOOM_STEP)
+  void centerStage()
 }
 
 function resetZoom(): void {
   zoom.value = 1
+  void centerStage()
+}
+
+async function centerStage(): Promise<void> {
+  await nextTick()
+  const el = stageRef.value
+  if (!el) return
+  el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2)
+  el.scrollTop = Math.max(0, (el.scrollHeight - el.clientHeight) / 2)
 }
 
 function onStageWheel(event: WheelEvent): void {
   if (!event.ctrlKey) return
   event.preventDefault()
   zoom.value = clampZoom(zoom.value + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP))
+  void centerStage()
 }
 
 /** 放大模式下按住左键拖动移动图片；非放大模式不做处理 */
@@ -154,16 +180,21 @@ onUnmounted(() => {
       @pointerup="onStagePointerUp"
       @pointercancel="onStagePointerUp"
     >
-      <img
+      <div
         v-if="imageDataUrl"
-        :src="imageDataUrl"
-        :alt="fileName"
-        class="image-canvas"
-        :style="imageStyle"
-        draggable="false"
-        @load="onLoad"
-        @error="onError"
+        class="image-stage-content"
+        :style="stageContentStyle"
       >
+        <img
+          :src="imageDataUrl"
+          :alt="fileName"
+          class="image-canvas"
+          :style="imageStyle"
+          draggable="false"
+          @load="onLoad"
+          @error="onError"
+        >
+      </div>
     </div>
     <div class="image-info">
       <span class="image-name">{{ fileName }}</span>
@@ -204,6 +235,8 @@ onUnmounted(() => {
 <style scoped>
 .image-viewer {
   flex: 1;
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -214,11 +247,12 @@ onUnmounted(() => {
 
 .image-stage {
   flex: 1;
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   display: flex;
   overflow: auto;
-  padding: 24px;
   background-color: var(--color-bg-secondary);
 }
 
@@ -227,6 +261,13 @@ onUnmounted(() => {
   transition: width 0.1s ease, height 0.1s ease;
   flex-shrink: 0;
   margin: auto;
+}
+
+.image-stage-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .image-stage.is-panning {
@@ -273,6 +314,11 @@ onUnmounted(() => {
   gap: 4px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* Tooltip 默认会让触发器 flex: 1；缩放按钮必须按自身宽度排列。 */
+.image-zoom-controls :deep(.tooltip-trigger) {
+  flex: 0 0 auto;
 }
 
 .zoom-btn {

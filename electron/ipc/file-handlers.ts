@@ -66,57 +66,46 @@ function saveRecentFilesToDisk(files: RecentItem[]): void {
   }
 }
 
-/** 内存缓存 */
-let recentFilesCache: RecentItem[] | null = null
-
 /**
- * 获取最近文件列表（带缓存）
+ * 获取最近文件列表
  */
 function getRecentFiles(): RecentItem[] {
-  if (!recentFilesCache) {
-    recentFilesCache = loadRecentFilesFromDisk()
-  }
-  return [...recentFilesCache]
+  return loadRecentFilesFromDisk()
 }
 
 /**
  * 添加文件/文件夹到最近列表
+ * 每次写前从磁盘重读最新列表，避免多实例并发覆盖
  */
 export function addRecentFile(filePath: string, type: RecentItemType = 'file'): void {
-  if (!recentFilesCache) {
-    recentFilesCache = loadRecentFilesFromDisk()
-  }
   // 规范化路径
   const normalized = path.resolve(filePath)
-  // 移除已存在的相同路径
-  recentFilesCache = recentFilesCache.filter((p) => p.path !== normalized)
+  // 重读磁盘，移除已存在的相同路径
+  let items = loadRecentFilesFromDisk().filter((p) => p.path !== normalized)
   // 添加到开头
-  recentFilesCache.unshift({ path: normalized, type })
+  items.unshift({ path: normalized, type })
   // 限制数量
-  if (recentFilesCache.length > MAX_RECENT_FILES) {
-    recentFilesCache = recentFilesCache.slice(0, MAX_RECENT_FILES)
+  if (items.length > MAX_RECENT_FILES) {
+    items = items.slice(0, MAX_RECENT_FILES)
   }
   // 持久化
-  saveRecentFilesToDisk(recentFilesCache)
+  saveRecentFilesToDisk(items)
 }
 
 /**
  * 从最近列表中移除文件
  */
-function removeRecentFile(filePath: string): void {  if (!recentFilesCache) {
-    recentFilesCache = loadRecentFilesFromDisk()
-  }
+function removeRecentFile(filePath: string): void {
   const normalized = path.resolve(filePath)
-  recentFilesCache = recentFilesCache.filter((p) => p.path !== normalized)
-  saveRecentFilesToDisk(recentFilesCache)
+  const items = loadRecentFilesFromDisk().filter((p) => p.path !== normalized)
+  saveRecentFilesToDisk(items)
 }
 
 /**
  * 清空最近文件列表
  */
 function clearRecentFiles(): void {
-  recentFilesCache = []
-  saveRecentFilesToDisk(recentFilesCache)
+  saveRecentFilesToDisk([])
 }
 
 /** 生成目标目录下不冲突的路径：重名时自动追加 (1)、(2)… */

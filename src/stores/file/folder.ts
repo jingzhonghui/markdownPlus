@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue'
 import { useAiStore } from '../ai'
+import { compareFolderEntries } from '../../utils/folder-sort'
 import type { FileTreeNode, FolderItem, TabInfo } from './types'
 
 export interface FolderDeps {
@@ -9,7 +10,7 @@ export interface FolderDeps {
   editorResetVersion: Ref<number>
   error: Ref<string | null>
   isLoading: Ref<boolean>
-  openFile: (filePath?: string, options?: { addToRecent?: boolean }) => Promise<boolean>
+  openFile: (filePath?: string, options?: { addToRecent?: boolean; excludeFromRecent?: boolean }) => Promise<boolean>
   loadRecentFiles: () => Promise<void>
   persistSession: () => void
   closeTab: (tabId: string) => Promise<boolean>
@@ -135,6 +136,19 @@ export function useFolder(deps: FolderDeps) {
   }
 
   async function openFolderPath(dirPath: string): Promise<boolean> {
+    const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+    const isSameFolder =
+      openedFolderPath.value !== null && normalize(openedFolderPath.value) === normalize(dirPath)
+
+    // 切换到不同文件夹时先关闭当前全部标签（复用关闭流程处理未保存内容）；
+    // 任一标签取消关闭或保存失败则中止切换，保持原工作区不变
+    if (!isSameFolder) {
+      const tabIds = tabs.value.map((tab) => tab.id)
+      for (const tabId of tabIds) {
+        if (!(await deps.closeTab(tabId))) return false
+      }
+    }
+
     const success = await readFolder(dirPath)
 
     // 初始化文件树
@@ -296,7 +310,7 @@ export function useFolder(deps: FolderDeps) {
           isLoading: false,
           children: []
         })
-        return await deps.openFile(result.data.path, { addToRecent: false })
+        return await deps.openFile(result.data.path, { addToRecent: false, excludeFromRecent: true })
       }
       return false
     } catch {
@@ -344,6 +358,7 @@ export function useFolder(deps: FolderDeps) {
           relocateNodePaths(node, oldPath, result.data!.path)
           node.name = newName
           if (isRoot) openedFolderPath.value = result.data!.path
+          sortTreeChildren(fileTree.value)
           syncRootItems()
         } else {
           await readFolder(openedFolderPath.value!)
@@ -384,22 +399,15 @@ export function useFolder(deps: FolderDeps) {
   }
 
   function insertNodeSorted(nodes: FileTreeNode[], node: FileTreeNode): void {
-    let insertAt = nodes.length
-    for (let i = 0; i < nodes.length; i++) {
-      const current = nodes[i]
-      if (node.isDirectory !== current.isDirectory) {
-        if (node.isDirectory) {
-          insertAt = i
-          break
-        }
-        continue
-      }
-      if (node.name.localeCompare(current.name) < 0) {
-        insertAt = i
-        break
-      }
+    const index = nodes.findIndex((current) => compareFolderEntries(node, current) < 0)
+    nodes.splice(index === -1 ? nodes.length : index, 0, node)
+  }
+
+  function sortTreeChildren(nodes: FileTreeNode[]): void {
+    nodes.sort(compareFolderEntries)
+    for (const node of nodes) {
+      if (node.isDirectory && node.children.length > 1) sortTreeChildren(node.children)
     }
-    nodes.splice(insertAt, 0, node)
   }
 
   function relocateNodePaths(node: FileTreeNode, sourcePath: string, newPath: string): void {

@@ -93,8 +93,8 @@ export interface ElectronAPI {
   // 文件操作
   newFile: () => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
   openFile: (filePath?: string, addToRecent?: boolean) => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
-  saveFile: (content?: string, title?: string, filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
-  saveAsFile: (content: string, title?: string, filePath?: string) => Promise<{ success: boolean; data?: string; error?: string }>
+  saveFile: (content?: string, title?: string, filePath?: string, addToRecent?: boolean) => Promise<{ success: boolean; data?: unknown; error?: string }>
+  saveAsFile: (content: string, title?: string, filePath?: string, addToRecent?: boolean) => Promise<{ success: boolean; data?: string; error?: string }>
   closeFile: (filePath?: string) => Promise<{ success: boolean; error?: string }>
   getRecentFiles: () => Promise<{ success: boolean; data?: RecentItem[]; error?: string }>
   addRecentFile: (filePath: string, type?: 'file' | 'folder') => Promise<{ success: boolean; error?: string }>
@@ -221,8 +221,8 @@ const api: ElectronAPI = {
   // 文件操作
   newFile: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.NEW),
   openFile: (filePath?, addToRecent?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.OPEN, filePath, addToRecent),
-  saveFile: (content?, title?, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE, content, title, filePath),
-  saveAsFile: (content?, title?, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE_AS, content, title, filePath),
+  saveFile: (content?, title?, filePath?, addToRecent?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE, content, title, filePath, addToRecent),
+  saveAsFile: (content?, title?, filePath?, addToRecent?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.SAVE_AS, content, title, filePath, addToRecent),
   closeFile: (filePath?) => ipcRenderer.invoke(IPC_CHANNELS.FILE.CLOSE, filePath),
   getRecentFiles: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT),
   addRecentFile: (filePath, type) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RECENT_ADD, filePath, type),

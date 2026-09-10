@@ -353,6 +353,7 @@ export const useFileStore = defineStore('file', () => {
         return false
       }
       const tab = tabState.createTab()
+      tab.excludeFromRecent = true
 
       if (window.electronAPI) {
         const result = await window.electronAPI.newFile()
@@ -395,7 +396,7 @@ export const useFileStore = defineStore('file', () => {
 
   async function openFile(
     filePath?: string,
-    options?: { addToRecent?: boolean; silentLimit?: boolean; preview?: boolean }
+    options?: { addToRecent?: boolean; silentLimit?: boolean; preview?: boolean; excludeFromRecent?: boolean }
   ): Promise<boolean> {
     isLoading.value = true
     error.value = null
@@ -476,6 +477,7 @@ export const useFileStore = defineStore('file', () => {
           modified: false,
           format
         }
+        tab.excludeFromRecent = options?.excludeFromRecent === true
         tab.isPreview = options?.preview === true
         if (previewTab) {
           const previewIndex = tabs.value.indexOf(previewTab)
@@ -523,7 +525,12 @@ export const useFileStore = defineStore('file', () => {
       }
 
       const savedContent = tab.content
-      const result = await window.electronAPI.saveFile(savedContent, tab.document.metadata.title, tab.fileInfo?.path || undefined)
+      const result = await window.electronAPI.saveFile(
+        savedContent,
+        tab.document.metadata.title,
+        tab.fileInfo?.path || undefined,
+        tab.excludeFromRecent !== true
+      )
 
       if (result.success) {
         if (tab.content === savedContent && tab.fileInfo) {
@@ -567,7 +574,12 @@ export const useFileStore = defineStore('file', () => {
       }
 
       const savedContent = tab.content
-      const result = await window.electronAPI.saveAsFile(savedContent, tab.document.metadata.title, tab.fileInfo?.path || undefined)
+      const result = await window.electronAPI.saveAsFile(
+        savedContent,
+        tab.document.metadata.title,
+        tab.fileInfo?.path || undefined,
+        tab.excludeFromRecent !== true
+      )
 
       if (result.success && result.data) {
         const savePath = result.data as string

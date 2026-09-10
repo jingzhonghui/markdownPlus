@@ -33,6 +33,8 @@ export interface FileTreeNode {
 
 export interface TabInfo {
   id: string
+  /** 新建文件不加入最近打开列表 */
+  excludeFromRecent?: boolean
   /** 单击打开的临时预览标签；编辑或显式固定后变为 false */
   isPreview?: boolean
   fileInfo: FileInfo | null

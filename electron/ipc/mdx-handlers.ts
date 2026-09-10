@@ -227,14 +227,14 @@ export function registerMdxHandlers(): void {
   // ─── 保存文件 ───
   ipcMain.handle(
     IPC_CHANNELS.FILE.SAVE,
-    async (_, content: string, title?: string, filePath?: string) => {
+    async (_, content: string, title?: string, filePath?: string, addToRecent: boolean = true) => {
       try {
       if (!filePath) return { success: false, error: 'NEW_FILE' }
 
       const isMdx = path.extname(filePath).toLowerCase() === '.mdx'
       if (!isMdx) {
         fs.writeFileSync(filePath, content, 'utf-8')
-        addRecent(filePath)
+        if (addToRecent) addRecent(filePath)
         return { success: true, data: filePath }
       }
 
@@ -254,7 +254,7 @@ export function registerMdxHandlers(): void {
           // 将更新后的文档写回临时目录（保持与磁盘一致）
           writeMdxJsonToTempDir(tempDir, document)
           fs.writeFileSync(path.join(tempDir, document.metadata.content_file), content, 'utf-8')
-          addRecent(filePath)
+          if (addToRecent) addRecent(filePath)
         }
 
         return result
@@ -268,7 +268,7 @@ export function registerMdxHandlers(): void {
   // ─── 另存为 ───
   ipcMain.handle(
     IPC_CHANNELS.FILE.SAVE_AS,
-    async (_, content?: string, title?: string, sourcePath?: string) => {
+    async (_, content?: string, title?: string, sourcePath?: string, addToRecent: boolean = true) => {
       try {
         const { dialog } = await import('electron')
         const window = BrowserWindow.getFocusedWindow()
@@ -316,7 +316,7 @@ export function registerMdxHandlers(): void {
 
         if (targetIsMarkdown) {
           fs.writeFileSync(targetPath, document.content, 'utf-8')
-          addRecent(targetPath)
+          if (addToRecent) addRecent(targetPath)
           return { success: true, data: targetPath }
         }
 
@@ -324,7 +324,7 @@ export function registerMdxHandlers(): void {
         if (saveResult.success) {
           const { tempDir } = (await openMdx(targetPath)).data!
           registerTempDir(targetPath, tempDir)
-          addRecent(targetPath)
+          if (addToRecent) addRecent(targetPath)
         }
 
         return saveResult.success ? { ...saveResult, data: targetPath } : saveResult

@@ -487,6 +487,74 @@ describe('file store', () => {
       expect(refreshedInner.isExpanded).toBe(true)
       expect(refreshedInner.children.some((c) => c.path === 'C:/docs/A/inner/i2.md')).toBe(true)
     })
+
+    it('closes all open tabs when switching to another folder', async () => {
+      const doc = makeDoc('A', 'content')
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async () => ({ success: true, data: [] })),
+        openFile: vi.fn(async () => ({
+          success: true,
+          data: { document: doc, filePath: 'C:/docs/a.mdx', format: 'mdx' }
+        }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      await store.openFile('C:/docs/a.mdx')
+      expect(store.tabs).toHaveLength(1)
+
+      const ok = await store.openFolderPath('C:/other')
+
+      expect(ok).toBe(true)
+      expect(store.tabs).toHaveLength(0)
+      expect(store.openedFolderPath).toBe('C:/other')
+    })
+
+    it('aborts switching folders when a dirty tab close is cancelled', async () => {
+      const doc = makeDoc('A', 'content')
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async () => ({ success: true, data: [] })),
+        openFile: vi.fn(async () => ({
+          success: true,
+          data: { document: doc, filePath: 'C:/docs/a.mdx', format: 'mdx' }
+        }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      await store.openFile('C:/docs/a.mdx')
+      store.updateContent('edited')
+      vi.mocked(requestDialog).mockResolvedValueOnce(2)
+
+      const ok = await store.openFolderPath('C:/other')
+
+      expect(ok).toBe(false)
+      expect(store.tabs).toHaveLength(1)
+      expect(store.openedFolderPath).toBe('C:/docs')
+    })
+
+    it('keeps open tabs when reopening the same folder', async () => {
+      const doc = makeDoc('A', 'content')
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async () => ({ success: true, data: [] })),
+        openFile: vi.fn(async () => ({
+          success: true,
+          data: { document: doc, filePath: 'C:/docs/a.mdx', format: 'mdx' }
+        }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      await store.openFile('C:/docs/a.mdx')
+
+      const ok = await store.openFolderPath('C:/docs')
+
+      expect(ok).toBe(true)
+      expect(store.tabs).toHaveLength(1)
+    })
   })
 
   describe('tree CRUD updates', () => {
@@ -708,6 +776,64 @@ describe('file store', () => {
       expect(nodeA.children.some((c) => c.path === 'C:/docs/A/x.mdx')).toBe(false)
       expect(nodeA.isExpanded).toBe(true)
     })
+
+    it('re-sorts siblings by name after rename', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async (dirPath: string) => {
+          if (dirPath === 'C:/docs') {
+            return {
+              success: true,
+              data: [
+                { name: 'a.mdx', path: 'C:/docs/a.mdx', isDirectory: false },
+                { name: 'b.mdx', path: 'C:/docs/b.mdx', isDirectory: false }
+              ]
+            }
+          }
+          return { success: false }
+        }),
+        renameFile: vi.fn(async () => ({ success: true, data: { path: 'C:/docs/0.mdx' } }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      const root = store.fileTree[0]
+      expect(root.children.map((c) => c.name)).toEqual(['a.mdx', 'b.mdx'])
+
+      const ok = await store.renameItem('C:/docs/b.mdx', '0.mdx')
+
+      expect(ok).toBe(true)
+      expect(root.children.map((c) => c.name)).toEqual(['0.mdx', 'a.mdx'])
+    })
+
+    it('inserts new entries in natural name order', async () => {
+      electronAPI = createMockElectronAPI({
+        readFolder: vi.fn(async (dirPath: string) => {
+          if (dirPath === 'C:/docs') {
+            return {
+              success: true,
+              data: [{ name: 'file10.mdx', path: 'C:/docs/file10.mdx', isDirectory: false }]
+            }
+          }
+          return { success: false }
+        }),
+        createFile: vi.fn(async () => ({ success: true, data: { path: 'C:/docs/file2.mdx' } })),
+        openFile: vi.fn(async () => ({
+          success: true,
+          data: { document: makeDoc('file2', ''), filePath: 'C:/docs/file2.mdx', format: 'mdx' }
+        }))
+      })
+      vi.stubGlobal('window', { electronAPI })
+
+      const store = useFileStore()
+      await store.openFolderPath('C:/docs')
+      const root = store.fileTree[0]
+      expect(root.children.map((c) => c.name)).toEqual(['file10.mdx'])
+
+      await store.createFile('C:/docs', 'file2.mdx')
+
+      expect(root.children.map((c) => c.name)).toEqual(['file2.mdx', 'file10.mdx'])
+    })
   })
 
   describe('restoreSession', () => {
@@ -789,7 +915,7 @@ describe('file store', () => {
 
       expect(ok).toBe(true)
       expect(store.isModified).toBe(false)
-      expect(electronAPI.saveFile).toHaveBeenCalledWith('edited', 'Doc', 'C:/docs/doc.mdx')
+      expect(electronAPI.saveFile).toHaveBeenCalledWith('edited', 'Doc', 'C:/docs/doc.mdx', true)
     })
 
     it('falls back to saveAsFile when the file has no path (NEW_FILE)', async () => {
@@ -805,6 +931,7 @@ describe('file store', () => {
 
       expect(ok).toBe(true)
       expect(electronAPI.saveAsFile).toHaveBeenCalled()
+      expect(electronAPI.saveFile).toHaveBeenCalledWith('content', 'Doc', undefined, false)
       expect(store.currentFile?.path).toBe('C:/docs/saved.mdx')
     })
   })
@@ -824,6 +951,7 @@ describe('file store', () => {
       expect(store.currentFile?.path).toBe('C:/docs/renamed.md')
       expect(store.currentFile?.name).toBe('renamed.md')
       expect(store.currentFile?.format).toBe('markdown')
+      expect(electronAPI.saveAsFile).toHaveBeenCalledWith('content', 'Doc', undefined, false)
     })
   })
 

@@ -1,6 +1,6 @@
 {
   "name": "markdown-plus",
-  "version": "0.2.0",
+  "version": "0.2.4",
   "description": "MarkdownPlus 编辑器 - 自包含 Markdown 文档编辑器",
   "main": "./out/main/main.cjs",
   "author": "Markdown+ Team",
@@ -16,7 +16,7 @@
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "start": "electron-vite preview",
-    "dev": "chcp 65001 && electron-vite dev",
+    "dev": "node scripts/dev.mjs",
     "build": "pnpm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "pnpm run build && electron-builder --dir",

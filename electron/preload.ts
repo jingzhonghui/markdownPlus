@@ -86,6 +86,9 @@ export interface FolderImportResult {
   imported: Array<{ source: string; target: string }>
   failed: Array<{ source: string; error: string }>
   canceled: boolean
+  needsResolution?: boolean
+  sources?: string[]
+  conflicts?: string[]
 }
 
 // API 类型定义
@@ -136,8 +139,26 @@ export interface ElectronAPI {
   renameFile: (oldPath: string, newName: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
   moveFile: (sourcePath: string, targetDir: string) => Promise<{ success: boolean; data?: { path: string }; error?: string }>
   deleteFile: (targetPath: string) => Promise<{ success: boolean; error?: string }>
-  importFilesIntoFolder: (targetDir: string) => Promise<{ success: boolean; data?: FolderImportResult; error?: string }>
-  importDirectoryIntoFolder: (targetDir: string) => Promise<{ success: boolean; data?: FolderImportResult; error?: string }>
+  importFilesIntoFolder: (targetDir: string, sourcePaths?: string[], conflictAction?: 'skip' | 'overwrite' | 'keep') => Promise<{ success: boolean; data?: FolderImportResult; error?: string }>
+  importDirectoryIntoFolder: (targetDir: string, sourcePath?: string, conflictAction?: 'skip' | 'overwrite' | 'keep') => Promise<{ success: boolean; data?: FolderImportResult; error?: string }>
+  readClipboardFilePaths: () => Promise<{ success: boolean; data?: string[]; error?: string }>
+  writeClipboardFilePaths: (paths: string[], mode: 'copy' | 'cut') => Promise<{ success: boolean; error?: string }>
+  copyIntoFolder: (
+    sources: string[],
+    targetDir: string,
+    mode: 'copy' | 'cut',
+    conflictAction?: 'skip' | 'overwrite' | 'keep'
+  ) => Promise<{
+    success: boolean
+    data?: {
+      items: Array<{ source: string; target: string }>
+      failed: Array<{ source: string; error: string }>
+      needsResolution?: boolean
+      sources?: string[]
+      conflicts?: string[]
+    }
+    error?: string
+  }>
 
   // 应用信息
   ping: () => Promise<string>
@@ -264,8 +285,13 @@ const api: ElectronAPI = {
   renameFile: (oldPath, newName) => ipcRenderer.invoke(IPC_CHANNELS.FILE.RENAME, { oldPath, newName }),
   moveFile: (sourcePath, targetDir) => ipcRenderer.invoke(IPC_CHANNELS.FILE.MOVE, { sourcePath, targetDir }),
   deleteFile: (targetPath) => ipcRenderer.invoke(IPC_CHANNELS.FILE.DELETE, { targetPath }),
-  importFilesIntoFolder: (targetDir) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.IMPORT_FILES, targetDir),
-  importDirectoryIntoFolder: (targetDir) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.IMPORT_DIRECTORY, targetDir),
+  importFilesIntoFolder: (targetDir, sourcePaths, conflictAction) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.IMPORT_FILES, targetDir, sourcePaths, conflictAction),
+  importDirectoryIntoFolder: (targetDir, sourcePath, conflictAction) => ipcRenderer.invoke(IPC_CHANNELS.FOLDER.IMPORT_DIRECTORY, targetDir, sourcePath, conflictAction),
+  readClipboardFilePaths: () => ipcRenderer.invoke(IPC_CHANNELS.FILE.CLIPBOARD_READ_FILES),
+  writeClipboardFilePaths: (paths, mode) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILE.CLIPBOARD_WRITE_FILES, { paths, mode }),
+  copyIntoFolder: (sources, targetDir, mode, conflictAction) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILE.COPY_INTO, { sources, targetDir, mode, conflictAction }),
 
   // 应用信息
   ping: () => ipcRenderer.invoke(IPC_CHANNELS.APP.PING),

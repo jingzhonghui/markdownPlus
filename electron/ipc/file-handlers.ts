@@ -8,6 +8,8 @@ import { ipcMain, dialog, BrowserWindow, app, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { IPC_CHANNELS } from './channels'
+import { readClipboardFilePaths, writeClipboardFilePaths, type ClipboardMode } from '../clipboard/file-clipboard'
+import { dedupeTopLevelPaths } from '../../shared/fs/dedupe'
 
 /** 最近文件列表上限 */
 const MAX_RECENT_FILES = 20
@@ -154,7 +156,9 @@ function clearRecentFiles(): void {
   saveRecentFilesToDisk([])
 }
 
-/** 生成目标目录下不冲突的路径：重名时自动追加 (1)、(2)… */
+type ConflictAction = 'skip' | 'overwrite' | 'keep'
+
+/** 生成目标目录下不冲突的路径：重名时追加 (1)、(2)… */
 function uniqueTargetPath(targetDir: string, baseName: string, isDirectory: boolean): string {
   const ext = isDirectory ? '' : path.extname(baseName)
   const stem = isDirectory ? baseName : path.basename(baseName, ext)
@@ -165,6 +169,30 @@ function uniqueTargetPath(targetDir: string, baseName: string, isDirectory: bool
     i++
   }
   return candidate
+}
+
+function hasTargetConflict(targetDir: string, baseName: string): boolean {
+  return fs.existsSync(path.join(targetDir, baseName))
+}
+
+function removeTarget(targetPath: string): void {
+  const stat = fs.statSync(targetPath)
+  fs.rmSync(targetPath, { recursive: stat.isDirectory(), force: true })
+}
+
+function copyOrMovePath(source: string, target: string, mode: ClipboardMode, sourceIsDirectory: boolean): void {
+  if (mode === 'copy') {
+    fs.cpSync(source, target, { recursive: sourceIsDirectory })
+    return
+  }
+  try {
+    fs.renameSync(source, target)
+  } catch (renameError) {
+    if ((renameError as NodeJS.ErrnoException)?.code !== 'EXDEV') throw renameError
+    fs.cpSync(source, target, { recursive: sourceIsDirectory })
+    if (sourceIsDirectory) fs.rmSync(source, { recursive: true, force: true })
+    else fs.unlinkSync(source)
+  }
 }
 
 /**
@@ -486,11 +514,11 @@ export function registerFileHandlers(): void {
   })
 
   // 导入外部文件到指定目录（复制，保留源文件，可多选）
-  ipcMain.handle(IPC_CHANNELS.FOLDER.IMPORT_FILES, async (_, targetDir: string) => {
+  ipcMain.handle(IPC_CHANNELS.FOLDER.IMPORT_FILES, async (_, targetDir: string, sourcePaths?: string[], conflictAction?: ConflictAction) => {
     try {
       const window = BrowserWindow.getFocusedWindow()
       if (!window) return { success: false, error: '没有活动的窗口' }
-      const dialogResult = await dialog.showOpenDialog(window, {
+      const dialogResult = sourcePaths ? { canceled: false, filePaths: sourcePaths } : await dialog.showOpenDialog(window, {
         title: '选择要导入的文件',
         properties: ['openFile', 'multiSelections']
       })
@@ -502,14 +530,25 @@ export function registerFileHandlers(): void {
       }
       const imported: Array<{ source: string; target: string }> = []
       const failed: Array<{ source: string; error: string }> = []
+      const selectedAction = conflictAction
+      const conflicts = dialogResult.filePaths.filter((source) => hasTargetConflict(targetDir, path.basename(source)))
+      if (conflicts.length > 0 && !selectedAction) {
+        return { success: true, data: { imported: [], failed: [], canceled: false, needsResolution: true, sources: dialogResult.filePaths, conflicts: conflicts.map((item) => path.basename(item)) } }
+      }
       for (const source of dialogResult.filePaths) {
         try {
           if (fs.statSync(source).isDirectory()) {
             failed.push({ source, error: '不支持导入文件夹' })
             continue
           }
-          const target = uniqueTargetPath(targetDir, path.basename(source), false)
-          fs.copyFileSync(source, target)
+          const baseName = path.basename(source)
+          const conflict = hasTargetConflict(targetDir, baseName)
+          if (conflict && selectedAction === 'skip') continue
+          const target = conflict && selectedAction === 'keep'
+            ? uniqueTargetPath(targetDir, baseName, false)
+            : path.join(targetDir, baseName)
+          if (conflict && selectedAction === 'overwrite') removeTarget(target)
+          copyOrMovePath(source, target, 'copy', false)
           imported.push({ source, target })
         } catch (error) {
           failed.push({ source, error: error instanceof Error ? error.message : '未知错误' })
@@ -523,11 +562,11 @@ export function registerFileHandlers(): void {
   })
 
   // 导入外部文件夹到指定目录（整个目录复制为其子目录，保留源文件夹）
-  ipcMain.handle(IPC_CHANNELS.FOLDER.IMPORT_DIRECTORY, async (_, targetDir: string) => {
+  ipcMain.handle(IPC_CHANNELS.FOLDER.IMPORT_DIRECTORY, async (_, targetDir: string, sourcePath?: string, conflictAction?: ConflictAction) => {
     try {
       const window = BrowserWindow.getFocusedWindow()
       if (!window) return { success: false, error: '没有活动的窗口' }
-      const dialogResult = await dialog.showOpenDialog(window, {
+      const dialogResult = sourcePath ? { canceled: false, filePaths: [sourcePath] } : await dialog.showOpenDialog(window, {
         title: '选择要导入的文件夹',
         properties: ['openDirectory']
       })
@@ -547,12 +586,114 @@ export function registerFileHandlers(): void {
       if (normalizedTarget === normalizedSource || normalizedTarget.startsWith(normalizedSource + path.sep)) {
         return { success: false, error: '不能导入到自身或其子目录' }
       }
-      const target = uniqueTargetPath(targetDir, path.basename(source), true)
-      fs.cpSync(source, target, { recursive: true })
+      const baseName = path.basename(source)
+      const conflict = hasTargetConflict(targetDir, baseName)
+      if (conflict && !conflictAction) {
+        return { success: true, data: { imported: [], failed: [], canceled: false, needsResolution: true, sources: [source], conflicts: [baseName] } }
+      }
+      if (conflict && conflictAction === 'skip') {
+        return { success: true, data: { imported: [], failed: [], canceled: false } }
+      }
+      const target = conflict && conflictAction === 'keep'
+        ? uniqueTargetPath(targetDir, baseName, true)
+        : path.join(targetDir, baseName)
+      if (conflict && conflictAction === 'overwrite') removeTarget(target)
+      copyOrMovePath(source, target, 'copy', true)
       return { success: true, data: { imported: [{ source, target }], failed: [], canceled: false } }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
       return { success: false, error: `导入文件夹失败: ${errorMessage}` }
     }
   })
+
+  // 读取系统剪贴板中的文件列表
+  ipcMain.handle(IPC_CHANNELS.FILE.CLIPBOARD_READ_FILES, async () => {
+    try {
+      return { success: true, data: await readClipboardFilePaths() }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // 将文件列表写入系统剪贴板
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.CLIPBOARD_WRITE_FILES,
+    async (_, { paths, mode }: { paths: string[]; mode: ClipboardMode }) => {
+      try {
+        await writeClipboardFilePaths(paths, mode)
+        return { success: true }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误'
+        return { success: false, error: errorMessage }
+      }
+    }
+  )
+
+  // 将剪贴板中的文件复制或移动到目标目录
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.COPY_INTO,
+    async (
+      _,
+      { sources, targetDir, mode, conflictAction }: { sources: string[]; targetDir: string; mode: ClipboardMode; conflictAction?: ConflictAction }
+    ) => {
+      try {
+        if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+          return { success: false, error: '目标不是文件夹' }
+        }
+        const normalize = (value: string): string => path.resolve(value).replace(/[\\/]+$/, '')
+        const normalizedTarget = normalize(targetDir)
+        const items: Array<{ source: string; target: string }> = []
+        const failed: Array<{ source: string; error: string }> = []
+        const uniqueSources = dedupeTopLevelPaths(sources)
+        const selectedAction = conflictAction
+        const conflicts = uniqueSources.filter((source) =>
+          !(mode === 'cut' && normalize(path.dirname(source)) === normalizedTarget) &&
+          hasTargetConflict(targetDir, path.basename(source))
+        )
+        if (conflicts.length > 0 && !selectedAction) {
+          return { success: true, data: { items: [], failed: [], needsResolution: true, sources: uniqueSources, conflicts: conflicts.map((item) => path.basename(item)) } }
+        }
+
+        for (const source of uniqueSources) {
+          try {
+            if (!fs.existsSync(source)) {
+              failed.push({ source, error: '源文件不存在' })
+              continue
+            }
+            const sourceStat = fs.statSync(source)
+            const normalizedSource = normalize(source)
+
+            if (sourceStat.isDirectory()) {
+              if (normalizedTarget === normalizedSource || normalizedTarget.startsWith(normalizedSource + path.sep)) {
+                failed.push({ source, error: '不能复制到自身或其子目录' })
+                continue
+              }
+            }
+
+            // 剪切到同一父目录：原地移动无意义，跳过
+            if (mode === 'cut' && normalize(path.dirname(source)) === normalizedTarget) {
+              continue
+            }
+
+            const baseName = path.basename(source)
+            const conflict = hasTargetConflict(targetDir, baseName)
+            if (conflict && selectedAction === 'skip') continue
+            const target = conflict && selectedAction === 'keep'
+              ? uniqueTargetPath(targetDir, baseName, sourceStat.isDirectory())
+              : path.join(targetDir, baseName)
+            if (conflict && selectedAction === 'overwrite') removeTarget(target)
+            copyOrMovePath(source, target, mode, sourceStat.isDirectory())
+            items.push({ source, target })
+          } catch (error) {
+            failed.push({ source, error: error instanceof Error ? error.message : '未知错误' })
+          }
+        }
+        return { success: true, data: { items, failed } }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误'
+        return { success: false, error: errorMessage }
+      }
+    }
+  )
 }

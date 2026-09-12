@@ -32,6 +32,10 @@ export function requestDialog(options: {
   })
 }
 
+export function cancelDialogRequest(): void {
+  resolveDialogRequest(-1)
+}
+
 export function resolveDialogRequest(value: number): void {
   dialogState.visible = false
   resolveDialog?.(value)

@@ -19,6 +19,7 @@ import { getFileIconType } from '../../utils/file-icons'
 import Tooltip from '../common/Tooltip.vue'
 
 interface DragState {
+  sourcePaths?: string[]
   sourcePath: string | null
   /** 当前悬停的合法目标目录路径（只高亮最内层/第一级目标） */
   hoverPath: string | null
@@ -70,15 +71,19 @@ function getParentDir(filePath: string): string {
 }
 
 function isValidDropTarget(): boolean {
-  if (!props.node.isDirectory || !dragState?.sourcePath) return false
-  const source = dragState.sourcePath
-  const normalizedSource = normalizePath(source)
+  if (!props.node.isDirectory || !dragState) return false
+  const sources = dragState.sourcePaths && dragState.sourcePaths.length > 0
+    ? dragState.sourcePaths
+    : dragState.sourcePath ? [dragState.sourcePath] : []
+  if (sources.length === 0) return false
   const normalizedNode = normalizePath(props.node.path)
-  // 不能拖到自身、自身子目录或源所在的父目录（原地移动）
-  if (normalizedNode === normalizedSource) return false
-  if (normalizedNode.startsWith(`${normalizedSource}/`)) return false
-  if (normalizedNode === getParentDir(source)) return false
-  return true
+  // 不能拖到任一源目录自身或其子目录；同目录项目会在执行时作为无操作过滤。
+  return sources.every((source) => {
+    const normalizedSource = normalizePath(source)
+    return normalizedNode !== normalizedSource &&
+      !normalizedNode.startsWith(`${normalizedSource}/`) &&
+      (sources.length > 1 || normalizedNode !== getParentDir(source))
+  })
 }
 
 function isActiveFile(node: FileTreeNode): boolean {
@@ -89,7 +94,16 @@ function isModifiedFile(node: FileTreeNode): boolean {
   return isActiveFile(node) && fileStore.isModified
 }
 
-async function onClick(): Promise<void> {
+async function onClick(event: MouseEvent): Promise<void> {
+  if (event.ctrlKey || event.metaKey) {
+    fileStore.toggleSelected(props.node.path)
+    return
+  }
+  if (event.shiftKey) {
+    fileStore.selectRange(props.node.path)
+    return
+  }
+  fileStore.selectOnly(props.node.path)
   if (props.node.isDirectory) {
     await fileStore.toggleNode(props.node)
   } else {
@@ -104,6 +118,7 @@ async function onClick(): Promise<void> {
       })
     }
   }
+  window.dispatchEvent(new Event('markdown-plus:explorer-refocus'))
 }
 
 async function onDblClick(): Promise<void> {
@@ -112,6 +127,7 @@ async function onDblClick(): Promise<void> {
 }
 
 function onContextMenu(event: MouseEvent): void {
+  if (!fileStore.isSelected(props.node.path)) fileStore.selectOnly(props.node.path)
   emit('contextMenu', event, props.node)
 }
 
@@ -123,16 +139,19 @@ function onExpandClick(): void {
 
 function onDragStart(event: DragEvent): void {
   if (!dragState) return
+  if (!fileStore.isSelected(props.node.path)) fileStore.selectOnly(props.node.path)
+    dragState.sourcePaths = [...fileStore.selectedPaths]
   dragState.sourcePath = props.node.path
   dragState.hoverPath = null
   if (event.dataTransfer) {
-    event.dataTransfer.setData('text/plain', props.node.path)
+    event.dataTransfer.setData('text/plain', dragState.sourcePaths.join('\n'))
     event.dataTransfer.effectAllowed = 'move'
   }
 }
 
 function onDragEnd(): void {
   if (dragState) {
+    dragState.sourcePaths = []
     dragState.sourcePath = null
     dragState.hoverPath = null
   }
@@ -184,6 +203,8 @@ function onDrop(event: DragEvent): void {
       :class="{
         'is-directory': node.isDirectory,
         'is-active': !node.isDirectory && isActiveFile(node),
+        'is-selected': fileStore.isSelected(node.path),
+        'is-cut': fileStore.clipboardFiles?.mode === 'cut' && fileStore.clipboardFiles.paths.includes(node.path),
         'is-drag-over': isDragOver,
       }"
       :style="{ paddingLeft: `${depth * 12 + 8}px` }"
@@ -281,6 +302,14 @@ function onDrop(event: DragEvent): void {
 
 .item-content.is-active {
   background-color: var(--color-primary-light);
+}
+
+.item-content.is-selected {
+  background-color: var(--color-bg-tertiary);
+}
+
+.item-content.is-cut {
+  opacity: 0.5;
 }
 
 .item-content.is-drag-over {

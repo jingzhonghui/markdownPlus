@@ -9,6 +9,7 @@ export default defineConfig({
       outDir: 'out/main',
       rollupOptions: {
         input: resolve(__dirname, 'electron/main.ts'),
+        external: ['electron-clipboard-ex'],
         output: {
           entryFileNames: '[name].cjs'
         }

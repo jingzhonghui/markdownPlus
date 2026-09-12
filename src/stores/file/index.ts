@@ -10,6 +10,7 @@ import type { FileInfo, EditorMode, EditorSelectionSnapshot, RecentItem, TabInfo
 import { createTabState, createTabOps } from './tabs'
 import { useAssets } from './assets'
 import { useFolder } from './folder'
+import { useClipboard } from './clipboard'
 import { usePdf } from './pdf'
 
 /**
@@ -414,6 +415,7 @@ export const useFileStore = defineStore('file', () => {
           if (options?.preview === false) existing.isPreview = false
           activeTabId.value = existing.id
           useAiStore().deactivatePanel()
+          await folder.revealFileInTree(filePath)
           return true
         }
       }
@@ -430,6 +432,7 @@ export const useFileStore = defineStore('file', () => {
           if (options?.preview === false) existing.isPreview = false
           activeTabId.value = existing.id
           useAiStore().deactivatePanel()
+          await folder.revealFileInTree(fPath)
           return true
         }
 
@@ -486,6 +489,7 @@ export const useFileStore = defineStore('file', () => {
         }
         activeTabId.value = tab.id
         useAiStore().deactivatePanel()
+        await folder.revealFileInTree(fPath)
 
         await loadRecentFiles()
         persistSession()
@@ -696,6 +700,18 @@ export const useFileStore = defineStore('file', () => {
     editorResetVersion
   })
   closeFolderTab = tabOps.closeTab
+
+  // ====== 剪贴板（复制/剪切/粘贴） ======
+  const clipboard = useClipboard({
+    tabs,
+    selectedPaths: folder.selectedPaths,
+    openedFolderPath: folder.openedFolderPath,
+    fileTree: folder.fileTree,
+    error,
+    stateVersion,
+    readFolder: folder.readFolder,
+    persistSession: () => persistSession()
+  })
 
   // ====== 资源管理 ======
   const assets = useAssets({ activeTab, stateVersion, scheduleRecoverySnapshot })
@@ -1165,15 +1181,34 @@ export const useFileStore = defineStore('file', () => {
     toggleNode: folder.toggleNode,
     loadChildren: folder.loadChildren,
 
+    // 选择模型
+    selectedPaths: folder.selectedPaths,
+    isSelected: folder.isSelected,
+    selectOnly: folder.selectOnly,
+    toggleSelected: folder.toggleSelected,
+    selectRange: folder.selectRange,
+    selectAllVisible: folder.selectAllVisible,
+    clearSelection: folder.clearSelection,
+
     // 上下文菜单操作
     createFile: folder.createFile,
     createFolder: folder.createFolder,
     renameItem: folder.renameItem,
     moveItem: folder.moveItem,
+    moveItems: folder.moveItems,
     deleteItem: folder.deleteItem,
     copyPath: folder.copyPath,
     importFilesInto: folder.importFilesInto,
-    importDirectoryInto: folder.importDirectoryInto
+    importDirectoryInto: folder.importDirectoryInto,
+
+    // 剪贴板
+    clipboardFiles: clipboard.clipboardFiles,
+    hasSystemClipboardFiles: clipboard.hasSystemClipboardFiles,
+    copySelection: clipboard.copySelection,
+    pasteIntoSelection: clipboard.pasteIntoSelection,
+    pasteInto: clipboard.pasteInto,
+    resolvePasteTargetDir: clipboard.resolvePasteTargetDir,
+    refreshClipboardState: clipboard.refreshClipboardState
   }
 })
 

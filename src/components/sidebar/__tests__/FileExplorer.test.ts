@@ -141,6 +141,49 @@ describe('FileExplorer 新建文件夹输入', () => {
   })
 })
 
+describe('FileExplorer F2 重命名', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  function mountExplorer() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const fileStore = useFileStore()
+    fileStore.openedFolderPath = 'C:/workspace'
+    fileStore.fileTree = [makeDir('C:/workspace', 'workspace', [makeFile('C:/workspace/a.md', 'a.md')])]
+    const wrapper = mount(FileExplorer, { global: { plugins: [pinia] }, attachTo: document.body })
+    return { wrapper, fileStore }
+  }
+
+  it('opens rename input only when the explorer has focus and one item is selected', async () => {
+    const { wrapper, fileStore } = mountExplorer()
+    fileStore.selectOnly('C:/workspace/a.md')
+    const fileList = wrapper.find('.file-list')
+    await fileList.element.focus()
+    await fileList.trigger('keydown', { key: 'F2' })
+    await nextTick()
+    expect(document.body.querySelector('.dialog-input')).not.toBeNull()
+    document.body.querySelector<HTMLButtonElement>('.dialog-btn-cancel')?.click()
+    await nextTick()
+  })
+
+  it('does not rename when multiple items are selected', async () => {
+    const { wrapper, fileStore } = mountExplorer()
+    fileStore.selectOnly('C:/workspace/a.md')
+    fileStore.toggleSelected('C:/workspace')
+    const fileList = wrapper.find('.file-list')
+    await fileList.element.focus()
+    await fileList.trigger('keydown', { key: 'F2' })
+    await nextTick()
+    expect(document.body.querySelector('.dialog-input')).toBeNull()
+  })
+})
+
 describe('FileExplorer 文件树自动定位滚动', () => {
   let scrollSpy: ReturnType<typeof vi.fn>
   const mountedWrappers: Array<ReturnType<typeof mount>> = []

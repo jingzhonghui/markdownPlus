@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { dialogState, resolveDialogRequest } from '../../utils/dialog'
+import { cancelDialogRequest, dialogState, resolveDialogRequest } from '../../utils/dialog'
 </script>
 
 <template>
@@ -7,6 +7,7 @@ import { dialogState, resolveDialogRequest } from '../../utils/dialog'
     <div
       v-if="dialogState.visible"
       class="dialog-overlay"
+      @click.self="cancelDialogRequest"
     >
       <div
         class="dialog"
@@ -14,9 +15,10 @@ import { dialogState, resolveDialogRequest } from '../../utils/dialog'
         aria-modal="true"
         @click.stop
       >
-        <h3 class="dialog-title">
-          {{ dialogState.title }}
-        </h3>
+        <div class="dialog-header">
+          <h3 class="dialog-title">{{ dialogState.title }}</h3>
+          <button class="dialog-close" aria-label="关闭" @click="cancelDialogRequest">×</button>
+        </div>
         <p class="dialog-message">
           {{ dialogState.message }}
         </p>
@@ -64,9 +66,25 @@ import { dialogState, resolveDialogRequest } from '../../utils/dialog'
 }
 
 .dialog-title {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 16px;
   font-weight: 600;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.dialog-close {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
 }
 
 .dialog-message,

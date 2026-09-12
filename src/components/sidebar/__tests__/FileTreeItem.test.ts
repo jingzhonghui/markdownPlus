@@ -7,6 +7,7 @@ import { nextTick, reactive } from 'vue'
 import FileTreeItem from '../FileTreeItem.vue'
 import { dialogState, resolveDialogRequest } from '../../../utils/dialog'
 import type { FileTreeNode } from '../../../stores/file/types'
+import { useFileStore } from '../../../stores/file'
 
 function makeDir(path: string, name: string, children: FileTreeNode[] = []): FileTreeNode {
   return { name, path, isDirectory: true, isExpanded: true, isLoading: false, children }
@@ -26,7 +27,8 @@ describe('FileTreeItem drag & drop', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
   function mountTree(onDropToFolder: ReturnType<typeof vi.fn> = vi.fn()) {
-    const dragState = reactive<{ sourcePath: string | null; hoverPath: string | null }>({
+    const dragState = reactive<{ sourcePaths: string[]; sourcePath: string | null; hoverPath: string | null }>({
+      sourcePaths: [],
       sourcePath: 'C:/docs/X.md',
       hoverPath: null
     })
@@ -83,7 +85,8 @@ describe('FileTreeItem drag & drop', () => {
 
   it('only highlights the innermost directory, never its ancestors', async () => {
     const node = makeDir('C:/R', 'R', [makeDir('C:/R/A', 'A', [makeDir('C:/R/A/B', 'B')])])
-    const dragState = reactive<{ sourcePath: string | null; hoverPath: string | null }>({
+    const dragState = reactive<{ sourcePaths: string[]; sourcePath: string | null; hoverPath: string | null }>({
+      sourcePaths: [],
       sourcePath: 'C:/X.md',
       hoverPath: null
     })
@@ -109,6 +112,17 @@ describe('FileTreeItem drag & drop', () => {
     dragState.sourcePath = 'C:/docs/A/A-1.md'
     await dispatchDrag(wrapper, 'C:/docs/A', 'drop')
     expect(onDropToFolder).not.toHaveBeenCalled()
+  })
+
+  it('starts dragging all selected nodes when dragging a selected node', async () => {
+    const { wrapper, dragState } = mountTree()
+    const store = useFileStore()
+    store.selectOnly('C:/docs/A/A-1.md')
+    store.toggleSelected('C:/docs/A/B')
+    const dataTransfer = { setData: vi.fn(), effectAllowed: '' }
+    await wrapper.find('[data-file-path="C:/docs/A/A-1.md"]').trigger('dragstart', { dataTransfer })
+    expect(dragState.sourcePaths).toEqual(['C:/docs/A/A-1.md', 'C:/docs/A/B'])
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'C:/docs/A/A-1.md\nC:/docs/A/B')
   })
 })
 

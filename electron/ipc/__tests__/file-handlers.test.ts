@@ -30,7 +30,12 @@ vi.mock('electron', () => ({
   dialog: { showOpenDialog: vi.fn(), showSaveDialog: vi.fn(), showMessageBox: vi.fn() },
   BrowserWindow: { getFocusedWindow: () => ({}) },
   app: { getPath: () => tmpDir },
-  shell: { showItemInFolder: vi.fn(), openPath: vi.fn() }
+  shell: { showItemInFolder: vi.fn(), openPath: vi.fn() },
+  clipboard: {
+    read: vi.fn(() => ''),
+    readBuffer: vi.fn(() => Buffer.from('')),
+    writeBuffer: vi.fn()
+  }
 }))
 
 /** 重新加载 file-handlers 模块以重置模块级缓存，并注册 handlers */
@@ -301,9 +306,12 @@ describe('file:search', () => {
 
 describe('folder:importFiles / folder:importDirectory', () => {
   const showOpenDialog = dialog.showOpenDialog as unknown as ReturnType<typeof vi.fn>
+  const showMessageBox = dialog.showMessageBox as unknown as ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
     showOpenDialog.mockReset()
+    showMessageBox.mockReset()
+    showMessageBox.mockResolvedValue({ response: 2 })
     await registerHandlersFresh()
   })
 
@@ -333,7 +341,7 @@ describe('folder:importFiles / folder:importDirectory', () => {
     expect(fs.existsSync(path.join(srcDir, 'a.md'))).toBe(true)
   })
 
-  it('avoids name conflicts by appending a numeric suffix', async () => {
+  it('keeps all conflicting files with a numeric suffix when requested', async () => {
     const srcDir = path.join(tmpDir, 'import-src-conflict')
     fs.mkdirSync(srcDir, { recursive: true })
     fs.writeFileSync(path.join(srcDir, 'a.md'), 'new', 'utf8')
@@ -347,7 +355,7 @@ describe('folder:importFiles / folder:importDirectory', () => {
     })
 
     const handler = electronMocks.handlers.get(IPC_CHANNELS.FOLDER.IMPORT_FILES)!
-    const result = (await handler({}, target)) as {
+    const result = (await handler({}, target, undefined, 'keep')) as {
       success: boolean
       data: { imported: Array<{ target: string }> }
     }
@@ -355,6 +363,44 @@ describe('folder:importFiles / folder:importDirectory', () => {
     expect(result.success).toBe(true)
     expect(fs.readFileSync(path.join(target, 'a.md'), 'utf8')).toBe('old')
     expect(fs.readFileSync(path.join(target, 'a (1).md'), 'utf8')).toBe('new')
+  })
+
+  it('skips all conflicting files when requested', async () => {
+    const srcDir = path.join(tmpDir, 'import-src-skip-conflicts')
+    fs.mkdirSync(srcDir, { recursive: true })
+    fs.writeFileSync(path.join(srcDir, 'a.md'), 'new a', 'utf8')
+    fs.writeFileSync(path.join(srcDir, 'b.md'), 'new b', 'utf8')
+    const target = path.join(tmpDir, 'import-target-skip-conflicts')
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(target, 'a.md'), 'old a', 'utf8')
+    fs.writeFileSync(path.join(target, 'b.md'), 'old b', 'utf8')
+    showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [path.join(srcDir, 'a.md'), path.join(srcDir, 'b.md')] })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FOLDER.IMPORT_FILES)!
+    const result = (await handler({}, target, undefined, 'skip')) as { data: { imported: unknown[] } }
+
+    expect(result.data.imported).toHaveLength(0)
+    expect(fs.readFileSync(path.join(target, 'a.md'), 'utf8')).toBe('old a')
+    expect(fs.readFileSync(path.join(target, 'b.md'), 'utf8')).toBe('old b')
+  })
+
+  it('overwrites all conflicting files when requested', async () => {
+    const srcDir = path.join(tmpDir, 'import-src-overwrite-conflicts')
+    fs.mkdirSync(srcDir, { recursive: true })
+    fs.writeFileSync(path.join(srcDir, 'a.md'), 'new a', 'utf8')
+    fs.writeFileSync(path.join(srcDir, 'b.md'), 'new b', 'utf8')
+    const target = path.join(tmpDir, 'import-target-overwrite-conflicts')
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(target, 'a.md'), 'old a', 'utf8')
+    fs.writeFileSync(path.join(target, 'b.md'), 'old b', 'utf8')
+    showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [path.join(srcDir, 'a.md'), path.join(srcDir, 'b.md')] })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FOLDER.IMPORT_FILES)!
+    const result = (await handler({}, target, undefined, 'overwrite')) as { data: { imported: unknown[] } }
+
+    expect(result.data.imported).toHaveLength(2)
+    expect(fs.readFileSync(path.join(target, 'a.md'), 'utf8')).toBe('new a')
+    expect(fs.readFileSync(path.join(target, 'b.md'), 'utf8')).toBe('new b')
   })
 
   it('copies an external folder as a subdirectory of the target', async () => {
@@ -393,5 +439,170 @@ describe('folder:importFiles / folder:importDirectory', () => {
     expect(result.success).toBe(true)
     expect(result.data.imported).toHaveLength(0)
     expect(result.data.canceled).toBe(true)
+  })
+})
+
+describe('file:clipboardReadFiles / file:clipboardWriteFiles', () => {
+  it('reads and writes file paths through the clipboard abstraction', async () => {
+    await registerHandlersFresh()
+    const { clipboard } = await import('electron')
+    ;(clipboard.read as ReturnType<typeof vi.fn>).mockReturnValue('file:///tmp/a.md')
+
+    const readHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.CLIPBOARD_READ_FILES)!
+    const readResult = (await readHandler({})) as { success: boolean; data?: string[] }
+    expect(readResult.success).toBe(true)
+    expect(readResult.data).toEqual(['/tmp/a.md'])
+
+    const writeHandler = electronMocks.handlers.get(IPC_CHANNELS.FILE.CLIPBOARD_WRITE_FILES)!
+    const writeResult = (await writeHandler({}, { paths: ['/tmp/a.md'], mode: 'copy' })) as { success: boolean }
+    expect(writeResult.success).toBe(true)
+    expect(clipboard.writeBuffer).toHaveBeenCalledWith('text/uri-list', Buffer.from('file:///tmp/a.md', 'utf8'))
+  })
+})
+
+describe('file:copyInto', () => {
+  const showMessageBox = dialog.showMessageBox as unknown as ReturnType<typeof vi.fn>
+
+  beforeEach(async () => {
+    showMessageBox.mockReset()
+    showMessageBox.mockResolvedValue({ response: 2 })
+    await registerHandlersFresh()
+  })
+
+  it('copies a file into the target folder', async () => {
+    const src = path.join(tmpDir, 'copy-src')
+    const target = path.join(tmpDir, 'copy-target')
+    fs.mkdirSync(src, { recursive: true })
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(src, 'a.md'), 'aa', 'utf8')
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.COPY_INTO)!
+    const result = (await handler({}, {
+      sources: [path.join(src, 'a.md')],
+      targetDir: target,
+      mode: 'copy'
+    })) as { success: boolean; data: { items: Array<{ target: string }> } }
+
+    expect(result.success).toBe(true)
+    expect(fs.readFileSync(path.join(target, 'a.md'), 'utf8')).toBe('aa')
+    expect(fs.existsSync(path.join(src, 'a.md'))).toBe(true)
+  })
+
+  it('copies a folder recursively and renames on conflict', async () => {
+    const src = path.join(tmpDir, 'copy-folder-src')
+    const target = path.join(tmpDir, 'copy-folder-target')
+    fs.mkdirSync(path.join(src, 'sub'), { recursive: true })
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(src, 'sub', 'x.md'), 'x', 'utf8')
+    fs.mkdirSync(path.join(target, 'copy-folder-src'), { recursive: true })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.COPY_INTO)!
+    const result = (await handler({}, {
+      sources: [src],
+      targetDir: target,
+      mode: 'copy',
+      conflictAction: 'keep'
+    })) as { success: boolean; data: { items: Array<{ target: string }> } }
+
+    expect(result.success).toBe(true)
+    expect(fs.existsSync(path.join(target, 'copy-folder-src (1)', 'sub', 'x.md'))).toBe(true)
+    expect(fs.readdirSync(path.join(target, 'copy-folder-src'))).toHaveLength(0)
+  })
+
+  it('applies the selected conflict action to every conflicting paste item', async () => {
+    const src = path.join(tmpDir, 'copy-all-conflicts-src')
+    const target = path.join(tmpDir, 'copy-all-conflicts-target')
+    fs.mkdirSync(src, { recursive: true })
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(src, 'a.md'), 'new a', 'utf8')
+    fs.writeFileSync(path.join(src, 'b.md'), 'new b', 'utf8')
+    fs.writeFileSync(path.join(target, 'a.md'), 'old a', 'utf8')
+    fs.writeFileSync(path.join(target, 'b.md'), 'old b', 'utf8')
+    showMessageBox.mockResolvedValue({ response: 1 })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.COPY_INTO)!
+    const result = (await handler({}, {
+      sources: [path.join(src, 'a.md'), path.join(src, 'b.md')],
+      targetDir: target,
+      mode: 'copy',
+      conflictAction: 'overwrite'
+    })) as { success: boolean; data: { items: unknown[] } }
+
+    expect(result.success).toBe(true)
+    expect(result.data.items).toHaveLength(2)
+    expect(fs.readFileSync(path.join(target, 'a.md'), 'utf8')).toBe('new a')
+    expect(fs.readFileSync(path.join(target, 'b.md'), 'utf8')).toBe('new b')
+  })
+
+  it('moves a file out of the source folder when mode is cut', async () => {
+    const src = path.join(tmpDir, 'cut-src')
+    const target = path.join(tmpDir, 'cut-target')
+    fs.mkdirSync(src, { recursive: true })
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(src, 'a.md'), 'aa', 'utf8')
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.COPY_INTO)!
+    const result = (await handler({}, {
+      sources: [path.join(src, 'a.md')],
+      targetDir: target,
+      mode: 'cut'
+    })) as { success: boolean }
+
+    expect(result.success).toBe(true)
+    expect(fs.existsSync(path.join(target, 'a.md'))).toBe(true)
+    expect(fs.existsSync(path.join(src, 'a.md'))).toBe(false)
+  })
+
+  it('rejects copying a folder into itself', async () => {
+    const src = path.join(tmpDir, 'self-src')
+    fs.mkdirSync(src, { recursive: true })
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.COPY_INTO)!
+    const result = (await handler({}, {
+      sources: [src],
+      targetDir: src,
+      mode: 'copy'
+    })) as { success: boolean; data: { failed: Array<{ error: string }> } }
+
+    expect(result.success).toBe(true)
+    expect(result.data.failed).toHaveLength(1)
+    expect(result.data.failed[0].error).toContain('自身')
+  })
+
+  it('skips cut into the same parent folder', async () => {
+    const dir = path.join(tmpDir, 'cut-same')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'a.md'), 'aa', 'utf8')
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.COPY_INTO)!
+    const result = (await handler({}, {
+      sources: [path.join(dir, 'a.md')],
+      targetDir: dir,
+      mode: 'cut'
+    })) as { success: boolean; data: { items: unknown[] } }
+
+    expect(result.success).toBe(true)
+    expect(result.data.items).toHaveLength(0)
+    expect(fs.existsSync(path.join(dir, 'a.md'))).toBe(true)
+  })
+
+  it('dedupes a directory and its descendant so the file is copied only once', async () => {
+    const dir = path.join(tmpDir, 'dedupe-src')
+    const target = path.join(tmpDir, 'dedupe-target')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'x.md'), 'x', 'utf8')
+
+    const handler = electronMocks.handlers.get(IPC_CHANNELS.FILE.COPY_INTO)!
+    const result = (await handler({}, {
+      sources: [dir, path.join(dir, 'x.md')],
+      targetDir: target,
+      mode: 'copy'
+    })) as { success: boolean; data: { items: Array<{ target: string }> } }
+
+    expect(result.success).toBe(true)
+    expect(result.data.items).toHaveLength(1)
+    expect(fs.existsSync(path.join(target, path.basename(dir), 'x.md'))).toBe(true)
+    expect(fs.existsSync(path.join(target, 'x.md'))).toBe(false)
   })
 })

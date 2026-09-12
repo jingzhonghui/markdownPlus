@@ -5,12 +5,14 @@ import { useFileStore, type FileTreeNode } from '../../stores/file'
 import { requestDialog } from '../../utils/dialog'
 import Tooltip from '../common/Tooltip.vue'
 import { validateWindowsFolderName } from '../../utils/windows-filename'
+import { dedupeTopLevelPaths } from '../../../shared/fs/dedupe'
 import FileTreeItem from './FileTreeItem.vue'
 
 const fileStore = useFileStore()
 
 // ========== 拖拽移动 ==========
-const dragState = reactive<{ sourcePath: string | null; hoverPath: string | null }>({
+const dragState = reactive<{ sourcePaths: string[]; sourcePath: string | null; hoverPath: string | null }>({
+  sourcePaths: [],
   sourcePath: null,
   hoverPath: null
 })
@@ -27,14 +29,19 @@ function getParentDir(filePath: string): string {
 }
 
 async function handleDropToFolder(targetDir: string): Promise<void> {
-  const source = dragState.sourcePath
+  const sources = dragState.sourcePaths.length > 0
+    ? [...dragState.sourcePaths]
+    : dragState.sourcePath ? [dragState.sourcePath] : []
+  const source = sources[0]
+  dragState.sourcePaths = []
   dragState.sourcePath = null
   dragState.hoverPath = null
   isListDragOver.value = false
   if (!source || !fileStore.openedFolderPath) return
-  // 原地移动（目标目录就是源的父目录）直接忽略
-  if (normalizePath(targetDir) === getParentDir(source)) return
-  const ok = await fileStore.moveItem(source, targetDir)
+  const movableSources = dedupeTopLevelPaths(sources)
+    .filter((item) => normalizePath(targetDir) !== getParentDir(item))
+  if (movableSources.length === 0) return
+  const ok = await fileStore.moveItems(movableSources, targetDir)
   if (!ok) {
     await requestDialog({
       title: '无法移动',
@@ -135,6 +142,7 @@ const CLOSE_ALL_CONTEXT_MENUS_EVENT = 'markdown-plus:close-context-menus'
 interface ContextMenuItem {
   label: string
   action: () => void
+  disabled?: () => boolean
 }
 
 const contextMenu = reactive({
@@ -148,8 +156,14 @@ function closeContextMenu(): void {
   contextMenu.visible = false
 }
 
+function onContextMenuItemClick(item: ContextMenuItem): void {
+  if (item.disabled?.()) return
+  closeContextMenu()
+  item.action()
+}
 
 function showContextMenu(event: MouseEvent, items: ContextMenuItem[]): void {
+  void fileStore.refreshClipboardState()
   window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))
   contextMenu.items = items
   contextMenu.x = event.clientX
@@ -170,6 +184,76 @@ function showContextMenu(event: MouseEvent, items: ContextMenuItem[]): void {
   })
 }
 
+const fileListRef = ref<HTMLElement | null>(null)
+
+function refocusExplorer(): void {
+  requestAnimationFrame(() => fileListRef.value?.focus())
+}
+
+async function pasteHere(targetDir: string | null): Promise<void> {
+  if (!targetDir) return
+  const ok = await fileStore.pasteInto(targetDir)
+  if (!ok && fileStore.error) {
+    await requestDialog({
+      title: '无法粘贴',
+      message: fileStore.error,
+      buttons: [{ label: '确定', value: 0, primary: true }]
+    })
+  }
+}
+
+function onListClick(event: MouseEvent): void {
+  fileListRef.value?.focus()
+  if (event.target === event.currentTarget) fileStore.clearSelection()
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null
+  return element?.tagName === 'INPUT' || element?.tagName === 'TEXTAREA' || element?.isContentEditable === true
+}
+
+async function onListKeydown(event: KeyboardEvent): Promise<void> {
+  if (isEditableTarget(event.target)) return
+  if (event.key === 'F2') {
+    if (document.activeElement !== fileListRef.value) return
+    event.preventDefault()
+    if (fileStore.selectedPaths.length !== 1) return
+    const findNode = (nodes: FileTreeNode[]): FileTreeNode | null => {
+      for (const node of nodes) {
+        if (node.path === fileStore.selectedPaths[0]) return node
+        if (node.isDirectory) {
+          const found = findNode(node.children)
+          if (found) return found
+        }
+      }
+      return null
+    }
+    const node = findNode(fileStore.fileTree)
+    if (node) await promptRename(node)
+    return
+  }
+  const modifier = event.ctrlKey || event.metaKey
+  if (!modifier) {
+    if (event.key === 'Escape') fileStore.clearSelection()
+    return
+  }
+  const key = event.key.toLowerCase()
+  if (key === 'a') {
+    event.preventDefault()
+    fileStore.selectAllVisible()
+    return
+  }
+  if (key === 'c' || key === 'x') {
+    event.preventDefault()
+    await fileStore.copySelection(key === 'x' ? 'cut' : 'copy')
+    return
+  }
+  if (key === 'v') {
+    event.preventDefault()
+    await fileStore.pasteIntoSelection()
+  }
+}
+
 function onEmptyContextMenu(event: MouseEvent): void {
   const folderPath = fileStore.openedFolderPath
   const items: ContextMenuItem[] = folderPath
@@ -182,7 +266,8 @@ function onEmptyContextMenu(event: MouseEvent): void {
         { label: '打开文件夹', action: () => openFolder() },
         { label: '快速打开文件', action: () => window.dispatchEvent(new Event('markdown-plus:quick-open')) },
         { label: '刷新', action: () => fileStore.readFolder(folderPath) },
-        { label: '关闭文件夹', action: () => { void fileStore.closeFolder() } }
+        { label: '关闭文件夹', action: () => { void fileStore.closeFolder() } },
+        { label: '粘贴', action: () => { void pasteHere(folderPath) }, disabled: () => !fileStore.clipboardFiles && !fileStore.hasSystemClipboardFiles }
       ]
     : [
         { label: '导入 Markdown', action: () => fileStore.importMarkdown() },
@@ -203,6 +288,9 @@ function onFileContextMenu(event: MouseEvent, node: FileTreeNode): void {
       : []),
     { label: '重命名', action: () => promptRename(node) },
     { label: '删除', action: () => promptDelete(node) },
+    { label: '复制', action: () => { void fileStore.copySelection('copy') } },
+    { label: '剪切', action: () => { void fileStore.copySelection('cut') } },
+    { label: '粘贴到同级目录', action: () => { void pasteHere(getParentDir(node.path)) }, disabled: () => !fileStore.clipboardFiles && !fileStore.hasSystemClipboardFiles },
     { label: '复制路径', action: () => fileStore.copyPath(node.path) },
     { label: '打开文件所在位置', action: () => { void fileStore.revealInExplorer(node.path) } }
   ]
@@ -216,6 +304,9 @@ function onFolderContextMenu(event: MouseEvent, node: FileTreeNode): void {
     { label: '导入文件', action: () => { void importFilesToFolder(node) } },
     { label: '导入文件夹', action: () => { void importDirectoryToFolder(node) } },
     { label: '批量导出 PDF', action: () => { void fileStore.exportFolderToPdf(node.path) } },
+    { label: '复制', action: () => { void fileStore.copySelection('copy') } },
+    { label: '剪切', action: () => { void fileStore.copySelection('cut') } },
+    { label: '粘贴', action: () => { void pasteHere(node.path) }, disabled: () => !fileStore.clipboardFiles && !fileStore.hasSystemClipboardFiles },
     { label: '刷新', action: () => fileStore.loadChildren(node) },
     { label: '重命名', action: () => promptRename(node) },
     { label: '删除', action: () => promptDelete(node) },
@@ -412,6 +503,7 @@ onMounted(() => {
   document.addEventListener('contextmenu', closeContextMenu, true)
   window.addEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
   window.addEventListener('blur', closeContextMenu)
+  window.addEventListener('markdown-plus:explorer-refocus', refocusExplorer)
 })
 
 onUnmounted(() => {
@@ -420,6 +512,7 @@ onUnmounted(() => {
   document.removeEventListener('contextmenu', closeContextMenu, true)
   window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, closeContextMenu)
   window.removeEventListener('blur', closeContextMenu)
+  window.removeEventListener('markdown-plus:explorer-refocus', refocusExplorer)
 })
 </script>
 
@@ -442,8 +535,12 @@ onUnmounted(() => {
 
     <!-- 文件列表 -->
     <div
+      ref="fileListRef"
       class="file-list"
+      tabindex="0"
       :class="{ 'is-drag-over': isListDragOver }"
+      @click="onListClick"
+      @keydown="onListKeydown"
       @contextmenu.prevent.stop="onEmptyContextMenu"
       @dragover="onListDragOver"
       @dragleave="onListDragLeave"
@@ -501,7 +598,8 @@ onUnmounted(() => {
           v-for="(item, index) in contextMenu.items"
           :key="index"
           class="context-menu-item"
-          @click="closeContextMenu(); item.action()"
+          :class="{ 'is-disabled': item.disabled?.() }"
+          @click="onContextMenuItemClick(item)"
         >
           {{ item.label }}
         </div>
@@ -706,6 +804,10 @@ onUnmounted(() => {
   padding: 8px;
 }
 
+.file-list:focus {
+  outline: none;
+}
+
 .file-list.is-drag-over {
   outline: 2px dashed var(--color-primary);
   outline-offset: -2px;
@@ -869,6 +971,15 @@ onUnmounted(() => {
 
 .context-menu-item:hover {
   background: var(--color-bg-secondary);
+}
+
+.context-menu-item.is-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.context-menu-item.is-disabled:hover {
+  background: transparent;
 }
 
 .dialog-overlay {

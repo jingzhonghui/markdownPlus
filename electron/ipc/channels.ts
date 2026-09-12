@@ -20,7 +20,10 @@ export const IPC_CHANNELS = {
     MOVE: 'file:move',
     DELETE: 'file:delete',
     REVEAL_IN_EXPLORER: 'file:revealInExplorer',
-    SEARCH: 'file:search'
+    SEARCH: 'file:search',
+    CLIPBOARD_READ_FILES: 'file:clipboardReadFiles',
+    CLIPBOARD_WRITE_FILES: 'file:clipboardWriteFiles',
+    COPY_INTO: 'file:copyInto'
   },
   MDX: {
     READ: 'mdx:read',

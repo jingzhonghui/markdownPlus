@@ -1,6 +1,7 @@
 import { ref, type Ref } from 'vue'
 import { useAiStore } from '../ai'
 import { compareFolderEntries } from '../../utils/folder-sort'
+import { requestFileConflictAction } from '../../utils/file-conflict'
 import type { FileTreeNode, FolderItem, TabInfo } from './types'
 
 export interface FolderDeps {
@@ -26,6 +27,88 @@ export function useFolder(deps: FolderDeps) {
   const folderItems = ref<FolderItem[]>([])
   const folderHistory = ref<string[]>([])
   const fileTree = ref<FileTreeNode[]>([])
+  const selectedPaths = ref<string[]>([])
+  const selectionAnchor = ref<string | null>(null)
+
+  /** 按当前展开状态深度优先展平可见节点路径 */
+  function collectVisiblePaths(nodes: FileTreeNode[]): string[] {
+    const result: string[] = []
+    const visit = (list: FileTreeNode[]): void => {
+      for (const node of list) {
+        result.push(node.path)
+        if (node.isDirectory && node.isExpanded) visit(node.children)
+      }
+    }
+    visit(nodes)
+    return result
+  }
+
+  function isSelected(path: string): boolean {
+    return selectedPaths.value.includes(path)
+  }
+
+  function selectOnly(path: string): void {
+    selectedPaths.value = [path]
+    selectionAnchor.value = path
+  }
+
+  function toggleSelected(path: string): void {
+    selectedPaths.value = isSelected(path)
+      ? selectedPaths.value.filter((item) => item !== path)
+      : [...selectedPaths.value, path]
+    selectionAnchor.value = path
+  }
+
+  function selectRange(path: string): void {
+    const visible = collectVisiblePaths(fileTree.value)
+    const anchor = selectionAnchor.value
+    const anchorIndex = anchor ? visible.indexOf(anchor) : -1
+    const targetIndex = visible.indexOf(path)
+    if (anchorIndex === -1 || targetIndex === -1) {
+      selectOnly(path)
+      return
+    }
+    const [start, end] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex]
+    selectedPaths.value = visible.slice(start, end + 1)
+  }
+
+  function selectAllVisible(): void {
+    const root = fileTree.value[0]
+    const candidates = root ? collectVisiblePaths(root.children) : collectVisiblePaths(fileTree.value)
+    selectedPaths.value = candidates
+    selectionAnchor.value = candidates[0] ?? null
+  }
+
+  function clearSelection(): void {
+    selectedPaths.value = []
+    selectionAnchor.value = null
+  }
+
+  function pruneSelection(): void {
+    const visible = new Set(collectVisiblePaths(fileTree.value))
+    selectedPaths.value = selectedPaths.value.filter((item) => visible.has(item))
+    if (selectionAnchor.value && !visible.has(selectionAnchor.value)) {
+      selectionAnchor.value = null
+    }
+  }
+
+  function relocateSelection(sourcePath: string, newPath: string): void {
+    const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+    const normalizedSource = normalize(sourcePath)
+    selectedPaths.value = selectedPaths.value.map((item) => {
+      const normalizedItem = normalize(item)
+      if (normalizedItem === normalizedSource) return newPath
+      if (normalizedItem.startsWith(`${normalizedSource}/`)) return newPath + item.slice(sourcePath.length)
+      return item
+    })
+    if (selectionAnchor.value) {
+      const normalizedAnchor = normalize(selectionAnchor.value)
+      if (normalizedAnchor === normalizedSource) selectionAnchor.value = newPath
+      else if (normalizedAnchor.startsWith(`${normalizedSource}/`)) {
+        selectionAnchor.value = newPath + selectionAnchor.value.slice(sourcePath.length)
+      }
+    }
+  }
 
   /** 按 path 收集树中已存在的节点（用于刷新时保留展开状态与已加载的子节点）。 */
   function collectOldNodes(nodes: FileTreeNode[]): Map<string, FileTreeNode> {
@@ -98,6 +181,7 @@ export function useFolder(deps: FolderDeps) {
           void refreshExpandedChildren(fileTree.value[0].children)
         }
 
+        pruneSelection()
         return true
       }
       return false
@@ -147,6 +231,7 @@ export function useFolder(deps: FolderDeps) {
       for (const tabId of tabIds) {
         if (!(await deps.closeTab(tabId))) return false
       }
+      clearSelection()
     }
 
     const success = await readFolder(dirPath)
@@ -242,6 +327,7 @@ export function useFolder(deps: FolderDeps) {
     folderItems.value = []
     folderHistory.value = []
     fileTree.value = []
+    clearSelection()
     if (typeof window.electronAPI?.authorizeWorkspaceRoot === 'function') {
       void window.electronAPI.authorizeWorkspaceRoot(null).catch(() => {})
     }
@@ -359,6 +445,7 @@ export function useFolder(deps: FolderDeps) {
           node.name = newName
           if (isRoot) openedFolderPath.value = result.data!.path
           sortTreeChildren(fileTree.value)
+          relocateSelection(oldPath, result.data!.path)
           syncRootItems()
         } else {
           await readFolder(openedFolderPath.value!)
@@ -483,11 +570,20 @@ export function useFolder(deps: FolderDeps) {
       deps.persistSession()
 
       // 增量更新文件树，保持各节点原有的展开状态
+      relocateSelection(sourcePath, newPath)
       await applyMoveToTree(sourcePath, newPath, targetDir)
       return true
     } catch {
       return false
     }
+  }
+
+  async function moveItems(sourcePaths: string[], targetDir: string): Promise<boolean> {
+    let success = true
+    for (const sourcePath of sourcePaths) {
+      if (!(await moveItem(sourcePath, targetDir))) success = false
+    }
+    return success
   }
 
   async function deleteItem(targetPath: string): Promise<boolean> {
@@ -520,6 +616,7 @@ export function useFolder(deps: FolderDeps) {
         } else {
           await readFolder(openedFolderPath.value!)
         }
+        pruneSelection()
         return true
       }
       return false
@@ -531,7 +628,7 @@ export function useFolder(deps: FolderDeps) {
   async function runImportToFolder(kind: 'files' | 'directory', targetDir: string): Promise<boolean> {
     try {
       if (!window.electronAPI) return false
-      const result =
+      let result =
         kind === 'files'
           ? await window.electronAPI.importFilesIntoFolder(targetDir)
           : await window.electronAPI.importDirectoryIntoFolder(targetDir)
@@ -539,8 +636,21 @@ export function useFolder(deps: FolderDeps) {
         deps.error.value = result.error || '导入失败'
         return false
       }
-      const data = result.data
+      let data = result.data
       if (!data || data.canceled) return true
+      if (data.needsResolution && data.sources && data.conflicts) {
+        const conflictAction = await requestFileConflictAction(data.conflicts)
+        if (!conflictAction) return false
+        result = kind === 'files'
+          ? await window.electronAPI.importFilesIntoFolder(targetDir, data.sources, conflictAction)
+          : await window.electronAPI.importDirectoryIntoFolder(targetDir, data.sources[0], conflictAction)
+        if (!result.success) {
+          deps.error.value = result.error || '导入失败'
+          return false
+        }
+        data = result.data
+        if (!data) return true
+      }
       const importedCount = data.imported.length
       const failedCount = data.failed.length
       if (failedCount > 0) {
@@ -578,6 +688,14 @@ export function useFolder(deps: FolderDeps) {
     openedFolderPath,
     folderItems,
     fileTree,
+    selectedPaths,
+    isSelected,
+    selectOnly,
+    toggleSelected,
+    selectRange,
+    selectAllVisible,
+    clearSelection,
+    pruneSelection,
     openFolder,
     openFolderPath,
     readFolder,
@@ -593,6 +711,7 @@ export function useFolder(deps: FolderDeps) {
     createFolder,
     renameItem,
     moveItem,
+    moveItems,
     deleteItem,
     importFilesInto,
     importDirectoryInto,

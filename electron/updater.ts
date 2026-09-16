@@ -27,16 +27,11 @@ const DEV_UPDATE_INFO: UpdateInfoPayload = {
 /**
  * 是否启用更新检查：
  * - 仅打包后的生产环境可用（开发模式跳过）
- * - Linux 仅 AppImage 支持（deb 等通过系统包管理器更新）
+ * - Linux 下也启用（通过 GitHub Release 检测版本，用户手动下载安装包）
  */
-export function shouldEnableUpdater(
-  isPackaged: boolean,
-  platform: string,
-  appImageEnv?: string
-): boolean {
+export function shouldEnableUpdater(isPackaged: boolean): boolean {
   if (!isPackaged) return false
-  if (platform === 'linux') return Boolean(appImageEnv)
-  return platform === 'win32' || platform === 'darwin'
+  return true
 }
 
 // 简单的日志适配器（后续可替换为 electron-log 等）
@@ -74,7 +69,7 @@ function toInfoPayload(info: UpdateInfo): UpdateInfoPayload {
  */
 export function initUpdater(windowGetter: () => BrowserWindow | null): void {
   getWindow = windowGetter
-  enabled = shouldEnableUpdater(app.isPackaged, process.platform, process.env['APPIMAGE'])
+  enabled = shouldEnableUpdater(app.isPackaged)
 
   if (!enabled) {
     console.info('[updater] update check disabled (dev mode or unsupported platform)')

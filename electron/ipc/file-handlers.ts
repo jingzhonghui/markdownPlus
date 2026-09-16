@@ -75,6 +75,28 @@ function compareFolderEntries(
 }
 
 /**
+ * 在目录中递归搜索文件名
+ */
+function searchFileInDir(dir: string, fileName: string): string | null {
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue
+      const fullPath = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        const found = searchFileInDir(fullPath, fileName)
+        if (found) return found
+      } else if (entry.isFile() && entry.name === fileName) {
+        return fullPath
+      }
+    }
+  } catch {
+    // 跳过无权限目录
+  }
+  return null
+}
+
+/**
  * 从磁盘读取最近文件列表（兼容旧版 string[] 数据，视为文件类型）
  */
 function loadRecentFilesFromDisk(): RecentItem[] {
@@ -629,6 +651,55 @@ export function registerFileHandlers(): void {
       }
     }
   )
+
+  // 链接打开处理
+  ipcMain.handle(IPC_CHANNELS.LINK.OPEN, async (_, { linkHref, currentFilePath, openedFolderPath }: { linkHref: string; currentFilePath?: string; openedFolderPath?: string }) => {
+    try {
+      if (linkHref.startsWith('#')) {
+        return { success: false }
+      }
+
+      if (linkHref.startsWith('http://') || linkHref.startsWith('https://')) {
+        await shell.openExternal(linkHref)
+        return { success: true }
+      }
+
+      let resolvedPath: string | null = null
+
+      if (linkHref.startsWith('file://')) {
+        resolvedPath = decodeURIComponent(linkHref.replace(/^file:\/\//, ''))
+      } else {
+        const decodedHref = decodeURIComponent(linkHref)
+        const baseDir = currentFilePath
+          ? path.dirname(path.resolve(currentFilePath))
+          : openedFolderPath
+            ? path.resolve(openedFolderPath)
+            : null
+        if (baseDir) {
+          resolvedPath = path.resolve(baseDir, decodedHref)
+        } else {
+          resolvedPath = path.resolve(decodedHref)
+        }
+      }
+
+      if (resolvedPath && fs.existsSync(resolvedPath)) {
+        return { success: true, data: resolvedPath }
+      }
+
+      if (resolvedPath && openedFolderPath) {
+        const fileName = path.basename(resolvedPath)
+        const foundFile = searchFileInDir(openedFolderPath, fileName)
+        if (foundFile) {
+          return { success: true, data: foundFile }
+        }
+      }
+
+      return { success: false, error: `文件不存在: ${linkHref}` }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return { success: false, error: errorMessage }
+    }
+  })
 
   // 将剪贴板中的文件复制或移动到目标目录
   ipcMain.handle(

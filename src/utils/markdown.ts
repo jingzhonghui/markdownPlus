@@ -141,6 +141,21 @@ export function getMarkdownIt(): MarkdownIt {
     // 数学公式支持
     md.use(mathPlugin)
 
+    // 自定义链接渲染，为文件链接添加 data-link-href 和 class 属性
+    const defaultLinkOpen = md.renderer.rules.link_open || function(tokens, idx, options, _env, self) {
+      return self.renderToken(tokens, idx, options)
+    }
+
+    md.renderer.rules.link_open = function(tokens, idx, options, env, self) {
+      const href = tokens[idx].attrGet('href') || ''
+      if (href.startsWith('#')) {
+        return defaultLinkOpen(tokens, idx, options, env, self)
+      }
+      tokens[idx].attrSet('class', 'md-link')
+      tokens[idx].attrSet('data-link-href', href)
+      return self.renderToken(tokens, idx, options)
+    }
+
     // 自定义任务列表渲染
     md.use((markdownIt: MarkdownIt) => {
       const defaultRender = markdownIt.renderer.rules.list_item_open || function(tokens, idx, options, _env, self) {

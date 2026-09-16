@@ -164,6 +164,17 @@ function createExtensions(): Extension[] {
         updateCursorPosition(update.state)
         updateEditorSelectionSnapshot(update.state)
       }
+    }),
+
+    // 未选择内容时复制光标所在行
+    EditorView.domEventHandlers({
+      copy(event: ClipboardEvent, view: EditorView) {
+        const { from, to } = view.state.selection.main
+        if (from !== to) return false
+        event.clipboardData?.setData('text/plain', view.state.doc.lineAt(from).text)
+        event.preventDefault()
+        return true
+      }
     })
   ]
 
@@ -925,8 +936,12 @@ async function handleCopyEvent(): Promise<void> {
   const view = editorView.value
   if (!view) return
   const { from, to } = view.state.selection.main
-  if (from === to) return
-  await window.electronAPI?.clipboardWriteText(view.state.doc.sliceString(from, to))
+  if (from !== to) {
+    await window.electronAPI?.clipboardWriteText(view.state.doc.sliceString(from, to))
+  } else {
+    const line = view.state.doc.lineAt(from)
+    await window.electronAPI?.clipboardWriteText(line.text)
+  }
   view.focus()
 }
 

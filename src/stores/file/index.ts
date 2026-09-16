@@ -529,11 +529,13 @@ export const useFileStore = defineStore('file', () => {
       }
 
       const savedContent = tab.content
+      const filePath = tab.fileInfo?.path
+      const isInWorkspace = !!(filePath && folder.openedFolderPath.value && filePath.startsWith(folder.openedFolderPath.value))
       const result = await window.electronAPI.saveFile(
         savedContent,
         tab.document.metadata.title,
-        tab.fileInfo?.path || undefined,
-        tab.excludeFromRecent !== true
+        filePath || undefined,
+        !(tab.excludeFromRecent === true || isInWorkspace)
       )
 
       if (result.success) {

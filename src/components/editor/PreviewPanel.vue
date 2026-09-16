@@ -4,6 +4,7 @@ import { useFileStore } from '../../stores/file'
 import { useThemeStore } from '../../stores/theme'
 import { renderMarkdown } from '../../utils/markdown'
 import { getHighlighter, type Highlighter } from '../../utils/shiki'
+import { requestDialog } from '../../utils/dialog'
 import Tooltip from '../common/Tooltip.vue'
 
 interface Props {
@@ -172,6 +173,36 @@ async function initShiki(): Promise<void> {
 
 const shikiTheme = computed(() => themeStore.isDark ? 'github-dark' : 'github-light')
 
+// ────── Link click ──────
+function handleLinkClick(event: MouseEvent): void {
+  if (!event.ctrlKey && !event.metaKey) return
+  if (event.button !== 0) return
+
+  const target = event.target as HTMLElement
+  const link = target.closest('a.md-link')
+  if (!link) return
+
+  const href = link.getAttribute('data-link-href')
+  if (!href) return
+
+  event.preventDefault()
+
+  const currentFilePath = fileStore.currentFile?.path || undefined
+  const openedFolderPath = fileStore.openedFolderPath || undefined
+
+  window.electronAPI.openLink(href, currentFilePath, openedFolderPath).then(result => {
+    if (result.success && result.data) {
+      fileStore.openFile(result.data, { addToRecent: true })
+    } else if (result.error && !result.data) {
+      requestDialog({
+        title: '无法打开链接',
+        message: result.error,
+        buttons: [{ label: '确定', value: 0, primary: true }]
+      })
+    }
+  })
+}
+
 // ────── Scroll sync ──────
 function handleScroll(): void {
   if (!previewRef.value || !props.enableScrollSync) return
@@ -259,6 +290,7 @@ defineExpose({
     <div
       class="preview-content-wrapper"
       @scroll="handleScroll"
+      @click="handleLinkClick"
     >
       <div
         ref="previewRef"

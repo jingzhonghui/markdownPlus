@@ -100,6 +100,9 @@ export const IPC_CHANNELS = {
     EVENT: 'sync:event',
     FILE_CHANGED: 'sync:fileChanged'
   },
+  LINK: {
+    OPEN: 'link:open'
+  },
   AI: {
     CONFIG: {
       GET: 'ai:config:get',

@@ -693,16 +693,43 @@ function handleInternalAnchorClick(view: EditorView, event: MouseEvent): boolean
   if ((!event.ctrlKey && !event.metaKey) || event.button !== 0) return false
   const target = event.target as HTMLElement
   const link = target.closest('a')
-  if (!link?.getAttribute('href')?.startsWith('#')) return false
+  if (!link) return false
 
-  const heading = findHeadingForAnchor(
-    Array.from(view.dom.querySelectorAll<HTMLElement>('h1, h2, h3, h4')),
-    link.getAttribute('href') || ''
-  )
-  if (!heading) return false
+  const href = link.getAttribute('href')
+  if (!href) return false
+
+  if (href.startsWith('#')) {
+    const heading = findHeadingForAnchor(
+      Array.from(view.dom.querySelectorAll<HTMLElement>('h1, h2, h3, h4')),
+      href
+    )
+    if (!heading) return false
+
+    event.preventDefault()
+    heading.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return true
+  }
 
   event.preventDefault()
-  heading.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  const currentFilePath = fileStore.currentFile?.path || undefined
+  const openedFolderPath = fileStore.openedFolderPath || undefined
+
+  window.electronAPI.openLink(href, currentFilePath, openedFolderPath).then(result => {
+    if (result.success && result.data) {
+      fileStore.openFile(result.data, { addToRecent: true })
+    } else if (result.error && !result.data) {
+      if (!href.startsWith('http://') && !href.startsWith('https://')) {
+        import('../../utils/dialog').then(({ requestDialog }) => {
+          requestDialog({
+            title: '无法打开链接',
+            message: result.error || '无法打开链接',
+            buttons: [{ label: '确定', value: 0, primary: true }]
+          })
+        })
+      }
+    }
+  })
+
   return true
 }
 
@@ -715,7 +742,24 @@ function clearCtrlPressed(event: KeyboardEvent): void {
 }
 
 // 复制/剪切有序列表时，将带序号的纯文本写入剪贴板
+// 未选择内容时复制光标所在行的整行内容
 function handleListCopy(view: EditorView, event: Event, isCut: boolean): boolean {
+  const { from, to } = view.state.selection
+  if (from === to) {
+    const clipboardEvent = event as ClipboardEvent
+    if (!clipboardEvent.clipboardData) return true
+    const $pos = view.state.doc.resolve(from)
+    const start = $pos.before($pos.depth)
+    const end = $pos.after($pos.depth)
+    clipboardEvent.clipboardData.setData('text/plain', view.state.doc.textBetween(start, end, '\n'))
+    event.preventDefault()
+    return true
+  }
+
+  // 如果选区在单个列表项内部（不跨越列表项边界），走默认复制行为
+  const { $from, $to } = view.state.selection
+  if ($from.sameParent($to)) return false
+
   const result = getListClipboard(view.state)
   if (!result) return false
   const clipboardEvent = event as ClipboardEvent
@@ -1551,9 +1595,16 @@ async function handleCopyEvent(): Promise<void> {
   const view = viewRef.value
   if (!view) return
   const { from, to } = view.state.selection
-  if (from === to) return
-  const text = view.state.doc.textBetween(from, to, '\n')
-  await window.electronAPI?.clipboardWriteText(text)
+  if (from !== to) {
+    const text = view.state.doc.textBetween(from, to, '\n')
+    await window.electronAPI?.clipboardWriteText(text)
+  } else {
+    const $pos = view.state.doc.resolve(from)
+    const start = $pos.before($pos.depth)
+    const end = $pos.after($pos.depth)
+    const text = view.state.doc.textBetween(start, end, '\n')
+    await window.electronAPI?.clipboardWriteText(text)
+  }
   view.focus()
 }
 
@@ -2010,7 +2061,7 @@ defineExpose({
 .ir-editor-wrapper :deep(.ProseMirror a) {
   color: var(--color-primary); text-decoration: underline;
 }
-.ir-container.ir-ctrl-pressed .ir-editor-wrapper :deep(.ProseMirror a[href^="#"]) {
+.ir-container.ir-ctrl-pressed .ir-editor-wrapper :deep(.ProseMirror a) {
   cursor: pointer;
 }
 .ir-editor-wrapper :deep(.ProseMirror hr) {

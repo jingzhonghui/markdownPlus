@@ -209,6 +209,9 @@ export interface ElectronAPI {
   onSyncEvent: (callback: (view: SyncStatusView) => void) => () => void
   onSyncFileChanged: (callback: (files: string[]) => void) => () => void
 
+  // 链接操作
+  openLink: (linkHref: string, currentFilePath?: string, openedFolderPath?: string) => Promise<{ success: boolean; data?: string; error?: string }>
+
   // 自动更新
   checkForUpdates: () => Promise<{ success: boolean; error?: string }>
   openReleasesPage: () => Promise<{ success: boolean; error?: string }>
@@ -363,6 +366,9 @@ const api: ElectronAPI = {
     ipcRenderer.on(IPC_CHANNELS.SYNC.FILE_CHANGED, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.SYNC.FILE_CHANGED, handler)
   },
+
+  // 链接操作
+  openLink: (linkHref, currentFilePath?, openedFolderPath?) => ipcRenderer.invoke(IPC_CHANNELS.LINK.OPEN, { linkHref, currentFilePath, openedFolderPath }),
 
   // 自动更新
   checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE.CHECK),

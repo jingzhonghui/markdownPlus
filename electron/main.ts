@@ -170,7 +170,29 @@ function createWindow(): void {
 /**
  * 应用生命周期管理
  */
-app.whenReady().then(() => {
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  // 已有实例在运行：本实例直接退出。多实例共享同一 userData 会争抢
+  // localStorage(LevelDB) 锁，导致渲染进程首次访问 localStorage 阻塞数秒。
+  app.quit()
+} else {
+  // 第二实例启动时：聚焦已有窗口，并转发其命令行打开目标
+  app.on('second-instance', (_event, argv) => {
+    if (app.isPackaged) {
+      queueOpenTargets(
+        parseLaunchTargets(argv)
+          .map((target) => inspectLaunchTarget(target))
+          .filter((target): target is LaunchTarget => target !== null)
+      )
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.markdown-plus.app')
 
   // 默认打开或关闭开发者工具（仅开发环境）
@@ -247,7 +269,8 @@ app.whenReady().then(() => {
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
-})
+  })
+}
 
 app.on('window-all-closed', () => {
   // 清理临时资源

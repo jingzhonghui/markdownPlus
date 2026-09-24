@@ -32,12 +32,10 @@ import {
   toggleHeading,
   insertLink,
   createIRPlugin,
-  irPluginKey,
   createPastePlugin,
   getListClipboard,
 } from '../../utils/prosemirror'
 import { findMatches, type SearchMatch } from '../../utils/prosemirror/search'
-import type { IRPluginState } from '../../utils/prosemirror'
 import { NodeSelection, Selection, TextSelection } from 'prosemirror-state'
 import { wrapIn, setBlockType } from 'prosemirror-commands'
 import { undo, redo } from 'prosemirror-history'
@@ -151,7 +149,6 @@ const tableToolbar = reactive({
   tablePos: -1,
   align: null as 'left' | 'center' | 'right' | null
 })
-const showMarkers = ref(false)
 const shikiHighlighter = shallowRef<Highlighter | null>(null)
 let highlightRequest = 0
 
@@ -1040,13 +1037,6 @@ async function handlePasteImage(view: EditorView, file: File): Promise<void> {
   }
 }
 
-function syncShowMarkers(): void {
-  const view = viewRef.value
-  if (!view) return
-  const pluginState = irPluginKey.getState(view.state) as IRPluginState | undefined
-  showMarkers.value = pluginState?.showMarkers ?? false
-}
-
 /**
  * 把 ProseMirror 选区映射为 Markdown 偏移，校验通过后发布归一化选区快照。
  *
@@ -1167,7 +1157,6 @@ function initEditor(): void {
       if (!view) return
       const selectionChanged = tr.selectionSet
       view.updateState(view.state.apply(tr))
-      syncShowMarkers()
       updateSavedPosition()
       updateCursorPositionFromProseMirror()
       if (selectionChanged) publishSelectionFromProseMirror()
@@ -1384,7 +1373,6 @@ watch([activeTabId, fileContent], ([newTabId, newContent], [oldTabId]) => {
   })
   view.updateState(newState)
   isUpdatingFromStore = false
-  syncShowMarkers()
   // 切换 tab 后编辑器选区被重置为文档开头，重新发布快照避免残留旧 tab 的选区。
   if (tabChanged) publishSelectionFromProseMirror()
   nextTick(() => loadEditorImages())
@@ -1408,21 +1396,18 @@ function toggleMarkInView(view: EditorView, markType: import('prosemirror-model'
   if (from === to) {
     const tr = view.state.tr.addStoredMark(markType.create())
     view.updateState(view.state.apply(tr))
-    syncShowMarkers()
   } else {
     const text = view.state.doc.textBetween(from, to)
     const mark = markType.create()
     const markedText = view.state.schema.text(text, [mark])
     const tr = view.state.tr.replaceWith(from, to, markedText)
     view.updateState(view.state.apply(tr))
-    syncShowMarkers()
   }
   view.focus()
 }
 
 function applyAndSync(view: EditorView, tr: any): void {
   view.updateState(view.state.apply(tr))
-  syncShowMarkers()
 }
 
 /**
@@ -1750,7 +1735,7 @@ defineExpose({
   <div
     ref="containerRef"
     class="ir-container"
-    :class="{ dragging: isDragging, 'ir-show-markers': showMarkers, 'ir-ctrl-pressed': ctrlPressed }"
+    :class="{ dragging: isDragging, 'ir-ctrl-pressed': ctrlPressed }"
   >
     <div
       v-if="tableToolbar.visible"
@@ -1984,13 +1969,13 @@ defineExpose({
   user-select: none;
   pointer-events: none;
 }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h1::before) { content: '# '; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h2::before) { content: '## '; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h3::before) { content: '### '; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h4::before) { content: '#### '; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h5::before) { content: '##### '; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h6::before) { content: '###### '; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror blockquote::before) { content: '> '; display: inline; }
+.ir-editor-wrapper :deep(.ProseMirror h1.ir-active-block::before) { content: '# '; }
+.ir-editor-wrapper :deep(.ProseMirror h2.ir-active-block::before) { content: '## '; }
+.ir-editor-wrapper :deep(.ProseMirror h3.ir-active-block::before) { content: '### '; }
+.ir-editor-wrapper :deep(.ProseMirror h4.ir-active-block::before) { content: '#### '; }
+.ir-editor-wrapper :deep(.ProseMirror h5.ir-active-block::before) { content: '##### '; }
+.ir-editor-wrapper :deep(.ProseMirror h6.ir-active-block::before) { content: '###### '; }
+.ir-editor-wrapper :deep(.ProseMirror blockquote.ir-active-block::before) { content: '> '; display: inline; }
 /* 标题标记与标题文本之间的间距 */
 .ir-editor-wrapper :deep(.ProseMirror h1) { padding-left: 0.2em; }
 .ir-editor-wrapper :deep(.ProseMirror h2) { padding-left: 0.4em; }
@@ -2055,10 +2040,10 @@ defineExpose({
   user-select: none;
   pointer-events: none;
 }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror pre::before) {
+.ir-editor-wrapper :deep(.ProseMirror pre.ir-active-block::before) {
   content: '```' attr(data-lang);
 }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror pre::after) {
+.ir-editor-wrapper :deep(.ProseMirror pre.ir-active-block::after) {
   content: '```';
 }
 .ir-editor-wrapper :deep(.ProseMirror code) {
@@ -2113,7 +2098,8 @@ defineExpose({
   color: var(--color-text-tertiary); float: left; height: 0; pointer-events: none;
 }
 /* 内联标记（默认隐藏且不占位，选区附近展开）
- * 注意：ir-show-markers 绑定在根节点 .ir-container 上，选择器须以此为前缀。
+ * 由 IR 插件在光标附近的行内标记上生成 .ir-active-mark 装饰（mark 元素内的 span），
+ * 因此以 [data-mark]:has(.ir-active-mark) 门控，只展开光标所在标记，而非全文。
  * 隐藏时 content 置空，避免透明标记仍占据布局宽度造成行首空白。 */
 .ir-editor-wrapper :deep([data-mark]::before),
 .ir-editor-wrapper :deep([data-mark]::after) {
@@ -2123,22 +2109,22 @@ defineExpose({
   user-select: none;
   pointer-events: none;
 }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark]::before),
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark]::after) {
+.ir-editor-wrapper :deep([data-mark]:has(.ir-active-mark)::before),
+.ir-editor-wrapper :deep([data-mark]:has(.ir-active-mark)::after) {
   opacity: 0.4;
 }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="bold"]::before) { content: '**'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="bold"]::after) { content: '**'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="italic"]::before) { content: '*'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="italic"]::after) { content: '*'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="strikethrough"]::before) { content: '~~'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="strikethrough"]::after) { content: '~~'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="underline"]::before) { content: '<u>'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="underline"]::after) { content: '</u>'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="code"]::before) { content: '`'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="code"]::after) { content: '`'; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="link"]::before) { content: '['; }
-.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="link"]::after) { content: '](' attr(href) ')'; }
+.ir-editor-wrapper :deep([data-mark="bold"]:has(.ir-active-mark)::before) { content: '**'; }
+.ir-editor-wrapper :deep([data-mark="bold"]:has(.ir-active-mark)::after) { content: '**'; }
+.ir-editor-wrapper :deep([data-mark="italic"]:has(.ir-active-mark)::before) { content: '*'; }
+.ir-editor-wrapper :deep([data-mark="italic"]:has(.ir-active-mark)::after) { content: '*'; }
+.ir-editor-wrapper :deep([data-mark="strikethrough"]:has(.ir-active-mark)::before) { content: '~~'; }
+.ir-editor-wrapper :deep([data-mark="strikethrough"]:has(.ir-active-mark)::after) { content: '~~'; }
+.ir-editor-wrapper :deep([data-mark="underline"]:has(.ir-active-mark)::before) { content: '<u>'; }
+.ir-editor-wrapper :deep([data-mark="underline"]:has(.ir-active-mark)::after) { content: '</u>'; }
+.ir-editor-wrapper :deep([data-mark="code"]:has(.ir-active-mark)::before) { content: '`'; }
+.ir-editor-wrapper :deep([data-mark="code"]:has(.ir-active-mark)::after) { content: '`'; }
+.ir-editor-wrapper :deep([data-mark="link"]:has(.ir-active-mark)::before) { content: '['; }
+.ir-editor-wrapper :deep([data-mark="link"]:has(.ir-active-mark)::after) { content: '](' attr(href) ')'; }
 
 .ir-editor-wrapper :deep(.ProseMirror .ProseMirror-cursor) {
   border-left: 2px solid var(--color-primary);

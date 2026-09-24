@@ -116,6 +116,7 @@ export interface ElectronAPI {
   readMdx: (filePath: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   writeMdx: (filePath: string, data: unknown) => Promise<{ success: boolean; error?: string }>
   importMd: (filePath?: string, targetPath?: string) => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
+  importDocx: (docxFilePath?: string, targetPath?: string) => Promise<{ success: boolean; data?: MdxOpenResult; error?: string }>
   importFolder: (sourceFolder?: string, targetFolder?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   exportMd: (filePath: string, outputDir?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
   addImage: (filename: string, mimeType: string, data: ArrayBuffer, options?: ImageCompressOptions, filePath?: string) => Promise<{ success: boolean; data?: unknown; error?: string }>
@@ -265,6 +266,7 @@ const api: ElectronAPI = {
   readMdx: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.MDX.READ, filePath),
   writeMdx: (filePath, data) => ipcRenderer.invoke(IPC_CHANNELS.MDX.WRITE, filePath, data),
   importMd: (filePath?, targetPath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.IMPORT_MD, filePath, targetPath),
+  importDocx: (docxFilePath?, targetPath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.IMPORT_DOCX, docxFilePath, targetPath),
   importFolder: (sourceFolder?, targetFolder?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.IMPORT_FOLDER, sourceFolder, targetFolder),
   exportMd: (filePath, outputDir?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.EXPORT_MD, filePath, outputDir),
   addImage: (filename, mimeType, data, options?, filePath?) => ipcRenderer.invoke(IPC_CHANNELS.MDX.ADD_IMAGE, filename, mimeType, data, options, filePath),

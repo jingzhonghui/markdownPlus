@@ -96,6 +96,7 @@ const fileMenu = computed<MenuItem[]>(() => {
     { kind: 'item', label: '另存为', action: 'save-as', shortcut: 'Ctrl+Shift+S' },
     { kind: 'divider' },
     { kind: 'item', label: '导入 Markdown', action: 'import-md' },
+    { kind: 'item', label: '导入 Word 文档', action: 'import-docx' },
     { kind: 'item', label: '导入文件夹', action: 'import-folder' },
     { kind: 'divider' },
     { kind: 'item', label: '导出为 Markdown', action: 'export-md' },
@@ -357,6 +358,9 @@ async function runMenuItem(item: MenuItem): Promise<void> {
       break
     case 'import-md':
       await fileStore.importMarkdown()
+      break
+    case 'import-docx':
+      await fileStore.importDocx()
       break
     case 'import-folder':
       await fileStore.importFolder()

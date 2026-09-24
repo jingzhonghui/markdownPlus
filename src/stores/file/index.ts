@@ -886,6 +886,72 @@ export const useFileStore = defineStore('file', () => {
   }
 
   // ====== 导入 / 导出 ======
+  async function importDocx(): Promise<boolean> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      if (!window.electronAPI) {
+        error.value = 'Electron API 不可用'
+        return false
+      }
+
+      const targetFolder = folder.openedFolderPath.value || undefined
+      const result = await window.electronAPI.importDocx(undefined, targetFolder)
+
+      if (result.success && result.data) {
+        const doc = result.data.document as MdxDocument
+        const fPath = result.data.filePath as string
+
+        const existing = tabState.findTabByPath(fPath)
+        if (existing) {
+          activeTabId.value = existing.id
+          useAiStore().deactivatePanel()
+          return true
+        }
+
+        if (tabs.value.length >= maxOpenTabs.value) {
+          await requestDialog({
+            title: '已达标签上限',
+            message: `最多同时打开 ${maxOpenTabs.value} 个标签，请先关闭一些标签。`,
+            buttons: [{ label: '知道了', value: 0, primary: true }]
+          })
+          return false
+        }
+
+        const tab = tabState.createTab()
+        tab.document = doc
+        tab.content = doc.content
+        tab.fileInfo = {
+          path: fPath,
+          name: fPath.split(/[/\\]/).pop() || '未命名.mdx',
+          modified: false,
+          format: 'mdx'
+        }
+        activeTabId.value = tab.id
+        useAiStore().deactivatePanel()
+
+        await loadRecentFiles()
+
+        if (folder.openedFolderPath.value) {
+          await folder.readFolder(folder.openedFolderPath.value)
+        }
+
+        return true
+      } else if (result.error === '用户取消') {
+        return false
+      } else {
+        error.value = result.error || '导入 Word 文档失败'
+        return false
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '导入 Word 文档失败'
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function importMarkdown(): Promise<boolean> {
     isLoading.value = true
     error.value = null
@@ -1147,6 +1213,7 @@ export const useFileStore = defineStore('file', () => {
     confirmSaveDialog,
     confirmSaveBeforeAction,
     importMarkdown,
+    importDocx,
     importFolder,
     exportMarkdown,
     exportTabToPdf: pdf.exportTabToPdf,

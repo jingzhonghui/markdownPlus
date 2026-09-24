@@ -261,6 +261,7 @@ function onEmptyContextMenu(event: MouseEvent): void {
         { label: '新建文件', action: () => promptCreateFile(folderPath) },
         { label: '新建文件夹', action: () => promptCreateFolder(folderPath) },
         { label: '导入 Markdown', action: () => fileStore.importMarkdown() },
+        { label: '导入 Word 文档', action: () => fileStore.importDocx() },
         { label: '导入文件夹', action: () => fileStore.importFolder() },
         { label: '打开文件', action: () => openFile() },
         { label: '打开文件夹', action: () => openFolder() },
@@ -271,6 +272,7 @@ function onEmptyContextMenu(event: MouseEvent): void {
       ]
     : [
         { label: '导入 Markdown', action: () => fileStore.importMarkdown() },
+        { label: '导入 Word 文档', action: () => fileStore.importDocx() },
         { label: '导入文件夹', action: () => fileStore.importFolder() },
         { label: '打开文件', action: () => openFile() },
         { label: '打开文件夹', action: () => openFolder() }

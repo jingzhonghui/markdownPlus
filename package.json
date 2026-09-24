@@ -37,6 +37,7 @@
     "ai": "6.0.256",
     "chokidar": "^4.0.3",
     "electron-updater": "^6.6.2",
+    "mammoth": "^1.12.3",
     "node-html-parser": "^9.0.1",
     "pdf-parse": "^2.4.5",
     "sharp": "^0.34.5",

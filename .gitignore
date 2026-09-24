@@ -56,3 +56,4 @@ docs/superpowers/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+dist-build

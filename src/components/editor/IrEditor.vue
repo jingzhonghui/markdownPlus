@@ -1498,6 +1498,9 @@ const format = (e as CustomEvent).detail as string
     case 'strikethrough':
       toggleMarkInView(view, marks.strikethrough)
       return
+    case 'underline':
+      toggleMarkInView(view, marks.underline)
+      return
     case 'unorderedList':
       wrapInList(nodes.bullet_list)(view.state, (tr) => applyAndSync(view, tr))
       break
@@ -1928,6 +1931,13 @@ defineExpose({
 .ir-editor-wrapper :deep(.ProseMirror h4) {
   font-size: 1.1em; margin: 1em 0; font-weight: 600;
 }
+.ir-editor-wrapper :deep(.ProseMirror h5) {
+  font-size: 1em; margin: 1em 0; font-weight: 600;
+}
+.ir-editor-wrapper :deep(.ProseMirror h6) {
+  font-size: 0.95em; margin: 1em 0; font-weight: 600;
+  color: var(--color-text-secondary);
+}
 .ir-editor-wrapper :deep(.ProseMirror ul),
 .ir-editor-wrapper :deep(.ProseMirror ol) {
   margin: 0.5em 0; padding-left: 1.5em;
@@ -1958,29 +1968,36 @@ defineExpose({
   background: var(--color-primary-light);
   border-radius: 0 4px 4px 0;
 }
-/* IR 模式：块级标记 */
-.ir-editor-wrapper :deep(.ProseMirror h1::before) { content: '# '; }
-.ir-editor-wrapper :deep(.ProseMirror h2::before) { content: '## '; }
-.ir-editor-wrapper :deep(.ProseMirror h3::before) { content: '### '; }
-.ir-editor-wrapper :deep(.ProseMirror h4::before) { content: '#### '; }
-.ir-editor-wrapper :deep(.ProseMirror blockquote::before) { content: '> '; display: inline; }
+/* IR 模式：块级源码标记（仅光标附近显示，与内联标记一致；隐藏时不占位） */
 .ir-editor-wrapper :deep(.ProseMirror h1::before),
 .ir-editor-wrapper :deep(.ProseMirror h2::before),
 .ir-editor-wrapper :deep(.ProseMirror h3::before),
 .ir-editor-wrapper :deep(.ProseMirror h4::before),
+.ir-editor-wrapper :deep(.ProseMirror h5::before),
+.ir-editor-wrapper :deep(.ProseMirror h6::before),
 .ir-editor-wrapper :deep(.ProseMirror blockquote::before) {
-  opacity: 0.4;
+  content: '';
   font-family: var(--font-mono);
   font-size: 0.85em;
   font-weight: 400;
+  opacity: 0.4;
   user-select: none;
   pointer-events: none;
 }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h1::before) { content: '# '; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h2::before) { content: '## '; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h3::before) { content: '### '; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h4::before) { content: '#### '; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h5::before) { content: '##### '; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror h6::before) { content: '###### '; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror blockquote::before) { content: '> '; display: inline; }
 /* 标题标记与标题文本之间的间距 */
 .ir-editor-wrapper :deep(.ProseMirror h1) { padding-left: 0.2em; }
 .ir-editor-wrapper :deep(.ProseMirror h2) { padding-left: 0.4em; }
 .ir-editor-wrapper :deep(.ProseMirror h3) { padding-left: 0.6em; }
 .ir-editor-wrapper :deep(.ProseMirror h4) { padding-left: 0.8em; }
+.ir-editor-wrapper :deep(.ProseMirror h5) { padding-left: 1em; }
+.ir-editor-wrapper :deep(.ProseMirror h6) { padding-left: 1.2em; }
 
 .ir-editor-wrapper :deep(.ProseMirror pre) {
   background: var(--color-bg-secondary);
@@ -2016,7 +2033,7 @@ defineExpose({
   display: none;
 }
 .ir-editor-wrapper :deep(.ProseMirror pre::before) {
-  content: '```' attr(data-lang);
+  content: '';
   display: block;
   position: absolute;
   top: 0; left: 0; right: 0;
@@ -2028,7 +2045,7 @@ defineExpose({
   white-space: pre;
 }
 .ir-editor-wrapper :deep(.ProseMirror pre::after) {
-  content: '```';
+  content: '';
   display: block;
   position: absolute;
   bottom: 0; left: 0; right: 0;
@@ -2037,6 +2054,12 @@ defineExpose({
   opacity: 0.4;
   user-select: none;
   pointer-events: none;
+}
+.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror pre::before) {
+  content: '```' attr(data-lang);
+}
+.ir-container.ir-show-markers .ir-editor-wrapper :deep(.ProseMirror pre::after) {
+  content: '```';
 }
 .ir-editor-wrapper :deep(.ProseMirror code) {
   background: var(--color-bg-secondary);
@@ -2089,28 +2112,33 @@ defineExpose({
   content: '在此输入内容，支持 Markdown 语法...';
   color: var(--color-text-tertiary); float: left; height: 0; pointer-events: none;
 }
-/* 内联标记（默认隐藏，选区附近展开） */
+/* 内联标记（默认隐藏且不占位，选区附近展开）
+ * 注意：ir-show-markers 绑定在根节点 .ir-container 上，选择器须以此为前缀。
+ * 隐藏时 content 置空，避免透明标记仍占据布局宽度造成行首空白。 */
 .ir-editor-wrapper :deep([data-mark]::before),
 .ir-editor-wrapper :deep([data-mark]::after) {
+  content: '';
   opacity: 0;
   transition: opacity 0.15s ease;
   user-select: none;
   pointer-events: none;
 }
-.ir-editor-wrapper.ir-show-markers :deep([data-mark]::before),
-.ir-editor-wrapper.ir-show-markers :deep([data-mark]::after) {
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark]::before),
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark]::after) {
   opacity: 0.4;
 }
-.ir-editor-wrapper :deep([data-mark="bold"]::before) { content: '**'; }
-.ir-editor-wrapper :deep([data-mark="bold"]::after) { content: '**'; }
-.ir-editor-wrapper :deep([data-mark="italic"]::before) { content: '*'; }
-.ir-editor-wrapper :deep([data-mark="italic"]::after) { content: '*'; }
-.ir-editor-wrapper :deep([data-mark="strikethrough"]::before) { content: '~~'; }
-.ir-editor-wrapper :deep([data-mark="strikethrough"]::after) { content: '~~'; }
-.ir-editor-wrapper :deep([data-mark="code"]::before) { content: '`'; }
-.ir-editor-wrapper :deep([data-mark="code"]::after) { content: '`'; }
-.ir-editor-wrapper :deep([data-mark="link"]::before) { content: '['; }
-.ir-editor-wrapper :deep([data-mark="link"]::after) { content: '](' attr(href) ')'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="bold"]::before) { content: '**'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="bold"]::after) { content: '**'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="italic"]::before) { content: '*'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="italic"]::after) { content: '*'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="strikethrough"]::before) { content: '~~'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="strikethrough"]::after) { content: '~~'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="underline"]::before) { content: '<u>'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="underline"]::after) { content: '</u>'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="code"]::before) { content: '`'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="code"]::after) { content: '`'; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="link"]::before) { content: '['; }
+.ir-container.ir-show-markers .ir-editor-wrapper :deep([data-mark="link"]::after) { content: '](' attr(href) ')'; }
 
 .ir-editor-wrapper :deep(.ProseMirror .ProseMirror-cursor) {
   border-left: 2px solid var(--color-primary);

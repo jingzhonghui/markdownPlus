@@ -2,6 +2,9 @@ import { Plugin, PluginKey, EditorState } from 'prosemirror-state'
 
 export const irPluginKey = new PluginKey('ir')
 
+/** 带源码标记的块级节点：光标进入时展开 `#`、`>`、``` 等标记 */
+const BLOCK_MARKER_TYPES = new Set(['heading', 'blockquote', 'code_block'])
+
 export interface IRPluginState {
   showMarkers: boolean
 }
@@ -43,6 +46,10 @@ function hasMarkersNearSelection(state: EditorState): boolean {
       const resolved = doc.resolve(pos)
       const marks = resolved.marks()
       if (marks && marks.length > 0) return true
+      // 光标位于标题/引用/代码块内时，同样展开块级源码标记
+      for (let depth = resolved.depth; depth > 0; depth--) {
+        if (BLOCK_MARKER_TYPES.has(resolved.node(depth).type.name)) return true
+      }
     } catch {
       // skip invalid positions
     }
